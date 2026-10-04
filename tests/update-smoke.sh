@@ -26,7 +26,7 @@ set -Eeuo pipefail
 url=''; out=''
 for arg in "$@"; do [[ "$arg" == https://* ]] && url=$arg; done
 while (($#)); do case "$1" in -o) out=$2; shift 2;; *) shift;; esac; done
-if [[ "$url" == *'/commits/main' ]]; then
+if [[ "$url" == 'https://api.github.com/repos/ridd1e1337/sb-manager/commits/main' ]]; then
   printf '%s\n' '{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
 elif [[ "$url" == *'/archive/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz' ]]; then
   cp "$SBM_UPDATE_FIXTURE" "$out"

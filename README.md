@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.34`。请先在测试 VPS 验证，不要直接覆盖仍在使用的生产节点。
+> 当前版本：`0.1.0-alpha.35`。请先在测试 VPS 验证，不要直接覆盖仍在使用的生产节点。
 
 ## 功能
 
@@ -41,7 +41,7 @@
 - 磁盘、内存、负载、文件描述符、Fail2ban 封禁数和服务重启次数监控
 - sing-box 1.14 特性覆盖矩阵见 [`docs/SINGBOX_1.14_FEATURE_MATRIX.md`](docs/SINGBOX_1.14_FEATURE_MATRIX.md)
 - sing-box 1.15 适配记录见 [`docs/SINGBOX_1.15_ADAPTATION.md`](docs/SINGBOX_1.15_ADAPTATION.md)
-- Go WebUI 独立项目已开始：[`sb-manager-web`](https://github.com/R1ddle1337/sb-manager-web)；开发基线见 [`docs/SB_MANAGER_WEB_DEVELOPMENT.md`](docs/SB_MANAGER_WEB_DEVELOPMENT.md)
+- Go WebUI 独立项目已开始：[`sb-manager-web`](https://github.com/ridd1e1337/sb-manager-web)；开发基线见 [`docs/SB_MANAGER_WEB_DEVELOPMENT.md`](docs/SB_MANAGER_WEB_DEVELOPMENT.md)
 
 ### 节点流量控制
 
@@ -132,7 +132,7 @@ Alpine 默认可能没有 Bash 和 curl，先安装最小引导依赖：
 
 ```bash
 apk add --no-cache bash curl ca-certificates
-bash <(curl -fsSL https://github.com/R1ddle1337/sb-manager/raw/refs/heads/main/install.sh)
+bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh)
 ```
 
 安装器默认使用 `minimal` 依赖档位：只补齐管理器和 sing-box 所需的 Bash、curl、证书、jq、OpenSSL、基础文本工具，以及 Alpine 运行官方 glibc ABI 核心所需的 `gcompat`。sing-box 版本默认实时解析 GitHub 最新的非 draft Release，不在安装器里固定版本；只有 Release API 不可用时才回退到内置、已校验的 `1.14.0`。OpenRC 使用 root 运行 sing-box，以兼容 Alpine 容器和部分 VPS 内核禁用文件能力的情况；不会默认下载 Cloudflared，也不会预装 Python、nftables、kmod、dcron 或 Nginx。
@@ -175,7 +175,7 @@ sb deps status
 建议先查看安装脚本，再执行：
 
 ```bash
-curl -fsSL https://github.com/R1ddle1337/sb-manager/raw/refs/heads/main/install.sh -o install.sh
+curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh -o install.sh
 less install.sh
 sudo bash install.sh
 ```
@@ -183,10 +183,10 @@ sudo bash install.sh
 直接执行（生产环境必须固定不可变 commit/tag，并提供源码摘要）：
 
 ```bash
-bash <(curl -fsSL https://github.com/R1ddle1337/sb-manager/raw/refs/heads/main/install.sh)
+bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh)
 ```
 
-`install.sh` 默认先解析 `main` 的最新 commit SHA，再按该不可变 commit 下载源码；也可设置 `SBM_INSTALL_REF=v0.1.0-alpha.34` 固定版本。显式指定 `main` 等可变分支仍需 `SBM_ALLOW_MUTABLE_REF=1`。离线发布包可使用 `build-release.sh` 生成，并核验 `SHA256SUMS`、`PROVENANCE-SHA256SUMS` 及可选的 GPG 签名文件。
+`install.sh` 默认先解析 `main` 的最新 commit SHA，再按该不可变 commit 下载源码；也可设置 `SBM_INSTALL_REF=v0.1.0-alpha.35` 固定版本。显式指定 `main` 等可变分支仍需 `SBM_ALLOW_MUTABLE_REF=1`。离线发布包可使用 `build-release.sh` 生成，并核验 `SHA256SUMS`、`PROVENANCE-SHA256SUMS` 及可选的 GPG 签名文件。
 
 同一台服务器可以重复执行安装器。重复安装会保留 `/etc/sb-manager` 下的节点、密钥、证书和备份，并重新生成服务定义；默认会复用已安装的 sing-box 核心。升级管理器脚本时可直接执行：
 
@@ -207,16 +207,16 @@ sb
 
 ```bash
 # 安装后不自动打开菜单
-bash <(curl -fsSL https://github.com/R1ddle1337/sb-manager/raw/refs/heads/main/install.sh) --no-menu
+bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh) --no-menu
 
 # 安装指定 sing-box 版本
-bash <(curl -fsSL https://github.com/R1ddle1337/sb-manager/raw/refs/heads/main/install.sh) --core-version 1.14.0-rc.4
+bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh) --core-version 1.14.0-rc.4
 ```
 
 也可以克隆源码后安装：
 
 ```bash
-git clone https://github.com/R1ddle1337/sb-manager.git
+git clone https://github.com/ridd1e1337/sb-manager.git
 cd sb-manager
 sudo ./setup.sh
 ```

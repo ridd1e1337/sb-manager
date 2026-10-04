@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.35
+
+- Migrate repository, installation and update URLs to ridd1e1337 on GitHub.
+- Validate shell syntax and isolated update tests locally; remote VPS acceptance is unavailable.
+
 ## 0.1.0-alpha.34
 
 - Add opt-in live subscriptions with stable token URLs, finite or revocable

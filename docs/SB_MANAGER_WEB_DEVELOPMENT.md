@@ -3,11 +3,11 @@
 ## 文档状态
 
 - 项目状态：架构设计阶段
-- 目标仓库：`github.com/R1ddle1337/sb-manager-web`
+- 目标仓库：`github.com/ridd1e1337/sb-manager-web`
 - 实现语言：Go
 - 第一版目标：单服务器 WebUI
 - 第二版目标：多服务器主动连接 Agent
-- 当前仓库关系：新项目已创建为 [`sb-manager-web`](https://github.com/R1ddle1337/sb-manager-web)；本文件仍是完整设计基线，新项目稳定后同步维护其 `docs/` 目录。
+- 当前仓库关系：新项目已创建为 [`sb-manager-web`](https://github.com/ridd1e1337/sb-manager-web)；本文件仍是完整设计基线，新项目稳定后同步维护其 `docs/` 目录。
 
 ## 1. 项目定位
 
@@ -70,7 +70,7 @@
 前提是服务器已经安装 `sb-manager`：
 
 ```bash
-curl -fsSL https://github.com/R1ddle1337/sb-manager-web/raw/main/install.sh | sudo bash
+curl -fsSL https://github.com/ridd1e1337/sb-manager-web/raw/main/install.sh | sudo bash
 sb-web enable
 ```
 

@@ -14,7 +14,7 @@ fi
 # Remote source bootstrap. The default "latest" mode resolves main to its
 # current immutable commit before downloading; explicit refs may pin a tag or
 # commit. Mutable branch refs require an explicit development opt-in.
-REPOSITORY=${SBM_INSTALL_REPOSITORY:-R1ddle1337/sb-manager}
+REPOSITORY=${SBM_INSTALL_REPOSITORY:-ridd1e1337/sb-manager}
 [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo '无效的 GitHub 仓库名。' >&2; exit 1; }
 DEFAULT_INSTALL_REF=latest
 REF=${SBM_INSTALL_REF:-$DEFAULT_INSTALL_REF}

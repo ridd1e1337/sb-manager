@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/R1ddle1337/sb-manager/schemas/state-v2.schema.json",
+  "$id": "https://github.com/ridd1e1337/sb-manager/schemas/state-v2.schema.json",
   "title": "sb-manager state schema v2",
   "type": "object",
   "required": ["schema_version", "manager_version", "created_at", "updated_at", "settings", "tunnel", "api", "nginx_stream", "notifications", "health", "node_templates", "certificates", "nodes"],

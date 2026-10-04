@@ -19,8 +19,11 @@ manager_update() (
   repository=${SBM_INSTALL_REPOSITORY:-}
   if [[ -z "$repository" && -r "$SBM_LIB/INSTALL_REPOSITORY" ]]; then
     repository=$(cat "$SBM_LIB/INSTALL_REPOSITORY")
+    case "$repository" in
+      R1ddle1337/sb-manager|wugan666/sb-manager) repository=ridd1e1337/sb-manager ;;
+    esac
   fi
-  repository=${repository:-R1ddle1337/sb-manager}
+  repository=${repository:-ridd1e1337/sb-manager}
   [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die '无效的 GitHub 仓库名。'
   [[ ! -r "$SBM_LIB/INSTALL_COMMIT" ]] || current=$(cat "$SBM_LIB/INSTALL_COMMIT")
   printf '当前脚本：%s（commit：%s）\n' "$SBM_VERSION" "${current:-未记录}"
