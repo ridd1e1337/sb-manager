@@ -1,0 +1,71 @@
+[
+  {
+    "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3870755956",
+    "pull_request_review_id": 5039608669,
+    "id": 3870755956,
+    "node_id": "PRRC_kwDOUFxiEs7mtwx0",
+    "diff_hunk": "@@ -1,28 +1,76 @@\n #!/usr/bin/env bash\n # shellcheck shell=bash\n \n+remove_manager_owned_link() {\n+  local link=$1 target\n+  [[ -L \"$link\" ]] || return 0\n+  target=$(readlink \"$link\" 2>/dev/null || true)\n+  if [[ \"$target\" == *\"$SBM_LIB/\"* ]]; then\n+    rm -f -- \"$link\"\n+  fi\n+}",
+    "path": "lib/uninstall.sh",
+    "commit_id": "704c8366db74f2abf6fb2c01fd26ecbd9b76e0e4",
+    "original_commit_id": "704c8366db74f2abf6fb2c01fd26ecbd9b76e0e4",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "`remove_manager_owned_link` 仅在 symlink 目标包含 `$SBM_LIB/` 时才删除链接；当用户通过环境变量将 `SBM_CORE_DIR` 指向 `$SBM_LIB` 之外的位置时（`lib/common.sh` 支持覆盖该变量），卸载/彻底清理会保留 `$SBM_SING_BOX_BIN`/`$SBM_CLOUDFLARED_BIN` 等由本程序创建的链接，可能导致残留或断链。建议同时认可指向 `$SBM_CORE_DIR/`（以及 `$SBM_LIB/`）的目标，最好用 `readlink -f` 做真实路径判断。",
+    "created_at": "2026-08-27T10:11:07Z",
+    "updated_at": "2026-08-27T10:11:08Z",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/1#discussion_r3870755956",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/1",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3870755956"
+      },
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/1#discussion_r3870755956"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/1"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3870755956/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 4,
+    "original_start_line": 4,
+    "start_side": "RIGHT",
+    "line": 11,
+    "original_line": 11,
+    "side": "RIGHT",
+    "author_association": "NONE",
+    "original_position": 11,
+    "position": 11,
+    "subject_type": "line"
+  }
+]

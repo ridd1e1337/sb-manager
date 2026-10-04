@@ -1,0 +1,42 @@
+[
+  {
+    "id": 5040155628,
+    "node_id": "PRR_kwDOUFxiEs8AAAABLGqr7A",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "### 🟡 Changes recommended\n\nThe OpenRC naming helper currently depends on `init_system()` instead of the effective backend, which can generate mismatched OpenRC service names under forced/fallback backends and break service management.\n\n*Once you've addressed the issues Copilot identified, you can request another Copilot review.*\n\n<details>\n<summary>Pull request overview</summary>\n\nThis PR adds Alpine Linux (OpenRC) support by introducing a service-manager abstraction that lets sb-manager manage sing-box/cloudflared consistently across systemd and OpenRC, plus Alpine-specific install/scheduling/test coverage.\n\n**Changes:**\n- Add a systemd/OpenRC service abstraction (`lib/service.sh`) and integrate it into install, lifecycle reconcile, doctor/repair, tunnel management, and uninstall flows.\n- Add Alpine/OpenRC runtime generation: OpenRC `supervise-daemon` services and `dcron` `/etc/periodic` jobs for core update, ACME renew, and Quick Tunnel refresh.\n- Extend CI and tests with OpenRC lifecycle coverage and an Alpine 3.21–3.24 musl smoke matrix.\n</details>\n\n<details>\n<summary>File summaries</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| VERSION | Bump project version to `0.1.0-alpha.3`. |\r\n| setup.sh | Add apk dependency path; generate systemd/OpenRC runtime + periodic jobs; unify service operations via abstraction. |\r\n| sb | Source new service abstraction library. |\r\n| README.md | Document OpenRC + Alpine support, requirements, install steps, and log locations. |\r\n| CHANGELOG.md | Document `0.1.0-alpha.3` features and tests. |\r\n| docs/ARCHITECTURE.md | Document dual service backends and OpenRC operational model. |\r\n| lib/common.sh | Add OpenRC/periodic/log defaults; replace legacy systemd-only helpers; add BusyBox/musl helpers. |\r\n| lib/service.sh | New service-manager abstraction (systemd/OpenRC) + OpenRC script generator + cap helper. |\r\n| lib/state.sh | Switch service reconcile logic from systemd-only to abstraction; use portable group lookup. |\r\n| lib/tunnel.sh | Add OpenRC support for cloudflared service + periodic refresh; abstract logs/extract-domain per backend. |\r\n| lib/doctor.sh | Make doctor/repair backend-aware; add OpenRC-specific checks (capability, time sync heuristics, logs). |\r\n| lib/core.sh | Apply bind capability on OpenRC when downloading/switching cores; use new skip-init flag. |\r\n| lib/cert.sh | Restart service via abstraction after cert updates. |\r\n| lib/uninstall.sh | Uninstall both systemd/OpenRC artifacts; delete service account safely on purge; remove logs on purge. |\r\n| lib/ui.sh | Show init backend label; use skip-init flag instead of skip-systemd. |\r\n| tests/service-lifecycle.sh | Update env flags; source service abstraction. |\r\n| tests/run.sh | Update env flags; source service abstraction. |\r\n| tests/install-smoke.sh | Update env flags; version assertion; source service abstraction. |\r\n| tests/doctor-smoke.sh | Update env flags; source service abstraction. |\r\n| tests/core-download-smoke.sh | Update env flags; source service abstraction. |\r\n| tests/acme-install-smoke.sh | Update env flags; source service abstraction. |\r\n| tests/openrc-lifecycle.sh | New isolated OpenRC lifecycle regression test. |\r\n| tests/alpine-smoke.sh | New Alpine musl smoke test validating real assets + OpenRC output + uninstall. |\r\n| .github/workflows/ci.yml | Add libcap dependency, OpenRC lifecycle step, and Alpine 3.21–3.24 smoke matrix. |\n</details>\n\n<details>\n<summary>Review details</summary>\n\n- **Files reviewed:** 24/24 changed files\n- **Comments generated:** 2\n- **Review effort level:** Lite\n</details>\n\n---\n\n💡 <a href=\"/R1ddle1337/sb-manager/new/main?filename=.github/skills/code-review/SKILL.md\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href=\"https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review#mcp-servers-and-agent-skills\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Learn more in the docs.</a>",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/2#pullrequestreview-5040155628",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/2",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/2#pullrequestreview-5040155628"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/2"
+      }
+    },
+    "submitted_at": "2026-08-27T11:21:52Z",
+    "commit_id": "de4ee1d531550d955a769cc6c7776ae3ec33c955"
+  }
+]

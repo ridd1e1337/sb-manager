@@ -1,0 +1,42 @@
+[
+  {
+    "id": 5041500755,
+    "node_id": "PRR_kwDOUFxiEs8AAAABLH8yUw",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "### 🟢 Approval recommended\n\nThe retry + fail-fast behavior is consistently applied, error paths now stop before checksum/extraction, and CI adds deterministic regression coverage for the new logic.\n\n<details>\n<summary>Pull request overview</summary>\n\nThis PR hardens sb-manager’s core asset download path (sing-box + cloudflared) against transient network failures by implementing full retry + fail-fast behavior, and adds deterministic regression coverage to prevent partial/empty downloads from proceeding into checksum/extraction.\n\n**Changes:**\n- Add a reusable `download_file_with_retries` helper and apply it to sing-box/cloudflared downloads; delete partial files and stop immediately on final failure or empty downloads.\n- Make GitHub Release API queries fully retried, validate required fields (e.g., `tag_name`), and fix `latest` lookup control-flow to avoid silently treating `latest` as a version.\n- Add deterministic retry/fail-fast smoke tests and wire them into CI; bump version/docs/changelog to `0.1.0-alpha.6`.\n</details>\n\n<details>\n<summary>File summaries</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| VERSION | Bumps project version to `0.1.0-alpha.6`. |\r\n| lib/common.sh | Updates the default `SBM_VERSION` fallback to `0.1.0-alpha.6`. |\r\n| lib/core.sh | Implements download retry + fail-fast logic and applies it to sing-box/cloudflared + GitHub API lookups. |\r\n| tests/download-retry-smoke.sh | Adds deterministic coverage for retry success and permanent-failure cleanup behavior. |\r\n| tests/install-smoke.sh | Updates installer smoke test to assert the new version string. |\r\n| .github/workflows/ci.yml | Adds the new retry smoke test to CI and strengthens CI curl retry behavior. |\r\n| README.md | Updates the displayed current version. |\r\n| CHANGELOG.md | Documents the retry/fail-fast behavior changes for `0.1.0-alpha.6`. |\n</details>\n\n<details>\n<summary>Review details</summary>\n\n- **Files reviewed:** 8/8 changed files\n- **Comments generated:** 0\n- **Review effort level:** Lite\n</details>\n\n---\n\n💡 <a href=\"/R1ddle1337/sb-manager/new/main?filename=.github/skills/code-review/SKILL.md\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href=\"https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review#mcp-servers-and-agent-skills\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Learn more in the docs.</a>",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/5#pullrequestreview-5041500755",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/5",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/5#pullrequestreview-5041500755"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/5"
+      }
+    },
+    "submitted_at": "2026-08-27T13:47:08Z",
+    "commit_id": "a52324272109e0e042be40bf197175eab7e2b45f"
+  }
+]

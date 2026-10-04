@@ -1,0 +1,140 @@
+[
+  {
+    "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224938",
+    "pull_request_review_id": 5040155628,
+    "id": 3871224938,
+    "node_id": "PRRC_kwDOUFxiEs7mvjRq",
+    "diff_hunk": "@@ -0,0 +1,322 @@\n+#!/usr/bin/env bash\n+# shellcheck shell=bash\n+\n+# Service-manager abstraction.  Logical service names keep their systemd\n+# suffixes for backward compatibility; OpenRC transparently strips them.\n+\n+init_system_detect() {\n+  local requested=${SBM_INIT_SYSTEM:-auto} pid1\n+  [[ ${SBM_SKIP_INIT:-0} == 1 ]] && { printf 'none\\n'; return 0; }\n+  case \"$requested\" in\n+    systemd|openrc|none) printf '%s\\n' \"$requested\"; return 0 ;;\n+    auto|'') ;;\n+    *) die \"未知服务管理器：$requested（支持 auto、systemd、openrc）\" ;;\n+  esac\n+  pid1=$(ps -p 1 -o comm= 2>/dev/null | tr -d ' ' || true)\n+  if command_exists systemctl && [[ \"$pid1\" == systemd ]]; then\n+    printf 'systemd\\n'\n+  elif command_exists rc-service && command_exists rc-update && { [[ -e /run/openrc/softlevel ]] || [[ \"$pid1\" == init || \"$pid1\" == openrc-init ]]; }; then\n+    printf 'openrc\\n'\n+  else\n+    return 1\n+  fi\n+}\n+\n+init_system() {\n+  if [[ -n ${SBM_INIT_SYSTEM_RESOLVED:-} ]]; then\n+    printf '%s\\n' \"$SBM_INIT_SYSTEM_RESOLVED\"\n+    return 0\n+  fi\n+  init_system_detect\n+}\n+\n+effective_init_system() {\n+  local backend\n+  backend=$(init_system 2>/dev/null || true)\n+  if [[ -z \"$backend\" || \"$backend\" == none ]]; then backend=${SBM_TEST_INIT_BACKEND:-systemd}; fi\n+  printf '%s\\n' \"$backend\"\n+}\n+\n+init_system_label() {\n+  case \"$(init_system 2>/dev/null || true)\" in\n+    systemd) printf 'systemd\\n' ;;\n+    openrc) printf 'OpenRC\\n' ;;\n+    none) printf '测试/跳过\\n' ;;\n+    *) printf '未知\\n' ;;\n+  esac\n+}\n+\n+require_init_system() {\n+  [[ ${SBM_SKIP_INIT:-0} == 1 ]] && return 0\n+  local detected\n+  detected=$(init_system_detect) || die '未检测到可用的 systemd 或 OpenRC。Alpine 需要以 OpenRC 启动，普通精简容器不受支持。'\n+  case \"$detected\" in\n+    systemd)\n+      command_exists systemctl || die '未发现 systemctl。'\n+      ;;\n+    openrc)\n+      command_exists rc-service || die '未发现 rc-service；请安装 openrc。'\n+      command_exists rc-update || die '未发现 rc-update；请安装 openrc。'\n+      command_exists openrc-run || [[ -x /sbin/openrc-run ]] || die '未发现 openrc-run；请安装 openrc。'\n+      ;;\n+  esac\n+  SBM_INIT_SYSTEM_RESOLVED=$detected\n+  export SBM_INIT_SYSTEM_RESOLVED\n+}\n+\n+# Backward-compatible name retained for third-party callers.\n+require_systemd() { require_init_system; }\n+\n+service_native_name() {\n+  local name=$1\n+  if [[ $(init_system 2>/dev/null || true) == openrc ]]; then\n+    name=${name%.service}\n+    name=${name%.timer}\n+  fi\n+  printf '%s\\n' \"$name\"\n+}",
+    "path": "lib/service.sh",
+    "commit_id": "6d9bc274f6504a7f5013391ba3206f0d99e1a8c3",
+    "original_commit_id": "de4ee1d531550d955a769cc6c7776ae3ec33c955",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "service_native_name() strips .service/.timer only when init_system()==openrc, but several call sites choose the backend via effective_init_system(). If init_system() is \"none\" (e.g., SBM_SKIP_INIT=1 or detection fails) while effective_init_system() is forced to openrc, OpenRC scripts/paths can be generated with a wrong name like sb-cloudflared.service, and service management will not find them.",
+    "created_at": "2026-08-27T11:21:51Z",
+    "updated_at": "2026-08-27T11:21:52Z",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/2#discussion_r3871224938",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/2",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224938"
+      },
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/2#discussion_r3871224938"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/2"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224938/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 70,
+    "original_start_line": 70,
+    "start_side": "RIGHT",
+    "line": 77,
+    "original_line": 77,
+    "side": "RIGHT",
+    "author_association": "NONE",
+    "original_position": 77,
+    "position": 77,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224984",
+    "pull_request_review_id": 5040155628,
+    "id": 3871224984,
+    "node_id": "PRRC_kwDOUFxiEs7mvjSY",
+    "diff_hunk": "@@ -230,7 +161,140 @@ Persistent=true\n [Install]\n WantedBy=timers.target\n EOF_UNIT\n-chmod 0644 \"$SBM_SYSTEMD_DIR/$SBM_SERVICE\" \"$SBM_SYSTEMD_DIR\"/sb-*.service \"$SBM_SYSTEMD_DIR\"/sb-*.timer\n+  chmod 0644 \"$SBM_SYSTEMD_DIR/$SBM_SERVICE\" \"$SBM_SYSTEMD_DIR\"/sb-*.service \"$SBM_SYSTEMD_DIR\"/sb-*.timer\n+}\n+\n+write_periodic_job() {\n+  local schedule=$1 name=$2 command=$3 path\n+  path=\"$SBM_PERIODIC_DIR/$schedule/$name\"\n+  mkdir -p \"$(dirname \"$path\")\"\n+  cat >\"$path\" <<EOF_JOB\n+#!/bin/sh\n+exec $command >/dev/null 2>&1\n+EOF_JOB\n+  chmod 0755 \"$path\"\n+}\n+\n+write_openrc_runtime() {\n+  mkdir -p \"$SBM_OPENRC_DIR\" \"$SBM_LOG_DIR\"\n+  write_openrc_supervised_service \\\n+    \"$SBM_OPENRC_DIR/$(service_native_name \"$SBM_SERVICE\")\" \\\n+    'sb-manager sing-box' 'sb-manager managed sing-box service' \\\n+    \"$SBM_SING_BOX_BIN\" \"run -c $SBM_CONFIG\" \"$SBM_SERVICE_USER\" \\\n+    \"$SBM_SINGBOX_LOG\" \"$SBM_SINGBOX_ERROR_LOG\" 'after firewall'\n+  write_periodic_job daily sb-core-update \"$SBM_BIN_DIR/sb core auto\"\n+  write_periodic_job daily sb-acme-renew \"$SBM_BIN_DIR/sb cert renew --quiet\"\n+}\n+\n+scheduler_reconcile() {\n+  [[ \"$NO_START\" == 0 && \"$TEST_MODE\" != 1 ]] || return 0\n+  case \"$(init_system)\" in\n+    systemd)\n+      systemctl enable --now sb-core-update.timer sb-acme-renew.timer\n+      ;;\n+    openrc)\n+      if service_exists crond; then\n+        service_enable crond || true\n+        service_active crond || service_start crond || log_warn '无法启动 crond；自动更新和证书续期定时任务不会运行。'\n+      else\n+        log_warn '未发现 crond OpenRC 服务；自动更新和证书续期定时任务不会运行。'\n+      fi\n+      ;;\n+  esac\n+}\n+\n+printf '[1/7] 安装依赖…\\n'\n+[[ \"$TEST_MODE\" == 1 ]] || install_dependencies\n+\n+printf '[2/7] 安装程序文件…\\n'\n+mkdir -p \"$TARGET_LIB\" \"$TARGET_BIN\"\n+chmod 0755 \"$(dirname \"$TARGET_LIB\")\" \"$TARGET_LIB\" \"$TARGET_BIN\"\n+src_real=$(readlink -f \"$SRC_DIR\")\n+target_real=$(readlink -m \"$TARGET_LIB\")\n+if [[ \"$src_real\" != \"$target_real\" ]]; then\n+  if [[ -f \"$TARGET_LIB/sb\" ]]; then\n+    backup=\"$PROGRAM_BACKUP_ROOT/program-$(date -u +%Y%m%dT%H%M%SZ)\"\n+    mkdir -p \"$backup\"\n+    cp -a \"$TARGET_LIB\" \"$backup/\" || true\n+  fi\n+  find \"$TARGET_LIB\" -mindepth 1 -maxdepth 1 ! -name cores -exec rm -rf {} + 2>/dev/null || true\n+  cp -a \"$SRC_DIR\"/. \"$TARGET_LIB\"/\n+  rm -rf \"$TARGET_LIB/.git\"\n+else\n+  printf '      检测到从已安装目录执行，跳过自覆盖复制。\\n'\n+fi\n+find \"$TARGET_LIB/lib\" \"$TARGET_LIB/protocols\" -type d -exec chmod 0755 {} +\n+chmod 0755 \"$TARGET_LIB\" \"$TARGET_LIB/sb\" \"$TARGET_LIB/setup.sh\" \"$TARGET_LIB/install.sh\" \"$TARGET_LIB/build-standalone.sh\" \"$TARGET_LIB/lib/\"*.sh \"$TARGET_LIB/protocols/\"*.sh\n+ln -sfn \"$TARGET_LIB/sb\" \"$TARGET_BIN/sb\"\n+\n+# shellcheck source=lib/common.sh\n+source \"$TARGET_LIB/lib/common.sh\"\n+source \"$TARGET_LIB/lib/service.sh\"\n+source \"$TARGET_LIB/lib/state.sh\"\n+source \"$TARGET_LIB/protocols/vmess_ws_cf.sh\"\n+source \"$TARGET_LIB/protocols/shadowsocks.sh\"\n+source \"$TARGET_LIB/protocols/anytls.sh\"\n+source \"$TARGET_LIB/protocols/hysteria2.sh\"\n+source \"$TARGET_LIB/lib/render.sh\"\n+source \"$TARGET_LIB/lib/core.sh\"\n+source \"$TARGET_LIB/lib/tunnel.sh\"\n+\n+if [[ \"$TEST_MODE\" != 1 ]]; then require_init_system; fi\n+BACKEND=$(init_system 2>/dev/null || true)\n+[[ \"$BACKEND\" != none && -n \"$BACKEND\" ]] || BACKEND=${SBM_TEST_INIT_BACKEND:-systemd}\n+\n+printf '[3/7] 创建低权限服务用户和数据目录…\\n'\n+create_service_account\n+state_init\n+mkdir -p \"$SBM_VAR/cloudflared-home\" \"$SBM_LOG_DIR\"\n+chown root:\"$SBM_SERVICE_USER\" \"$SBM_ETC\" \"$SBM_GENERATED_DIR\" \"$SBM_CERTS\" 2>/dev/null || true\n+chown root:\"$SBM_SERVICE_USER\" \"$SBM_VAR\" 2>/dev/null || true\n+chown root:root \"$SBM_RUN\" 2>/dev/null || true\n+chown \"$SBM_SERVICE_USER\":\"$SBM_SERVICE_USER\" \"$SBM_VAR/cloudflared-home\" \"$SBM_LOG_DIR\" 2>/dev/null || true\n+chmod 0750 \"$SBM_ETC\" \"$SBM_GENERATED_DIR\" \"$SBM_CERTS\" \"$SBM_VAR\" \"$SBM_VAR/cloudflared-home\" \"$SBM_LOG_DIR\"\n+chown root:\"$SBM_SERVICE_USER\" \"$SBM_SECRETS\" 2>/dev/null || true\n+chmod 0710 \"$SBM_SECRETS\"\n+chmod 0700 \"$SBM_SECRETS/nodes\"\n+\n+printf '[4/7] 安装 sing-box 核心…\\n'\n+if [[ \"$TEST_MODE\" == 1 ]]; then\n+  test_version=$(${SBM_TEST_SING_BOX:?} version | grep -Eo '[0-9]+\\.[0-9]+\\.[0-9]+' | head -n1)\n+  mkdir -p \"$SBM_CORE_DIR/sing-box/$test_version\"\n+  install -m 0755 \"$SBM_TEST_SING_BOX\" \"$SBM_CORE_DIR/sing-box/$test_version/sing-box\"\n+  sb_binary=\"$SBM_CORE_DIR/sing-box/$test_version/sing-box\"\n+else\n+  sb_binary=$(core_download_version \"$CORE_VERSION\")\n+fi\n+validate_runtime_binary_path sing-box \"$sb_binary\"\n+ensure_program_permissions\n+if [[ \"$BACKEND\" == openrc ]]; then ensure_singbox_bind_capability \"$sb_binary\"; fi\n+ln -sfn \"$sb_binary\" \"$SBM_SING_BOX_BIN.new\"; mv -Tf \"$SBM_SING_BOX_BIN.new\" \"$SBM_SING_BOX_BIN\"\n+\n+printf '[5/7] 安装 cloudflared…\\n'\n+if [[ \"$TEST_MODE\" == 1 ]]; then\n+  mkdir -p \"$SBM_CORE_DIR/cloudflared/test\"\n+  cat >\"$SBM_CORE_DIR/cloudflared/test/cloudflared\" <<'EOF_CF'\n+#!/usr/bin/env bash\n+echo 'cloudflared version 2026.1.0'\n+EOF_CF\n+  chmod +x \"$SBM_CORE_DIR/cloudflared/test/cloudflared\"\n+  cf_binary=\"$SBM_CORE_DIR/cloudflared/test/cloudflared\"\n+else\n+  cf_binary=$(cloudflared_download_latest)\n+fi\n+validate_runtime_binary_path cloudflared \"$cf_binary\"\n+ensure_program_permissions\n+ln -sfn \"$cf_binary\" \"$SBM_CLOUDFLARED_BIN.new\"; mv -Tf \"$SBM_CLOUDFLARED_BIN.new\" \"$SBM_CLOUDFLARED_BIN\"\n+ensure_program_permissions\n+if [[ \"$BACKEND\" == openrc ]]; then ensure_singbox_bind_capability \"$sb_binary\"; fi",
+    "path": "setup.sh",
+    "commit_id": "6d9bc274f6504a7f5013391ba3206f0d99e1a8c3",
+    "original_commit_id": "de4ee1d531550d955a769cc6c7776ae3ec33c955",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "ensure_singbox_bind_capability is applied twice for the same sing-box binary during install (once right after core install, then again after cloudflared). This is redundant work and makes the install flow harder to reason about.",
+    "created_at": "2026-08-27T11:21:52Z",
+    "updated_at": "2026-08-27T11:21:52Z",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/2#discussion_r3871224984",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/2",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224984"
+      },
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/2#discussion_r3871224984"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/2"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871224984/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 287,
+    "original_start_line": 286,
+    "start_side": "RIGHT",
+    "line": 290,
+    "original_line": 289,
+    "side": "RIGHT",
+    "author_association": "NONE",
+    "original_position": 346,
+    "position": 347,
+    "subject_type": "line"
+  }
+]

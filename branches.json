@@ -1,0 +1,155 @@
+[
+  {
+    "name": "feat/alpine-openrc",
+    "commit": {
+      "sha": "6d9bc274f6504a7f5013391ba3206f0d99e1a8c3",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/6d9bc274f6504a7f5013391ba3206f0d99e1a8c3"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/feat/alpine-openrc/protection"
+  },
+  {
+    "name": "feat/protocol-expansion-public-ip",
+    "commit": {
+      "sha": "5a95e55f036239c2280f92d9201b0e9b880af915",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/5a95e55f036239c2280f92d9201b0e9b880af915"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/feat/protocol-expansion-public-ip/protection"
+  },
+  {
+    "name": "feat/public-ip-and-protocol-suite",
+    "commit": {
+      "sha": "b0f7fc3116a585f7584d4fd52418d11c1d46135d",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/b0f7fc3116a585f7584d4fd52418d11c1d46135d"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/feat/public-ip-and-protocol-suite/protection"
+  },
+  {
+    "name": "fix/debian13-install-lifecycle",
+    "commit": {
+      "sha": "d97f6f25880778a899d7c4e7168a946c672b9765",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/d97f6f25880778a899d7c4e7168a946c672b9765"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/fix/debian13-install-lifecycle/protection"
+  },
+  {
+    "name": "fix/download-retry-failfast",
+    "commit": {
+      "sha": "a52324272109e0e042be40bf197175eab7e2b45f",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/a52324272109e0e042be40bf197175eab7e2b45f"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/fix/download-retry-failfast/protection"
+  },
+  {
+    "name": "fix/systemd-af-netlink",
+    "commit": {
+      "sha": "ab1c5fd03229e9f716e9a9c0fd510294ff40a073",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/ab1c5fd03229e9f716e9a9c0fd510294ff40a073"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/fix/systemd-af-netlink/protection"
+  },
+  {
+    "name": "fix/systemd-exec-permission",
+    "commit": {
+      "sha": "383544fb1925d2e72e7d07242b49654b68de1a3b",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/383544fb1925d2e72e7d07242b49654b68de1a3b"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/fix/systemd-exec-permission/protection"
+  },
+  {
+    "name": "fix/systemd-upgrade-permissions",
+    "commit": {
+      "sha": "7bff1381f3c6a2188822e8abc4fcfe696f5b4b99",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/7bff1381f3c6a2188822e8abc4fcfe696f5b4b99"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/fix/systemd-upgrade-permissions/protection"
+  },
+  {
+    "name": "main",
+    "commit": {
+      "sha": "743da99a26cacd2c9541197fdffef5a7ccfe37ec",
+      "url": "https://api.github.com/repos/wugan666/sb-manager/commits/743da99a26cacd2c9541197fdffef5a7ccfe37ec"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/wugan666/sb-manager/branches/main/protection"
+  }
+]

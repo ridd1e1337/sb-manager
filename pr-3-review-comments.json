@@ -1,0 +1,71 @@
+[
+  {
+    "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871782239",
+    "pull_request_review_id": 5040868399,
+    "id": 3871782239,
+    "node_id": "PRRC_kwDOUFxiEs7mxrVf",
+    "diff_hunk": "@@ -0,0 +1,84 @@\n+#!/usr/bin/env bash\n+set -Eeuo pipefail\n+ROOT=$(mktemp -d)\n+trap 'rm -rf \"$ROOT\"' EXIT\n+PROJECT=$(cd -- \"$(dirname -- \"${BASH_SOURCE[0]}\")/..\" && pwd)\n+\n+export SBM_PREFIX=\"$ROOT/usr/local\"\n+export SBM_LIB=\"$PROJECT\"\n+export SBM_BIN_DIR=\"$ROOT/usr/local/bin\"\n+export SBM_ETC=\"$ROOT/etc/sb-manager\"\n+export SBM_VAR=\"$ROOT/var/lib/sb-manager\"\n+export SBM_RUN=\"$ROOT/run/sb-manager\"\n+export SBM_CORE_DIR=\"$ROOT/usr/local/lib/sb-manager/cores\"\n+export SBM_SING_BOX_BIN=\"$SBM_BIN_DIR/sing-box\"\n+export SBM_SERVICE_USER=sbmanager\n+export SBM_INIT_SYSTEM=systemd\n+export SBM_INIT_SYSTEM_RESOLVED=systemd\n+export SBM_SKIP_INIT=0\n+export SBM_FAKE_CAP_MARKER=\"$ROOT/capability.marker\"\n+export SBM_FAKE_SYSTEMD_RUN_LOG=\"$ROOT/systemd-run.log\"\n+export NO_COLOR=1\n+\n+mkdir -p \"$ROOT/fake-bin\" \"$SBM_BIN_DIR\" \"$SBM_CORE_DIR/sing-box/1.13.19\" \"$SBM_RUN\" \"$SBM_ETC\"\n+cat >\"$SBM_CORE_DIR/sing-box/1.13.19/sing-box\" <<'EOF_CORE'\n+#!/usr/bin/env bash\n+printf 'sing-box version 1.13.19\\n'\n+EOF_CORE\n+chmod 0755 \"$SBM_CORE_DIR/sing-box/1.13.19/sing-box\"\n+ln -s \"$SBM_CORE_DIR/sing-box/1.13.19/sing-box\" \"$SBM_SING_BOX_BIN\"\n+\n+cat >\"$ROOT/fake-bin/getcap\" <<'EOF_GETCAP'\n+#!/usr/bin/env bash\n+if [[ -f \"$SBM_FAKE_CAP_MARKER\" ]]; then\n+  printf '%s cap_net_bind_service=ep\\n' \"$1\"\n+fi\n+EOF_GETCAP\n+cat >\"$ROOT/fake-bin/setcap\" <<'EOF_SETCAP'\n+#!/usr/bin/env bash\n+if [[ ${1:-} == -r ]]; then\n+  rm -f \"$SBM_FAKE_CAP_MARKER\"\n+else\n+  : >\"$SBM_FAKE_CAP_MARKER\"\n+fi\n+EOF_SETCAP\n+cat >\"$ROOT/fake-bin/systemctl\" <<'EOF_SYSTEMCTL'\n+#!/usr/bin/env bash\n+[[ ${1:-} == show-environment ]] && exit 0\n+exit 0\n+EOF_SYSTEMCTL\n+cat >\"$ROOT/fake-bin/systemd-run\" <<'EOF_SYSTEMD_RUN'\n+#!/usr/bin/env bash\n+printf '%s\\n' \"$@\" >\"$SBM_FAKE_SYSTEMD_RUN_LOG\"\n+exit 0\n+EOF_SYSTEMD_RUN\n+chmod 0755 \"$ROOT/fake-bin/\"*\n+export PATH=\"$ROOT/fake-bin:$PATH\"\n+\n+# shellcheck source=lib/common.sh\n+source \"$PROJECT/lib/common.sh\"\n+source \"$PROJECT/lib/service.sh\"\n+source \"$PROJECT/lib/runtime-security.sh\"\n+\n+# A stale OpenRC file capability must be removed before a systemd unit with\n+# NoNewPrivileges starts the binary.\n+: >\"$SBM_FAKE_CAP_MARKER\"\n+prepare_singbox_binary_for_backend \"$SBM_SING_BOX_BIN\" systemd\n+[[ ! -e \"$SBM_FAKE_CAP_MARKER\" ]]\n+[[ -z $(singbox_file_capabilities \"$SBM_SING_BOX_BIN\") ]]\n+\n+# OpenRC still receives the one narrowly-scoped capability it needs.\n+prepare_singbox_binary_for_backend \"$SBM_SING_BOX_BIN\" openrc\n+[[ -e \"$SBM_FAKE_CAP_MARKER\" ]]\n+\n+# Switching back to systemd removes it again and the transient preflight uses\n+# the same critical execution restrictions as the permanent unit.\n+prepare_singbox_binary_for_backend \"$SBM_SING_BOX_BIN\" systemd\n+systemd_exec_preflight \"$SBM_SING_BOX_BIN\"\n+grep -Fxq 'NoNewPrivileges=yes' \"$SBM_FAKE_SYSTEMD_RUN_LOG\"\n+grep -Fxq 'AmbientCapabilities=CAP_NET_BIND_SERVICE' \"$SBM_FAKE_SYSTEMD_RUN_LOG\"\n+grep -Fxq 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' \"$SBM_FAKE_SYSTEMD_RUN_LOG\"\n+grep -Fxq 'User=sbmanager' \"$SBM_FAKE_SYSTEMD_RUN_LOG\"",
+    "path": "tests/systemd-exec-smoke.sh",
+    "commit_id": "877ef22baecc2180405ffe548c49d53ce275c362",
+    "original_commit_id": "877ef22baecc2180405ffe548c49d53ce275c362",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "The fake systemd-run logger records the full argv entries, but the assertions look for property values without the leading `--property=` prefix, so these greps will fail even when `systemd_exec_preflight` is correct.",
+    "created_at": "2026-08-27T12:42:04Z",
+    "updated_at": "2026-08-27T12:42:04Z",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/3#discussion_r3871782239",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/3",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871782239"
+      },
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/3#discussion_r3871782239"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/3"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/wugan666/sb-manager/pulls/comments/3871782239/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": 78,
+    "start_side": "RIGHT",
+    "line": null,
+    "original_line": 81,
+    "side": "RIGHT",
+    "author_association": "NONE",
+    "original_position": 81,
+    "position": 1,
+    "subject_type": "line"
+  }
+]

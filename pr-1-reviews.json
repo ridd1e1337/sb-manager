@@ -1,0 +1,42 @@
+[
+  {
+    "id": 5039608669,
+    "node_id": "PRR_kwDOUFxiEs8AAAABLGJTXQ",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "### 🟡 Changes recommended\n\n`lib/uninstall.sh` 的 symlink 清理逻辑仅匹配 `$SBM_LIB/` 目标，可能在自定义 `SBM_CORE_DIR` 场景下留下由本项目创建的残留链接。\n\n*Once you've addressed the issues Copilot identified, you can request another Copilot review.*\n\n<details>\n<summary>Pull request overview</summary>\n\n本 PR 聚焦于提升 Debian 13 上的首次安装可靠性、sing-box/systemd 服务生命周期的“待机/自启”一致性，并补齐 `sb doctor` 的诊断与自动修复能力，同时提供可自动化的完整卸载/彻底清理路径与配套回归测试。\n\n**Changes:**\n- 将下载/安装过程中的进度日志从 stdout 挪到 stderr，并对核心/组件安装结果与 symlink 目标做更严格校验，避免首次安装需重复执行。\n- 引入“无启用节点=正常待机”的服务协调逻辑（自动 disable/stop；首个启用节点后 enable/restart），并增强 `sb doctor` 输出与新增 `--repair`/`sb repair`。\n- 新增彻底卸载（含 `--yes` 非交互）与面板入口，补齐 Debian 13、首次下载、服务生命周期、doctor 完整输出、彻底卸载等回归测试与 CI job。\n</details>\n\n<details>\n<summary>File summaries</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| VERSION | 版本号升级到 0.1.0-alpha.2 |\r\n| setup.sh | 安装流程增强：依赖补齐、权限/可执行性校验、服务协调、避免自覆盖复制 |\r\n| sb | CLI 增强：`doctor --repair`/`repair`、`uninstall --purge --yes`、`restart` 改为服务协调 |\r\n| README.md | 文档补充：卸载与诊断/修复用法说明，更新版本号与功能描述 |\r\n| lib/common.sh | 版本读取改为从 VERSION 文件；`log_info` 改 stderr；新增权限/服务诊断与路径校验函数 |\r\n| lib/core.sh | 下载/切换核心与 cloudflared 时增加权限修复与路径校验，避免命令替换污染 |\r\n| lib/state.sh | 新增启用节点计数与 `singbox_service_reconcile`，并在配置/核心切换路径中使用 |\r\n| lib/doctor.sh | 修复 `set -e` 下计数导致的提前退出问题；新增 `doctor_repair_runtime` 与更完整诊断 |\r\n| lib/uninstall.sh | 卸载增强：支持 `--yes`、更谨慎处理系统用户/组、单位列表化、移除托管 symlink |\r\n| lib/ui.sh | UI 展示“待机”服务状态；新增诊断/修复菜单与卸载/彻底清理菜单 |\r\n| lib/cert.sh | 证书 hook 仅在服务运行时 reload/restart，避免唤醒待机服务 |\r\n| CHANGELOG.md | 增加 0.1.0-alpha.2 变更记录 |\r\n| tests/service-lifecycle.sh | 新增：待机/启用节点后启动/禁用后回待机的生命周期测试（伪 systemctl） |\r\n| tests/install-smoke.sh | 新增：root/sudo 自适配、symlink 安全检查、低权限用户可遍历/读取、损坏 state 下 purge 卸载验证 |\r\n| tests/doctor-smoke.sh | 新增：doctor 在 warning 场景仍完成总结输出的回归测试 |\r\n| tests/core-download-smoke.sh | 增强：验证下载函数返回值不含换行（避免命令替换污染） |\r\n| .github/workflows/ci.yml | 新增 doctor/lifecycle/first-download regression steps 与 Debian 13 容器 smoke job |\n</details>\n\n<details>\n<summary>Review details</summary>\n\n- **Files reviewed:** 17/17 changed files\n- **Comments generated:** 1\n- **Review effort level:** Lite\n</details>\n\n---\n\n💡 <a href=\"/R1ddle1337/sb-manager/new/main?filename=.github/skills/code-review/SKILL.md\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href=\"https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review#mcp-servers-and-agent-skills\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Learn more in the docs.</a>",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/wugan666/sb-manager/pull/1#pullrequestreview-5039608669",
+    "pull_request_url": "https://api.github.com/repos/wugan666/sb-manager/pulls/1",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/wugan666/sb-manager/pull/1#pullrequestreview-5039608669"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/wugan666/sb-manager/pulls/1"
+      }
+    },
+    "submitted_at": "2026-08-27T10:11:08Z",
+    "commit_id": "704c8366db74f2abf6fb2c01fd26ecbd9b76e0e4"
+  }
+]
