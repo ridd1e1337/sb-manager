@@ -5,6 +5,7 @@ state_default_json() {
   jq -n \
     --arg version "$SBM_VERSION" \
     --arg now "$(now_iso)" \
+    --argjson manager_update_minute "$((RANDOM % 180))" \
     '{
       schema_version: 2,
       manager_version: $version,
@@ -23,6 +24,8 @@ state_default_json() {
         dns_timeout: "10s",
         core_channel: "stable",
         core_update_policy: "notify",
+        manager_auto_update: true,
+        manager_update_minute: $manager_update_minute,
         cloudflared_update_policy: "notify"
       },
       tunnel: {
@@ -178,8 +181,10 @@ state_migrate() {
 state_normalize_v2_file() {
   local file=$1 tmp
   tmp=$(mktemp "$(dirname "$file")/.state-normalize.XXXXXX")
-  jq '
+  jq --argjson manager_update_minute "$((RANDOM % 180))" '
     .settings.default_server_address_source //= (if .settings.default_server_address=="" then "auto" else "manual" end)
+    | if .settings.manager_auto_update==null then .settings.manager_auto_update=true else . end
+    | .settings.manager_update_minute //= $manager_update_minute
     | .settings.public_ipv4 //= ""
     | .settings.public_ipv6 //= ""
     | .settings.public_ip_detected_at //= null
@@ -306,6 +311,7 @@ state_migrate_v1_to_v2() {
         | if .protocol=="shadowsocks" then .credential_mode="legacy" else . end
       )
   ' "$SBM_STATE" >"$candidate"
+  state_normalize_v2_file "$candidate" || return 1
   state_validate "$candidate"
   rm -rf -- "$SBM_SECRETS"
   mv -f "$staged" "$SBM_SECRETS"
@@ -434,6 +440,8 @@ state_validate() {
       and (.dns_timeout | type == "string" and test("^[0-9]+(ms|s|m|h|d)$"))
       and (.core_channel | IN("stable", "preview"))
       and (.core_update_policy | IN("manual", "notify", "patch", "stable"))
+      and (.manager_auto_update | type == "boolean")
+      and (.manager_update_minute | type == "number" and floor==. and .>=0 and .<180)
       and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable")))
     and (.tunnel | type == "object"
       and (.mode | IN("none", "fixed", "quick", "managed"))
@@ -698,6 +706,7 @@ snapshot_restore() {
     subscription_reconcile 1 || return 1
   fi
   if [[ -f "$snapshot/substore-restore-scope" ]] && declare -F substore_reconcile >/dev/null 2>&1; then substore_reconcile 1 || return 1; fi
+  if declare -F manager_auto_reconcile >/dev/null 2>&1; then manager_auto_reconcile || return 1; fi
 }
 
 _state_transaction_run() {

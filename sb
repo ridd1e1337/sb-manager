@@ -140,6 +140,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
   sb update [--check]             更新脚本本身（保留核心、节点、密钥和证书）
+  sb update auto enable|disable|status [--json]|run  每日脚本自动更新（默认开启）
   sb cloudflared status|install|update|policy <manual|notify|patch|stable>
   sb deps status [--json]|install <low-port|traffic|subscription|bbr|probe|scheduler|logrotate|benchmark|shaping|substore>
   sb acme update
@@ -185,7 +186,7 @@ main() {
     -V|--version|version) printf 'sb-manager %s\n' "$SBM_VERSION"; return 0;;
     tcp) shift; require_command jq; tcp_tuning_cli "$@"; return $?;;
     network) shift; require_command jq; network_cli "$@"; return $?;;
-    update) shift; manager_update "$@"; return $? ;;
+    update) shift; manager_update_cli "$@"; return $? ;;
     uninstall)
       require_root
       local purge=0 assume_yes=${SBM_ASSUME_YES:-0} arg

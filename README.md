@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.39`。
+> 当前版本：`0.1.0-alpha.40`。
 
 ## 功能
 
@@ -15,6 +15,7 @@
 - 可选 Nginx Stream SNI 透传，让多个 TLS/TCP 协议共享一个公网端口
 - acme.sh + Cloudflare DNS-01 证书申请、部署与续期
 - sing-box 核心检查、自动更新策略、版本切换与回滚
+- 管理器脚本默认每日错峰自动更新；手动关闭后，后续升级保留关闭设置
 - 默认安装和 `sb core update` 自动解析 GitHub 最新 sing-box Release（API 暂不可用时使用已校验 fallback）；需要复现时仍可用 `--core-version VERSION` 固定版本
 - 生产环境可设置 `SBM_REQUIRE_INSTALL_SHA256=1`，强制 bootstrap 安装提供 `SBM_INSTALL_SHA256` 后才会执行源码归档
 - Hysteria2 官方 UDP 缓冲区优化的一键开启、状态查看和恢复
@@ -147,7 +148,7 @@ apk add --no-cache bash curl ca-certificates
 bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh)
 ```
 
-安装器默认使用 `minimal` 依赖档位：只补齐管理器和 sing-box 所需的 Bash、curl、证书、jq、OpenSSL、基础文本工具，以及 Alpine 运行官方 glibc ABI 核心所需的 `gcompat`。sing-box 版本默认实时解析 GitHub 最新的非 draft Release，不在安装器里固定版本；只有 Release API 不可用时才回退到内置、已校验的 `1.14.0`。OpenRC 使用 root 运行 sing-box，以兼容 Alpine 容器和部分 VPS 内核禁用文件能力的情况；不会默认下载 Cloudflared，也不会预装 Python、nftables、kmod、dcron 或 Nginx。
+安装器默认使用 `minimal` 依赖档位：补齐管理器和 sing-box 所需的 Bash、curl、证书、jq、OpenSSL、基础文本工具，以及 Alpine 运行官方 glibc ABI 核心所需的 `gcompat`。sing-box 版本默认实时解析 GitHub 最新的非 draft Release，不在安装器里固定版本；只有 Release API 不可用时才回退到内置、已校验的 `1.14.0`。OpenRC 使用 root 运行 sing-box，以兼容 Alpine 容器和部分 VPS 内核禁用文件能力的情况；不会默认下载 Cloudflared，也不会预装 Python、nftables、kmod 或 Nginx。alpha.40 起，默认开启的脚本自动更新会在 Alpine 上按需安装并启动 dcron。
 
 Cloudflare Tunnel 和高级功能都是按需安装：
 
@@ -177,7 +178,7 @@ sb deps status
 
 其中 `cloudflared.log` 和 `cloudflared.err.log` 只有安装并启用 Tunnel 后才会创建。
 
-官方 sing-box Linux 核心使用 glibc ABI，Alpine 由 `gcompat` 提供运行时兼容。OpenRC 服务以 root 运行以确保 443 等低位端口在受限 VPS/容器内可用；systemd 仍以 `sbmanager` 低权限用户运行并通过 unit capability 绑定低位端口。自动更新和 ACME 续期使用 Alpine `dcron` 的 `/etc/periodic` 任务（未安装 dcron 时任务文件仍会保留，安装 `sb deps install scheduler` 后即可启用）。
+官方 sing-box Linux 核心使用 glibc ABI，Alpine 由 `gcompat` 提供运行时兼容。OpenRC 服务以 root 运行以确保 443 等低位端口在受限 VPS/容器内可用；systemd 仍以 `sbmanager` 低权限用户运行并通过 unit capability 绑定低位端口。自动更新和 ACME 续期使用 Alpine `dcron` 的 `/etc/periodic` 任务；脚本自动更新开启时会确保 crond 可用。使用 `--no-start` 时仅生成任务文件，不启动调度器。
 
 对于只有 1GB 磁盘的 Alpine VPS，建议保持 `minimal` 档位并按需启用组件。安装器会在下载/解压核心前检查空间（默认至少预留约 260MB，覆盖下载、解压和安装的瞬时峰值），默认只保留当前核心和一个回滚核心、两份程序升级备份；下载压缩包在校验和安装后立即删除。官方 1.14 amd64 核心（含 `libcronet.so`）安装后约占 90MB，Cloudflared 约占 40MB，因此不安装 Tunnel 可以直接省下这一大块空间。可通过 `SBM_CORE_RETENTION`、`SBM_PROGRAM_BACKUP_RETENTION` 调整保留数量。
 如果不希望功能命令自动调用包管理器，可设置 `SBM_AUTO_INSTALL_DEPENDENCIES=0`，然后按 `sb deps status` 提示手工安装；磁盘预检查阈值可用 `SBM_CORE_MIN_FREE_BYTES`（Cloudflared 对应 `SBM_CLOUDFLARED_MIN_FREE_BYTES`）调整。
@@ -208,6 +209,30 @@ sb update
 ```
 
 `sb update` 只更新管理器脚本和服务定义，不删除节点、密钥、证书或当前核心；失败时会恢复上一版程序。`sb core update` 是独立的 sing-box 核心升级命令。首次使用 `sb update` 前，如果是很早版本的安装，先重新执行一次上面的安装器以安装更新命令。
+
+### 多台服务器自动更新脚本
+
+**每台服务器手动升级到 alpha.40 一次，即默认开启，之后无需逐台执行更新命令。**
+新安装也默认开启；已经手动关闭的设置会跨升级保留。
+
+每台服务器首次生成一个 03:00–05:59 的每日时间，按服务器本地时区执行，之后保持不变。
+Debian/systemd 使用 `sb-manager-update.timer`；Alpine/OpenRC 每 15 分钟检查是否到点，
+每天最多自动尝试一次。GitHub 无新提交时不会重装或重启；有更新时通过 HTTPS 解析并固定
+`main` 的 commit SHA，再沿用安装器升级。当前 sing-box 核心保留，服务可能短暂重启。
+
+```bash
+sb update auto status         # 查看开关、时间、调度器和最近结果
+sb update auto disable        # 关闭后续自动更新
+sb update auto enable         # 重新开启
+sb update auto run            # 已开启时立即检查并更新一次
+```
+
+面板入口：“核心与组件更新 → 脚本每日自动更新”。关闭定时任务不会强行中断正在进行的安装。
+手动更新、自动更新和卸载使用互斥锁。失败记录到日志，下一天再尝试；可手动执行 `run` 重试。
+最近两次日志保存在 `/var/lib/sb-manager/updates/manager.log` 和 `manager.previous.log`，
+结果记录在同目录的 `manager.json`，权限均为 `0600`。此功能只控制管理器脚本，
+sing-box 核心仍遵循原有独立更新策略。使用 `--no-start` 时不会启用新定时任务，已有调度状态保留；
+首次启用需自行执行 `sb update auto enable`。
 
 安装完成后：
 

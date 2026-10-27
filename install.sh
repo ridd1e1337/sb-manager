@@ -52,7 +52,7 @@ trap cleanup EXIT INT TERM
 ARCHIVE="$TMPDIR_INSTALL/source.tar.gz"
 printf '正在下载 sb-manager（%s@%s）…\n' "$REPOSITORY" "$REF"
 curl --fail --location --silent --show-error \
-  --retry 3 --retry-delay 2 --connect-timeout 15 \
+  --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 600 \
   --proto '=https' --tlsv1.2 \
   "$ARCHIVE_URL" -o "$ARCHIVE"
 

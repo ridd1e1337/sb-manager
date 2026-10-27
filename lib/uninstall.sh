@@ -35,6 +35,7 @@ uninstall_manager() {
     message='确认卸载 sb-manager 程序？配置、证书、密钥和备份将保留'
   fi
   if [[ "$assume_yes" != 1 ]]; then confirm "$message" N || return 0; fi
+  manager_update_lock || die '脚本更新正在进行，暂不能卸载；请等待更新完成。'
 
   if [[ -f "$SBM_SHAPING_DIR/baseline.json" ]]; then
     with_lock shaping_restore || die "无法恢复 tc 队列；卸载已取消，请检查 $SBM_SHAPING_DIR。"
@@ -78,7 +79,7 @@ uninstall_manager() {
     service_disable "$SBM_TRAFFIC_SERVICE" || true
     service_stop "$SBM_TRAFFIC_SERVICE" || true
     if [[ "$backend" == systemd ]]; then
-      systemctl disable --now sb-core-update.timer sb-acme-renew.timer sb-quick-tunnel-refresh.timer sb-traffic-sync.timer sb-health-check.timer >/dev/null 2>&1 || true
+      systemctl disable --now sb-manager-update.timer sb-core-update.timer sb-acme-renew.timer sb-quick-tunnel-refresh.timer sb-traffic-sync.timer sb-health-check.timer >/dev/null 2>&1 || true
       systemctl reset-failed "$SBM_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" "$SBM_TRAFFIC_SERVICE" >/dev/null 2>&1 || true
     fi
   fi
@@ -91,6 +92,8 @@ uninstall_manager() {
     "$SBM_SYSTEMD_DIR/$SBM_NGINX_STREAM_SERVICE" \
     "$SBM_SYSTEMD_DIR/sb-core-update.service" \
     "$SBM_SYSTEMD_DIR/sb-core-update.timer" \
+    "$SBM_SYSTEMD_DIR/sb-manager-update.service" \
+    "$SBM_SYSTEMD_DIR/sb-manager-update.timer" \
     "$SBM_SYSTEMD_DIR/sb-acme-renew.service" \
     "$SBM_SYSTEMD_DIR/sb-acme-renew.timer" \
     "$SBM_SYSTEMD_DIR/sb-quick-tunnel-refresh.service" \
@@ -111,6 +114,7 @@ uninstall_manager() {
     "$SBM_PERIODIC_DIR/15min/sb-quick-tunnel-refresh" \
     "$SBM_PERIODIC_DIR/15min/sb-traffic-sync" \
     "$SBM_PERIODIC_DIR/15min/sb-health-check" \
+    "$SBM_PERIODIC_DIR/15min/sb-manager-update" \
     "$SBM_LOGROTATE_FILE"
   service_reload_manager || true
 

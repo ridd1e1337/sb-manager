@@ -35,18 +35,28 @@ setup_rollback_on_error() {
     cp -a "$SETUP_ROLLBACK_DIR/program"/. "$TARGET_LIB"/
     rm -f "$SETUP_SYSTEMD_DIR/sb-sing-box.service" "$SETUP_SYSTEMD_DIR/sb-cloudflared.service" "$SETUP_SYSTEMD_DIR/sb-nginx-stream.service" \
       "$SETUP_SYSTEMD_DIR/sb-core-update.service" "$SETUP_SYSTEMD_DIR/sb-core-update.timer" \
+      "$SETUP_SYSTEMD_DIR/sb-manager-update.service" "$SETUP_SYSTEMD_DIR/sb-manager-update.timer" \
       "$SETUP_SYSTEMD_DIR/sb-acme-renew.service" "$SETUP_SYSTEMD_DIR/sb-acme-renew.timer" \
       "$SETUP_SYSTEMD_DIR/sb-quick-tunnel-refresh.service" "$SETUP_SYSTEMD_DIR/sb-quick-tunnel-refresh.timer" \
       "$SETUP_SYSTEMD_DIR/sb-subscription.service" "$SETUP_SYSTEMD_DIR/sb-traffic.service" \
       "$SETUP_SYSTEMD_DIR/sb-traffic-sync.service" "$SETUP_SYSTEMD_DIR/sb-traffic-sync.timer" \
       "$SETUP_SYSTEMD_DIR/sb-health-check.service" "$SETUP_SYSTEMD_DIR/sb-health-check.timer"
     [[ ! -d "$SETUP_ROLLBACK_DIR/systemd" ]] || cp -a "$SETUP_ROLLBACK_DIR/systemd"/. "$SETUP_SYSTEMD_DIR"/
+    if [[ ! -f "$SETUP_ROLLBACK_DIR/systemd/sb-manager-update.timer" ]]; then
+      command -v systemctl >/dev/null 2>&1 && systemctl disable --now sb-manager-update.timer >/dev/null 2>&1 || true
+      rm -f "$SETUP_SYSTEMD_DIR/timers.target.wants/sb-manager-update.timer"
+    fi
     rm -f "$SETUP_OPENRC_DIR/sb-sing-box" "$SETUP_OPENRC_DIR/sb-cloudflared" "$SETUP_OPENRC_DIR/sb-nginx-stream" "$SETUP_OPENRC_DIR/sb-subscription" "$SETUP_OPENRC_DIR/sb-traffic"
     [[ ! -d "$SETUP_ROLLBACK_DIR/openrc" ]] || cp -a "$SETUP_ROLLBACK_DIR/openrc"/. "$SETUP_OPENRC_DIR"/
     rm -f "$SETUP_PERIODIC_DIR/15min/sb-health-check"
     if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-health-check" ]]; then
       mkdir -p "$SETUP_PERIODIC_DIR/15min"
       cp -a "$SETUP_ROLLBACK_DIR/periodic/sb-health-check" "$SETUP_PERIODIC_DIR/15min/sb-health-check"
+    fi
+    rm -f "$SETUP_PERIODIC_DIR/15min/sb-manager-update"
+    if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-manager-update" ]]; then
+      mkdir -p "$SETUP_PERIODIC_DIR/15min"
+      cp -a "$SETUP_ROLLBACK_DIR/periodic/sb-manager-update" "$SETUP_PERIODIC_DIR/15min/"
     fi
     command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
   fi
@@ -397,7 +407,8 @@ scheduler_reconcile() {
         service_enable crond || true
         service_active crond || service_start crond || log_warn '无法启动 crond；自动更新和证书续期定时任务不会运行。'
       else
-        log_info '未安装 dcron；已保留 periodic 任务，需自动更新/续期时运行 sb deps install scheduler。'
+        if manager_auto_enabled; then log_info '稍后会为脚本自动更新补齐 dcron 调度器。'
+        else log_info '未安装 dcron；已保留 periodic 任务，需自动更新/续期时运行 sb deps install scheduler。'; fi
       fi
       ;;
   esac
@@ -423,6 +434,7 @@ if [[ "$src_real" != "$target_real" ]]; then
     for path in "$SETUP_SYSTEMD_DIR"/sb-*.service "$SETUP_SYSTEMD_DIR"/sb-*.timer; do [[ ! -f "$path" ]] || cp -a "$path" "$backup/systemd/"; done
     for path in "$SETUP_OPENRC_DIR"/sb-*; do [[ ! -f "$path" ]] || cp -a "$path" "$backup/openrc/"; done
     [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-health-check" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-health-check" "$backup/periodic/"
+    [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-manager-update" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-manager-update" "$backup/periodic/"
     SETUP_MUTATED=1
     trap setup_rollback_on_error ERR
   fi
@@ -443,6 +455,7 @@ source "$TARGET_LIB/lib/common.sh"
 source "$TARGET_LIB/lib/dependencies.sh"
 source "$TARGET_LIB/lib/service.sh"
 source "$TARGET_LIB/lib/state.sh"
+source "$TARGET_LIB/lib/manager.sh"
 source "$TARGET_LIB/lib/nginx_stream.sh"
 source "$TARGET_LIB/protocols/vmess_ws_cf.sh"
 source "$TARGET_LIB/protocols/shadowsocks.sh"
@@ -507,18 +520,22 @@ current_core_version=$(core_current_version || true)
 if [[ "$KEEP_CORE" == 1 ]]; then
   sb_binary=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
   [[ -x "$sb_binary" ]] || die '--keep-core 需要已有 sing-box 核心；请重新运行普通安装。'
-elif [[ "$CORE_VERSION" == latest ]]; then
-  CORE_VERSION=$(core_latest_version) || die '无法查询 sing-box 最新官方版本。'
-  if [[ -n "$current_core_version" && "$current_core_version" != "$CORE_VERSION" ]] && version_ge "$current_core_version" "$CORE_VERSION"; then
-    log_warn "解析到的目标核心 $CORE_VERSION 不高于当前 $current_core_version，保留现有核心以避免意外降级。"
-    CORE_VERSION=$current_core_version
+else
+  if [[ "$CORE_VERSION" == latest ]]; then
+    CORE_VERSION=$(core_latest_version) || die '无法查询 sing-box 最新官方版本。'
+    if [[ -n "$current_core_version" && "$current_core_version" != "$CORE_VERSION" ]] && version_ge "$current_core_version" "$CORE_VERSION"; then
+      log_warn "解析到的目标核心 $CORE_VERSION 不高于当前 $current_core_version，保留现有核心以避免意外降级。"
+      CORE_VERSION=$current_core_version
+    fi
   fi
+  sb_binary=$(core_download_version "$CORE_VERSION")
 fi
-sb_binary=$(core_download_version "$CORE_VERSION")
 validate_runtime_binary_path sing-box "$sb_binary"
 ensure_program_permissions
 prepare_singbox_binary_for_backend "$sb_binary" "$BACKEND"
-ln -sfn "$sb_binary" "$SBM_SING_BOX_BIN.new"; mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN"
+if [[ "$KEEP_CORE" != 1 ]]; then
+  ln -sfn "$sb_binary" "$SBM_SING_BOX_BIN.new"; mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN"
+fi
 prepare_singbox_binary_for_backend "$SBM_SING_BOX_BIN" "$BACKEND"
 core_prune_cached_versions
 
@@ -609,6 +626,7 @@ fi
 if [[ -x "$SBM_CLOUDFLARED_BIN" ]] && declare -F cloudflared_prune_cached_versions >/dev/null 2>&1; then
   cloudflared_prune_cached_versions
 fi
+if [[ "$NO_START" == 1 ]]; then manager_auto_reconcile 0; else manager_auto_reconcile 1; fi
 prune_setup_backups
 
 printf '\n安装完成。\n'
@@ -616,6 +634,10 @@ printf '  服务管理：%s\n' "$BACKEND"
 printf '  安装档位：%s\n' "$INSTALL_PROFILE"
 printf '  面板命令：sb\n'
 printf '  快速创建：sb quick（准备证书、添加节点并获取导入内容）\n'
+if manager_auto_enabled; then
+  printf '  脚本自动更新：默认开启，每天约 %s（服务器本地时间）\n' "$(manager_auto_time)"
+  [[ "$NO_START" != 1 ]] || printf '  使用了 --no-start，本次不启用新定时任务；已有调度状态保留，可运行 sb update auto enable 启用。\n'
+else printf '  脚本自动更新：保持关闭（可运行 sb update auto enable 开启）\n'; fi
 printf '  状态检查：sb status\n'
 printf '  诊断命令：sb doctor（自动修复：sb doctor --repair）\n'
 printf '  数据目录：%s\n' "$SBM_ETC"

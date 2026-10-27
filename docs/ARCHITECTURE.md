@@ -98,7 +98,7 @@ On OpenRC, sing-box runs through `supervise-daemon` as root so low ports remain 
 
 ## Minimal installation and optional dependencies
 
-The default installer uses the `minimal` profile. It installs the manager's small command-line base, the sing-box core and the Alpine `gcompat`/OpenRC runtime, but does not download Cloudflared or install Python, nftables, kmod, dcron or Nginx. Feature modules call the dependency resolver immediately before use (`subscription`, `traffic`, `bbr`, `probe`, `scheduler`, and `logrotate`). This keeps the first boot suitable for a roughly 1GB disk while preserving the full feature set for larger hosts.
+The default installer uses the `minimal` profile. It installs the manager's small command-line base, the sing-box core and the Alpine `gcompat`/OpenRC runtime, but does not download Cloudflared or install Python, nftables, kmod or Nginx. Default-on manager updates install dcron on Alpine when needed. Other feature modules call the dependency resolver immediately before use (`subscription`, `traffic`, `bbr`, `probe`, `scheduler`, and `logrotate`). This keeps the first boot suitable for a roughly 1GB disk while preserving the full feature set for larger hosts.
 
 TCP tuning is an explicit host operation in `lib/tcp_tuning.sh`, independent of
 proxy state, BBR, and UDP tuning. It manages only `tcp_rmem`, `tcp_wmem`,
@@ -151,6 +151,22 @@ The feature is off by default. On systemd it uses a hardened unit; on OpenRC it 
 - OpenRC service scripts contain only paths and arguments; Tunnel tokens remain in a protected file.
 
 ## Update model
+
+Manager scripts use a default-on daily update policy in state. Each host keeps
+a staggered 03:00–05:59 local time. systemd supplies a persistent calendar timer;
+OpenRC supplies a 15-minute periodic job gated by the saved time and attempt day.
+The OpenRC scheduler installs/starts dcron when needed. Explicit opt-outs survive
+upgrades. With --no-start, new definitions stay inactive and existing scheduler
+activation is preserved.
+
+Manual and scheduled manager updates share a separate lock with uninstall.
+The installer child does not inherit that descriptor, so services it starts
+cannot retain the updater lock. Updates pin the GitHub main commit before
+download and invoke the installer with --keep-core. No new commit means no
+installation or proxy restart. The protected attempt journal is written before
+download to prevent repeated retries throughout the day; two private log files
+retain current and previous attempts. Scheduler policy changes use atomic state
+replacement and roll back their setting/definitions if reconciliation fails.
 
 Each sing-box version is kept under `cores/sing-box/<version>/`. `/usr/local/bin/sing-box` is an atomic symlink. A candidate binary must validate the current configuration before the symlink is switched. Service failure restores the previous target.
 

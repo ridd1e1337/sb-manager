@@ -13,7 +13,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_quick_add_node|ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_quick_add_node|ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -763,8 +763,8 @@ ui_tunnel_menu() {
 
 ui_update_menu() {
   local c p v path
-  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本更新\n11. 更新脚本本身（保留当前核心和节点）\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 11
+  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本更新\n11. 更新脚本本身（保留当前核心和节点）\n12. 脚本每日自动更新（默认开启）\n0. 返回\n'
+  ui_menu_choice c '选择操作' '0' 12
   case "$c" in
     1) core_check_update || true;; 2) core_update latest;; 3) prompt_value v '版本号，如 1.14.0-rc.1' ''; core_update "$v";; 4) core_rollback;;
     5) printf 'manual / notify / patch / stable\n'; prompt_value p '策略' "$(jq -r '.settings.core_update_policy' "$SBM_STATE")"; core_set_policy "$p";; 6) cloudflared_update;; 7) acme_update;;
@@ -772,6 +772,25 @@ ui_update_menu() {
     9) core_capabilities;;
     10) manager_update --check;;
     11) manager_update; if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then exit 203; else exec "$SBM_BIN_DIR/sb"; fi;;
+    12) ui_open_submenu ui_manager_auto_menu;;
+  esac
+}
+
+ui_manager_auto_menu() {
+  local choice
+  manager_auto_status
+  printf '\n1. 开启每日脚本自动更新\n2. 关闭每日脚本自动更新\n3. 立即执行一次自动更新检查\n4. 查看最近自动更新日志\n0. 返回\n'
+  ui_menu_choice choice '选择操作' '0' 4
+  case "$choice" in
+    1) manager_update_cli auto enable;;
+    2) manager_update_cli auto disable;;
+    3)
+      if ! manager_auto_enabled; then log_warn '请先开启自动更新，或使用上级菜单的“更新脚本本身”。'; return; fi
+      manager_auto_run
+      if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then exit 203; else exec "$SBM_BIN_DIR/sb"; fi;;
+    4)
+      if [[ -f "$SBM_VAR/updates/manager.log" ]]; then tail -n 80 "$SBM_VAR/updates/manager.log"
+      else log_info '尚无自动更新日志。'; fi;;
   esac
 }
 

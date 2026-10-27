@@ -45,6 +45,8 @@
         "public_ip_detected_at": {"type": ["string", "null"]},
         "core_channel": {"type": "string", "minLength": 1},
         "core_update_policy": {"enum": ["manual", "notify", "patch", "stable"]},
+        "manager_auto_update": {"type": "boolean", "default": true},
+        "manager_update_minute": {"type": "integer", "minimum": 0, "maximum": 179},
         "cloudflared_update_policy": {"type": "string", "minLength": 1}
       }
     },

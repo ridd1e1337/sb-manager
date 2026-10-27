@@ -119,6 +119,7 @@ _restore_backup() {
   candidate=$(state_candidate); cp "$stage/etc/state.json" "$candidate"
   state_prepare_protocol_credentials "$candidate" || { rm -f "$candidate"; return 1; }
   apply_candidate_state "$candidate" restore || { rm -f "$candidate"; return 1; }
+  manager_auto_reconcile || { rm -f "$candidate"; return 1; }
   rm -f "$candidate"
   mv -f "$SBM_TRAFFIC_USAGE.restore" "$SBM_TRAFFIC_USAGE"
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then

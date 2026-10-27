@@ -5,13 +5,15 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.34",
+  "manager_version": "0.1.0-alpha.40",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
     "outbound_ip_strategy": "prefer_ipv4",
     "core_channel": "stable",
-    "core_update_policy": "notify"
+    "core_update_policy": "notify",
+    "manager_auto_update": true,
+    "manager_update_minute": 47
   },
   "tunnel": {
     "mode": "fixed",
@@ -84,6 +86,13 @@ Simplified example:
 ```
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
+
+`settings.manager_auto_update` defaults to `true` only when missing/null;
+explicit `false` survives normalization and upgrades. `manager_update_minute`
+is an integer 0–179, generated once and retained, representing minutes after
+03:00 in the host's local timezone. These fields control manager scripts only;
+`core_update_policy` and `cloudflared_update_policy` remain independent.
+Last-attempt state and logs live under `var/updates/`, not in topology state.
 
 Notification provider choice and thresholds are non-secret state. Telegram tokens/chat IDs and Webhook URLs live only in `secrets/notifications.json` with mode `0600`. Delivery deduplication and the last health report are runtime journals under `/var/lib/sb-manager/`.
 

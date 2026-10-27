@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.40
+
+- Enable daily manager-script updates by default on first upgrade and fresh
+  installs; preserve explicit opt-outs and a per-server staggered local time.
+- Add systemd timer and OpenRC/dcron scheduling, panel controls, status, manual
+  runs, protected attempt records and two rotating logs. Failed scheduled
+  attempts retry the next day; update/uninstall operations share a lock.
+- Reconcile scheduling across installation, restore and uninstall, and retain
+  --no-start behavior. Alpine installs dcron when the default scheduler needs it.
+- Fix --keep-core entering the core download path; manager updates retain the
+  installed sing-box binary. Bound source archive download time.
+- Update state and operator documentation. Only static checks were performed;
+  no test scripts, environments or procedures were added.
+
 ## 0.1.0-alpha.39
 
 - Add `sb quick` and a guided node-creation path with protocol presets,
