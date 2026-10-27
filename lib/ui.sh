@@ -249,15 +249,20 @@ ui_select_node() {
   done < <(state_list_nodes)
   ((${#ids[@]} > 0)) || { log_warn '当前没有节点。'; return 1; }
   [[ "$allow_all" == 1 ]] && printf 'a. 全部节点\n'
-  printf 'm. 手动输入节点 ID\n0. 返回\n'
-  prompt_value choice '选择节点' '1'
+  printf 'm. 手动输入节点 ID\n0. 返回（直接按 Enter）\n'
+  # Returning from a node page redraws this list. An empty selection must not
+  # reopen the first node or repeat its share/export action.
+  prompt_value choice '选择节点（编号或 ID，Enter 返回）' '0' || return 1
   case "$choice" in
     0) return 1;;
     a|A)
       [[ "$allow_all" == 1 ]] || { log_error '选择无效'; return 1; }
       selected_id=all
       ;;
-    m|M) prompt_value selected_id '输入节点 ID' '';;
+    m|M)
+      prompt_value selected_id '输入节点 ID（留空返回）' '' || return 1
+      [[ -n "$selected_id" ]] || return 1
+      ;;
     * )
       if [[ "$choice" =~ ^[1-9][0-9]{0,5}$ ]] && (( choice <= ${#ids[@]} )); then
         selected_id=${ids[$((choice - 1))]}

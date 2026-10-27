@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.41
+
+- Make Enter return from node selection instead of selecting the first node,
+  preventing repeated navigation in node management and repeated share/export
+  actions when pressing Enter. Manual node-ID entry also returns when empty.
+- Clarify the node-selection prompt and document the navigation behavior.
+  Validation is limited to static checks; no test scripts or procedures added.
+
 ## 0.1.0-alpha.40
 
 - Enable daily manager-script updates by default on first upgrade and fresh
