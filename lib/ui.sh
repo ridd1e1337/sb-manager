@@ -2,13 +2,22 @@
 # shellcheck shell=bash
 
 ui_pause() {
-  [[ -t 0 ]] || return 0
-  printf '\n按 Enter 继续…'
-  read -r _ || { prompt_input_closed; return 1; }
+  local reply
+  [[ -t 0 ]] || return 206
+  while true; do
+    printf '\n按 Enter 返回主菜单；输入 r 留在当前菜单：'
+    read -r reply || return 201
+    case "$reply" in
+      ''|0|q) return 206;;
+      r|R) return 0;;
+      *) log_error '请按 Enter 返回主菜单，或输入 r 留在当前菜单。';;
+    esac
+  done
 }
 ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists clear && clear || true; }
 
-# Worker return codes: back, session exit, uninstalled, reload, cancel, redraw.
+# Worker return codes: back, session exit, uninstalled, reload, cancel, redraw,
+# and return to the main menu (200–206).
 # A fresh Bash process preserves errexit; wrapping functions in `if` or `||`
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
@@ -53,16 +62,19 @@ ui_end_session() {
 }
 
 ui_menu_loop() {
+  local pause_rc
   while true; do
     ui_run "$@"
     case "$SBM_UI_LAST_STATUS" in
       200) return 0;;
-      201|202|203) ui_end_session "$SBM_UI_LAST_STATUS"; return 0;;
+      201|202|203|206) ui_end_session "$SBM_UI_LAST_STATUS"; return 0;;
       204|205) continue;;
       0) ;;
       *) log_warn "操作未完成（退出码 $SBM_UI_LAST_STATUS），请检查上方提示后重试。";;
     esac
-    if ! ui_pause; then ui_end_session 201; return 0; fi
+    pause_rc=0
+    ui_pause || pause_rc=$?
+    if [[ "$pause_rc" != 0 ]]; then ui_end_session "$pause_rc"; return 0; fi
   done
 }
 
@@ -72,9 +84,10 @@ ui_open_submenu() {
 }
 
 ui_menu_choice() {
-  local __ui_max=${4:-} __ui_value
+  local __ui_max=${3:-} __ui_value
   while true; do
-    prompt_value "$1" "$2" "${3:-0}" || return 1
+    # Menu navigation never accepts an action merely because Enter was pressed.
+    prompt_value "$1" "$2（Enter / 0 返回）" '0' || return 1
     __ui_value=${!1}
     if [[ ${SBM_UI_WORKER:-0} == 1 && "$__ui_value" == 0 ]]; then exit 200; fi
     if [[ -z "$__ui_max" ]] || { [[ "$__ui_value" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( __ui_value <= __ui_max )); }; then return 0; fi
@@ -104,22 +117,27 @@ ui_select_json() {
   __ui_count=$(jq 'length' <<<"$__ui_items") || return 1
   if (( __ui_count == 0 )); then
     [[ "$__ui_new" == 1 ]] || { log_warn "没有可选的${__ui_label}。"; return 1; }
-    prompt_value "$__ui_var" "新建${__ui_label} ID" ''
+    prompt_value "$__ui_var" "新建${__ui_label} ID（留空返回）" '' || return 1
+    [[ -n ${!__ui_var} ]] || return 1
     return
   fi
-  __ui_index=$(jq -r --arg id "$__ui_default" 'to_entries|map(select(.value.id==$id))|if length>0 then (.[0].key+1|tostring) else "1" end' <<<"$__ui_items")
+  __ui_index=$(jq -r --arg id "$__ui_default" 'to_entries|map(select(.value.id==$id))|if length>0 then (.[0].key+1|tostring) else empty end' <<<"$__ui_items")
   while true; do
     jq -r 'to_entries[]|"\(.key+1). \(.value.label // .value.id)"' <<<"$__ui_items"
+    [[ -z "$__ui_index" ]] || printf '当前/推荐选项：%s（需输入编号选择）\n' "$__ui_index"
     [[ "$__ui_new" != 1 ]] || printf 'n. 新建\n'
-    printf 'm. 手动输入 ID\n0. 返回\n'
-    prompt_value __ui_choice "选择${__ui_label}" "$__ui_index" || return 1
+    printf 'm. 手动输入 ID\n0. 返回（直接按 Enter）\n'
+    prompt_value __ui_choice "选择${__ui_label}" '0' || return 1
     case "$__ui_choice" in
       0) return 1;;
       n)
         [[ "$__ui_new" == 1 ]] || { log_error '选择无效'; continue; }
-        prompt_value "$__ui_var" "新建${__ui_label} ID" ''
+        prompt_value "$__ui_var" "新建${__ui_label} ID（留空返回）" '' || return 1
+        [[ -n ${!__ui_var} ]] || return 1
         return;;
-      m) prompt_value __ui_id "${__ui_label} ID" '' || return 1;;
+      m)
+        prompt_value __ui_id "${__ui_label} ID（留空返回）" '' || return 1
+        [[ -n "$__ui_id" ]] || return 1;;
       *)
         if [[ "$__ui_choice" =~ ^[1-9][0-9]{0,5}$ ]] && (( __ui_choice <= __ui_count )); then
           __ui_id=$(jq -r --argjson i "$((__ui_choice-1))" '.[$i].id' <<<"$__ui_items")
@@ -146,9 +164,11 @@ ui_select_members() {
   [[ $(jq 'length' <<<"$__ui_data") != 0 ]] || { log_warn '当前没有节点。'; return 1; }
   while true; do
     jq -r 'to_entries[]|"\(.key+1). \(.value.label)"' <<<"$__ui_data"
-    printf '0. 返回\n'
-    prompt_value __ui_choice '选择成员（编号或 ID，以逗号分隔）' "$__ui_default" || return 1
+    [[ -z "$__ui_default" ]] || printf 'k. 保留当前成员（%s）\n' "$__ui_default"
+    printf '0. 返回（直接按 Enter）\n'
+    prompt_value __ui_choice '选择成员（编号或 ID，以逗号分隔）' '0' || return 1
     [[ "$__ui_choice" != 0 ]] || return 1
+    if [[ "$__ui_choice" == k && -n "$__ui_default" ]]; then __ui_choice=$__ui_default; fi
     IFS=, read -r -a __ui_tokens <<<"$__ui_choice"
     __ui_selected=(); __ui_seen=(); __ui_valid=1
     for __ui_token in "${__ui_tokens[@]}"; do
@@ -323,7 +343,7 @@ ui_select_certificate_domain() {
   while true; do
     if ((${#domains[@]} == 0)); then
       printf '还没有证书。输入域名即可在这里申请，无需返回其他菜单。\n'
-      prompt_value selected_domain '证书域名（如 edge.example.com；q 取消）' '' || return 1
+      prompt_value selected_domain '证书域名（如 edge.example.com；留空返回）' '' || return 1
     else
       printf '选择证书（可复用；过期证书会进入续签）：\n'
       for ((i=0; i<${#domains[@]}; i++)); do
@@ -333,10 +353,10 @@ ui_select_certificate_domain() {
           printf '%d. %s（剩余 %s 天）\n' "$((i + 1))" "$selected_domain" "$days"
         else printf '%d. %s（需要签发/续签）\n' "$((i + 1))" "$selected_domain"; fi
       done
-      printf 'n. 使用其他域名（自动复用或申请）\n0. 返回\n'
-      prompt_value choice '证书域名' '1' || return 1
+      printf 'n. 使用其他域名（自动复用或申请）\n0. 返回（直接按 Enter）\n'
+      prompt_value choice '证书域名' '0' || return 1
       case "$choice" in
-        n|N|m|M) prompt_value selected_domain '证书域名' '' || return 1;;
+        n|N|m|M) prompt_value selected_domain '证书域名（留空返回）' '' || return 1;;
         0) return 1;;
         *)
           if [[ "$choice" =~ ^[1-9][0-9]{0,5}$ ]] && (( choice <= ${#domains[@]} )); then
@@ -344,6 +364,7 @@ ui_select_certificate_domain() {
           else selected_domain=$choice; fi;;
       esac
     fi
+    [[ -n "$selected_domain" && "$selected_domain" != 0 ]] || return 1
     if validate_domain "$selected_domain"; then break; fi
     log_error '请输入有效域名，不要带 https://、端口或路径。'
   done
@@ -354,12 +375,12 @@ ui_select_certificate_domain() {
     ui_run ui_issue_certificate "$selected_domain" "$reset_credentials"
     case "$SBM_UI_LAST_STATUS" in
       0) break;;
-      201|202|203) ui_end_session "$SBM_UI_LAST_STATUS"; return 1;;
+      201|202|203|206) ui_end_session "$SBM_UI_LAST_STATUS"; return 1;;
       204) return 1;;
       *)
         log_error '证书申请未完成，尚未创建节点。'
         printf '1. 使用现有凭据重试\n2. 更新 Cloudflare DNS 凭据后重试\n0. 返回\n'
-        ui_menu_choice choice '下一步' '0' 2 || return 1
+        ui_menu_choice choice '下一步' 2 || return 1
         case "$choice" in 1) reset_credentials=0;; 2) reset_credentials=1;; *) return 1;; esac;;
     esac
   done
@@ -388,8 +409,12 @@ ui_prompt_port() {
 
 ui_prompt_server_address() {
   local __address_var=$1 __address_default=${2:-} __address_value
+  if ! { validate_ipv4 "$__address_default" || validate_ipv6 "$__address_default" || validate_domain "$__address_default"; }; then
+    __address_default=''
+  fi
   while true; do
     prompt_value __address_value '客户端连接地址（域名或公网 IP）' "$__address_default" || return 1
+    [[ -n "$__address_value" ]] || { ui_cancel; return 1; }
     if validate_ipv4 "$__address_value" || validate_ipv6 "$__address_value" || validate_domain "$__address_value"; then
       printf -v "$__address_var" '%s' "$__address_value"; return 0
     fi
@@ -405,7 +430,7 @@ ui_node_finish_menu() {
   printf '1. 再次显示链接和二维码\n2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址（所有启用节点）\n4. 管理这个节点\n5. 查看防火墙与协议端口\n'
   if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
   printf '0. 完成，返回主菜单\n'
-  ui_menu_choice choice '下一步' '0' "$max_choice"
+  ui_menu_choice choice '下一步' "$max_choice"
   case "$choice" in
     1) node_share "$id" 1;;
     2)
@@ -454,12 +479,12 @@ ui_add_node_and_deliver() {
 
 ui_quick_add_node() {
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '快速创建不支持 --dry-run；创建前会显示配置供确认。'
-  local choice protocol label kind=tcp domain='' certificate=0 reality=0 address port name action
+  local choice protocol label kind=tcp domain='' certificate=0 reality=0 address port name action value
   local -a args=() ports=(443 8443 9443 10443)
   printf '\n快速创建：选择协议，确认推荐配置，立即获取客户端导入内容。\n'
   printf '1. AnyTLS（已有域名或准备申请证书）\n2. Hysteria2（UDP，需要域名证书）\n3. Shadowsocks 2022（无需域名和证书）\n4. VLESS Reality（无需自有域名证书）\n5. Snell v5（无需证书，Surge/mihomo）\n6. Trojan（需要域名证书）\n7. TUIC（UDP，需要域名证书）\na. 全部协议 / 自定义高级参数\n0. 返回\n'
   while true; do
-    ui_menu_choice choice '选择协议' '1'
+    ui_menu_choice choice '选择协议'
     case "$choice" in
       1) protocol=anytls; label=AnyTLS; certificate=1; break;;
       2) protocol=hy2; label=Hysteria2; kind=udp; certificate=1; break;;
@@ -495,15 +520,15 @@ ui_quick_add_node() {
     if (( certificate )); then printf '3. 更换证书域名\n'; fi
     if (( reality )); then printf '3. 修改握手域名\n'; fi
     printf '0. 取消\n'
-    ui_menu_choice action '确认配置' '1' 3
+    ui_menu_choice action '确认配置' 3
     case "$action" in
       1) break;;
       2)
         prompt_value name '节点名称' "$name"
         ui_prompt_server_address address "$address"
         while true; do
-          prompt_value port '端口' "$port"
-          if validate_port "$port"; then port=$((10#$port)); break; fi
+          prompt_value value '端口' "$port"
+          if validate_port "$value"; then port=$((10#$value)); break; fi
           log_error '端口必须是 1–65535 的整数。'
         done;;
       3)
@@ -512,8 +537,8 @@ ui_quick_add_node() {
           address=$domain
         elif (( reality )); then
           while true; do
-            prompt_value domain 'Reality 握手域名' "$domain"
-            validate_domain "$domain" && break
+            prompt_value value 'Reality 握手域名' "$domain"
+            if validate_domain "$value"; then domain=$value; break; fi
             log_error '请输入有效握手域名。'
           done
         else log_error '这个协议不需要域名证书。'; fi;;
@@ -544,7 +569,7 @@ ui_add_node() {
     '10. Snell v5/v6（需要 sing-box 1.14+）' \
     '11. SOCKS5 / HTTP / mixed 认证代理' \
     '0. 返回'
-  ui_menu_choice choice '选择协议' '0' 11
+  ui_menu_choice choice '选择协议' 11
   case "$choice" in
     1)
       prompt_value name '节点名称' 'VMess WS Cloudflare'; prompt_value domain '固定 Tunnel 域名（Quick Tunnel 可留空）' ''; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
@@ -555,7 +580,7 @@ ui_add_node() {
       ;;
     2)
       prompt_value name '节点名称' 'Shadowsocks 2022'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 8388 8389 8390 8443
-      printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm（默认）\n3. 2022-blake3-chacha20-poly1305\n'; prompt_value method '选择方法' '2'
+      printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm（推荐）\n3. 2022-blake3-chacha20-poly1305\n'; ui_menu_choice method '选择方法' 3
       case "$method" in 1) method=2022-blake3-aes-128-gcm;; 2) method=2022-blake3-aes-256-gcm;; 3) method=2022-blake3-chacha20-poly1305;; *) log_error '选择无效'; return;; esac
       ui_add_node_and_deliver ss --name "$name" --address "$address" --port "$port" --method "$method"
       ;;
@@ -565,7 +590,7 @@ ui_add_node() {
       ;;
     4)
       prompt_value name '节点名称' 'Hysteria2'; ui_select_certificate_domain domain || { ui_cancel; return; }; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
-      printf '1. 不启用混淆（默认）\n2. Salamander\n3. Gecko（1.14+，可调包长）\n'; prompt_value hy2_obfs_choice '选择 Hysteria2 混淆' '1'
+      printf '1. 不启用混淆\n2. Salamander\n3. Gecko（1.14+，可调包长）\n'; ui_menu_choice hy2_obfs_choice '选择 Hysteria2 混淆' 3
       local -a hy2_args=(hy2 --name "$name" --domain "$domain" --address "$address" --port "$port")
       case "$hy2_obfs_choice" in
         1) ;;
@@ -577,7 +602,7 @@ ui_add_node() {
       esac
       prompt_value hy2_disable_chrome '关闭 Chrome QUIC 指纹伪装？(y/N)' 'N'
       [[ "$hy2_disable_chrome" =~ ^[Yy]$ ]] && hy2_args+=(--disable-chrome-parrot)
-      printf '1. standard（默认）\n2. conservative\n3. aggressive\n4. 不显式设置\n'; prompt_value hy2_bbr_profile 'BBR profile' '4'
+      printf '1. standard\n2. conservative\n3. aggressive\n4. 不显式设置\n'; ui_menu_choice hy2_bbr_profile 'BBR profile' 4
       case "$hy2_bbr_profile" in
         1) hy2_args+=(--bbr-profile standard) ;;
         2) hy2_args+=(--bbr-profile conservative) ;;
@@ -607,13 +632,13 @@ ui_add_node() {
     6)
       prompt_value name '节点名称' 'TUIC'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
-      printf '1. cubic（默认）\n2. new_reno\n3. bbr\n'; prompt_value congestion_control '拥塞控制' '1'
+      printf '1. cubic\n2. new_reno\n3. bbr\n'; ui_menu_choice congestion_control '拥塞控制' 3
       case "$congestion_control" in 1) congestion_control=cubic;; 2) congestion_control=new_reno;; 3) congestion_control=bbr;; *) log_error '选择无效'; return;; esac
       ui_add_node_and_deliver tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
       ;;
     7)
       prompt_value name '节点名称' 'VLESS'
-      printf '1. TLS（需要本地证书）\n2. Reality（使用 Reality 密钥对）\n'; prompt_value security_choice '选择安全层' '1'
+      printf '1. TLS（需要本地证书）\n2. Reality（使用 Reality 密钥对）\n'; ui_menu_choice security_choice '选择安全层' 2
       case "$security_choice" in
         1)
           security=tls; ui_select_certificate_domain domain || { ui_cancel; return; }
@@ -631,7 +656,7 @@ ui_add_node() {
     8)
       prompt_value name '节点名称' 'NaiveProxy'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
-      printf '1. HTTPS/TCP（默认）\n2. QUIC/UDP\n'; prompt_value security_choice '选择传输' '1'
+      printf '1. HTTPS/TCP\n2. QUIC/UDP\n'; ui_menu_choice security_choice '选择传输' 2
       case "$security_choice" in 1) network=tcp;; 2) network=udp;; *) log_error '选择无效'; return;; esac
       ui_prompt_port port "$network" '端口' 443 8443 9443 10443
       ui_add_node_and_deliver naive --name "$name" --domain "$domain" --address "$address" --port "$port" --network "$network"
@@ -645,10 +670,10 @@ ui_add_node() {
       ;;
     10)
       prompt_value name '节点名称' 'Snell'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 6160 443 8443 9443 10443
-      printf '1. Snell v5（默认，兼容 Surge/mihomo/sing-box，可选 HTTP obfs）\n2. Snell v6（traffic shaping，Surge Beta/sing-box；mihomo 不支持）\n'; prompt_value snell_version_choice '选择 Snell 版本' '1'
+      printf '1. Snell v5（推荐，兼容 Surge/mihomo/sing-box，可选 HTTP obfs）\n2. Snell v6（traffic shaping，Surge Beta/sing-box；mihomo 不支持）\n'; ui_menu_choice snell_version_choice '选择 Snell 版本' 2
       case "$snell_version_choice" in
         1)
-          printf '1. 不启用 HTTP 混淆（默认）\n2. HTTP 混淆\n'; prompt_value snell_obfs_choice '选择混淆' '1'
+          printf '1. 不启用 HTTP 混淆\n2. HTTP 混淆\n'; ui_menu_choice snell_obfs_choice '选择混淆' 2
           case "$snell_obfs_choice" in
             1) obfs=none; ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs none ;;
             2) prompt_value snell_obfs_host 'HTTP 混淆 Host' 'bing.com'; ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs http --obfs-host "$snell_obfs_host" ;;
@@ -656,7 +681,7 @@ ui_add_node() {
           esac
           ;;
         2)
-          printf '1. default（默认）\n2. unshaped\n3. unsafe-raw\n'; prompt_value snell_mode_choice 'Snell v6 traffic shaping mode' '1'
+          printf '1. default\n2. unshaped\n3. unsafe-raw\n'; ui_menu_choice snell_mode_choice 'Snell v6 traffic shaping mode' 3
           case "$snell_mode_choice" in 1) snell_mode_choice=default;; 2) snell_mode_choice=unshaped;; 3) snell_mode_choice=unsafe-raw;; *) log_error '选择无效'; return;; esac
           ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 6 --snell-mode "$snell_mode_choice"
           ;;
@@ -686,7 +711,7 @@ ui_manage_nodes() {
   node=$(state_get_node "$id")
   node_show "$id"
   printf '\n1. 显示分享链接\n2. 启用\n3. 停用\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n0. 返回\n'
-  ui_menu_choice action '选择操作' '0' 11
+  ui_menu_choice action '选择操作' 11
   case "$action" in
     1) node_share "$id" 1;; 2) node_enable "$id";; 3) node_disable "$id";;
     4) prompt_value value '新端口' "$(jq -r '.port' <<<"$node")"; node_set "$id" --port "$value";;
@@ -721,7 +746,7 @@ ui_share_export_menu() {
 ui_client_export_menu() {
   local mode_choice mode output dns_mode dns_address
   printf '1. 导出 mixed 客户端配置\n2. 导出 TUN 客户端配置\n0. 返回\n'
-  ui_menu_choice mode_choice '选择客户端配置模式' '1' 2
+  ui_menu_choice mode_choice '选择客户端配置模式' 2
   case "$mode_choice" in
     1) mode=mixed; output="$SBM_EXPORTS/client-mixed.json";;
     2) mode=tun; output="$SBM_EXPORTS/client-tun.json";;
@@ -731,8 +756,8 @@ ui_client_export_menu() {
   prompt_value output '输出文件' "$output"
   dns_mode=hijack; dns_address=''
   if [[ "$mode" == tun ]] && version_ge "$(core_current_version)" 1.14.0-rc.1; then
-    printf '1. hijack（默认，设置系统 DNS 并劫持 53 端口）\n2. native（仅设置系统 DNS）\n3. disabled（不改系统 DNS）\n'
-    prompt_value dns_mode 'TUN DNS 模式' '1'
+    printf '1. hijack（设置系统 DNS 并劫持 53 端口）\n2. native（仅设置系统 DNS）\n3. disabled（不改系统 DNS）\n'
+    ui_menu_choice dns_mode 'TUN DNS 模式' 3
     case "$dns_mode" in 1) dns_mode=hijack;; 2) dns_mode=native;; 3) dns_mode=disabled;; *) log_error '选择无效'; return;; esac
     if [[ "$dns_mode" != disabled ]]; then prompt_value dns_address 'DNS 地址（留空使用自动地址）' ''; fi
   fi
@@ -742,7 +767,7 @@ ui_client_export_menu() {
 ui_cert_menu() {
   local c token zone email domain
   printf '1. 查看证书\n2. 配置 Cloudflare DNS API\n3. 签发/续发域名证书\n4. 立即执行全部续签检查\n5. 查看证书详情\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 5
+  ui_menu_choice c '选择操作' 5
   case "$c" in
     1) cert_list;;
     2) cert_setup_cloudflare;;
@@ -755,7 +780,7 @@ ui_cert_menu() {
 ui_tunnel_menu() {
   local c id=${1:-} domain address
   printf '1. 查看 Tunnel 状态\n2. 安装/更新 cloudflared\n3. 配置固定 Tunnel\n4. 启动 Quick Tunnel\n5. 刷新 Quick Tunnel 域名\n6. 更换固定 Tunnel Token\n7. 停止 Tunnel\n8. 多域名/路径路由管理\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 8
+  ui_menu_choice c '选择操作' 8
   case "$c" in
     1) tunnel_status;;
     2) cloudflared_install;;
@@ -769,7 +794,7 @@ ui_tunnel_menu() {
 ui_update_menu() {
   local c p v path
   printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本更新\n11. 更新脚本本身（保留当前核心和节点）\n12. 脚本每日自动更新（默认开启）\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 12
+  ui_menu_choice c '选择操作' 12
   case "$c" in
     1) core_check_update || true;; 2) core_update latest;; 3) prompt_value v '版本号，如 1.14.0-rc.1' ''; core_update "$v";; 4) core_rollback;;
     5) printf 'manual / notify / patch / stable\n'; prompt_value p '策略' "$(jq -r '.settings.core_update_policy' "$SBM_STATE")"; core_set_policy "$p";; 6) cloudflared_update;; 7) acme_update;;
@@ -785,7 +810,7 @@ ui_manager_auto_menu() {
   local choice
   manager_auto_status
   printf '\n1. 开启每日脚本自动更新\n2. 关闭每日脚本自动更新\n3. 立即执行一次自动更新检查\n4. 查看最近自动更新日志\n0. 返回\n'
-  ui_menu_choice choice '选择操作' '0' 4
+  ui_menu_choice choice '选择操作' 4
   case "$choice" in
     1) manager_update_cli auto enable;;
     2) manager_update_cli auto disable;;
@@ -803,7 +828,7 @@ ui_api_menu() {
   local c port dashboard path command
   api_status
   printf '\n1. 启用 API\n2. 启用 API + Dashboard\n3. 停用 API/Dashboard\n4. 显示 API 令牌\n5. 查看 API 服务状态\n6. 查看 API outbounds\n7. 导出 sing-box JSON Schema\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 7
+  ui_menu_choice c '选择操作' 7
   case "$c" in
     1|2)
       port=$(jq -r '.api.port // 9090' "$SBM_STATE")
@@ -822,7 +847,7 @@ ui_realm_menu() {
   local c port url listen domain max token
   realm_status
   printf '\n1. 启用/配置 Hysteria Realm\n2. 停用 Hysteria Realm\n3. 显示 Realm token\n4. 查看 Realm 配置 JSON\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1)
       port=$(jq -r '.realm.port // 9443' "$SBM_STATE"); url=$(jq -r '.realm.public_url // ""' "$SBM_STATE"); listen=$(jq -r '.realm.listen // "::"' "$SBM_STATE"); domain=$(jq -r '.realm.tls_domain // ""' "$SBM_STATE"); max=$(jq -r '.realm.max_realms // 0' "$SBM_STATE")
@@ -838,7 +863,7 @@ ui_realm_menu() {
 ui_doctor_menu() {
   local c host count family
   printf '1. 运行完整诊断\n2. 自动修复权限、配置与服务\n3. 低风险自动修复（不改防火墙/SSH/内核）\n4. 协调/重启 sing-box 服务\n5. 查看 sing-box 最近日志\n6. 网络延迟、丢包与抖动检测\n7. 吞吐测速与前后对比\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 7
+  ui_menu_choice c '选择操作' 7
   case "$c" in
     1) doctor_run || true;;
     2) doctor_run 1 || true;;
@@ -861,7 +886,7 @@ ui_uninstall_menu() {
     '1. 卸载程序（保留节点、配置、证书、密钥和备份）' \
     '2. 完全卸载（删除程序及全部数据）' \
     '0. 返回'
-  ui_menu_choice c '选择操作' '0' 2
+  ui_menu_choice c '选择操作' 2
   case "$c" in
     1)
       uninstall_manager 0 0
@@ -879,7 +904,7 @@ ui_uninstall_menu() {
 
 ui_backup_menu() {
   local c path
-  printf '1. 创建备份\n2. 从备份恢复\n0. 返回\n'; ui_menu_choice c '选择操作' '0' 2
+  printf '1. 创建备份\n2. 从备份恢复\n0. 返回\n'; ui_menu_choice c '选择操作' 2
   case "$c" in 1) backup_create;; 2) prompt_value path '备份文件路径' ''; confirm '恢复会覆盖当前配置，继续？' N && backup_restore "$path" 1;; esac
 }
 
@@ -887,7 +912,7 @@ ui_nginx_stream_menu() {
   local c id sni backend port node
   nginx_stream_status
   printf '\n1. 添加 SNI 路由\n2. 删除 SNI 路由\n3. 启用 443/TCP 复用\n4. 停用 443/TCP 复用\n5. 查看路由\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 5
+  ui_menu_choice c '选择操作' 5
   case "$c" in
     1)
       ui_select_node id || { ui_cancel; return; }
@@ -913,7 +938,7 @@ ui_nginx_stream_menu() {
 
 ui_settings_menu() {
   local c v
-  printf '1. 设置默认服务器地址\n2. 修改日志级别\n3. Nginx Stream 443/TCP 多协议复用\n4. 出站 IP 优先级\n5. 配置校验与差异预览\n6. sing-box 1.14 DNS 优化\n7. 一键开启/恢复 BBR\n8. Hysteria2 UDP 缓冲区优化\n9. 按带宽/延迟优化 TCP\n0. 返回\n'; ui_menu_choice c '选择操作' '0' 9
+  printf '1. 设置默认服务器地址\n2. 修改日志级别\n3. Nginx Stream 443/TCP 多协议复用\n4. 出站 IP 优先级\n5. 配置校验与差异预览\n6. sing-box 1.14 DNS 优化\n7. 一键开启/恢复 BBR\n8. Hysteria2 UDP 缓冲区优化\n9. 按带宽/延迟优化 TCP\n0. 返回\n'; ui_menu_choice c '选择操作' 9
   case "$c" in
     1) prompt_value v '域名或 IP' "$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")"; settings_set_default_address "$v";;
     2) prompt_value v '日志级别 (trace/debug/info/warn/error/fatal/panic)' "$(jq -r '.settings.log_level' "$SBM_STATE")"; settings_set_log_level "$v";;
@@ -930,21 +955,21 @@ ui_settings_menu() {
 ui_outbound_menu() {
   local c
   printf '1. IPv4 优先\n2. IPv6 优先\n3. 仅 IPv4\n0. 返回\n'
-  ui_menu_choice c '选择出站 IP 策略' '0' 3
+  ui_menu_choice c '选择出站 IP 策略' 3
   case "$c" in 1) settings_set_outbound_ip_strategy prefer_ipv4;; 2) settings_set_outbound_ip_strategy prefer_ipv6;; 3) settings_set_outbound_ip_strategy ipv4_only;; esac
 }
 
 ui_config_menu() {
   local c
   printf '1. 校验当前配置\n2. 查看已安装配置与当前状态差异\n3. 查看 state.json（敏感字段已遮蔽）\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 3
+  ui_menu_choice c '选择操作' 3
   case "$c" in 1) config_validate;; 2) config_diff;; 3) config_redact <"$SBM_STATE";; esac
 }
 
 ui_dns_menu() {
   local c value
   printf '1. 查看 DNS 1.14 设置\n2. 开启 optimistic DNS\n3. 关闭 optimistic DNS\n4. 设置 optimistic 缓存窗口\n5. 设置 DNS 查询超时\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 5
+  ui_menu_choice c '选择操作' 5
   case "$c" in
     1) settings_show_addresses 1 | jq '{dns_optimistic,dns_optimistic_timeout,dns_timeout}';;
     2) settings_set_dns optimistic true;; 3) settings_set_dns optimistic false;;
@@ -957,7 +982,7 @@ ui_bbr_menu() {
   local c
   bbr_status
   printf '1. 开启 BBR（fq + tcp_congestion_control=bbr）\n2. 恢复开启前设置\n0. 返回\n'
-  ui_menu_choice c '选择 BBR 操作' '0' 2
+  ui_menu_choice c '选择 BBR 操作' 2
   case "$c" in 1) bbr_enable;; 2) confirm '确认恢复 BBR 启用前的 sysctl？' N && bbr_disable;; esac
 }
 
@@ -965,7 +990,7 @@ ui_hy2_buffer_menu() {
   local c
   hy2_udp_buffer_status
   printf '1. 开启官方建议值（rmem_max/wmem_max = 16 MiB）\n2. 恢复开启前设置\n0. 返回\n'
-  ui_menu_choice c '选择 Hysteria2 UDP 缓冲区操作' '0' 2
+  ui_menu_choice c '选择 Hysteria2 UDP 缓冲区操作' 2
   case "$c" in 1) hy2_udp_buffer_enable;; 2) confirm '确认恢复 Hysteria2 UDP 缓冲区启用前的 sysctl？' N && hy2_udp_buffer_disable;; esac
 }
 
@@ -973,7 +998,7 @@ ui_tcp_tuning_menu() {
   local c bandwidth rtt plan
   tcp_tuning_status || return
   printf '\n1. 预览 TCP 调优参数\n2. 预览并应用 TCP 调优\n3. 恢复首次启用前的设置\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 3
+  ui_menu_choice c '选择操作' 3
   case "$c" in
     1|2)
       prompt_value bandwidth '线路带宽（Mbps，整数）' '500'
@@ -990,7 +1015,7 @@ ui_template_menu() {
   local c name id tag region
   node_template_list
   printf '\n1. 从节点保存模板\n2. 使用模板创建节点\n3. 删除模板\n4. 按标签启用节点\n5. 按标签停用节点\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 5
+  ui_menu_choice c '选择操作' 5
   case "$c" in
     1) prompt_value name '模板名称' ''; ui_select_node id || { ui_cancel; return; }; node_template_save "$name" "$id" ;;
     2) prompt_value name '模板名称' ''; prompt_value id '新节点 ID' ''; node_template_add "$name" "$id" ;;
@@ -1003,7 +1028,7 @@ ui_template_menu() {
 ui_firewall_menu() {
   local c
   printf '1. 查看防火墙组件状态\n2. 查看所有协议端口\n3. 备份并清理 iptables 入站全局禁止\n4. 按所有启用协议端口执行 UFW allow\n5. 安装并启用 Fail2ban（自动探测 SSH，3分钟/5次/永久封禁）\n6. 安装并启用 UFW（安全向导：实际 SSH、22/80/443 及协议端口）\n7. 仅预览 UFW 变更\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 7
+  ui_menu_choice c '选择操作' 7
   case "$c" in
     1) firewall_status ;;
     2) firewall_list_protocol_ports ;;
@@ -1024,7 +1049,7 @@ ui_notification_health_menu() {
   notification_status
   health_status
   printf '\n1. 配置 Telegram 通知\n2. 配置企业微信机器人\n3. 配置通用 Webhook\n4. 发送测试通知\n5. 停用通知\n6. 立即检查流量阈值\n7. 启用定时健康检查\n8. 停用定时健康检查\n9. 立即运行健康检查\n10. 配置资源/安全告警阈值\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 10
+  ui_menu_choice c '选择操作' 10
   case "$c" in
     1)
       provider=telegram; prompt_secret token 'Telegram Bot Token'; prompt_value destination 'Telegram Chat ID' ''
@@ -1054,7 +1079,7 @@ ui_traffic_menu() {
   local c id quota reset_day upload_rate download_rate mode mode_choice
   traffic_status all
   printf '\n1. 配置/启用节点流量控制\n2. 停用节点流量控制\n3. 立即重置节点统计\n4. 移除配置与累计用量\n5. 重新加载运行规则\n6. 多节点共享配额\n7. tc 下行平滑限速\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 7
+  ui_menu_choice c '选择操作' 7
   case "$c" in
     1)
       ui_select_node id || { ui_cancel; return; }
@@ -1065,8 +1090,8 @@ ui_traffic_menu() {
       mode=$(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.traffic.quota_mode' "$SBM_STATE")
       prompt_value quota '月配额（如 100G；unlimited 不限）' "$quota"
       printf '1. 上行+下行计入配额\n2. 仅下行计入配额\n'
-      [[ "$mode" == download ]] && mode_choice=2 || mode_choice=1
-      prompt_value mode_choice '配额统计方式' "$mode_choice"
+      printf '当前统计方式：%s\n' "$mode"
+      ui_menu_choice mode_choice '配额统计方式' 2
       case "$mode_choice" in 1) mode=total;; 2) mode=download;; *) log_error '选择无效'; return;; esac
       prompt_value reset_day '每月重置日（1-28，UTC）' "$reset_day"
       prompt_value upload_rate '上行限速（如 20M；unlimited 不限）' "$upload_rate"
@@ -1085,7 +1110,7 @@ ui_traffic_menu() {
 ui_network_benchmark_menu() {
   local c host port seconds streams direction before after data
   printf '1. iperf3 吞吐测速\n2. 查看测速记录\n3. 比较两次测速\n4. 安装测速依赖\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1)
       command_exists "$SBM_NETWORK_IPERF_CMD" || { log_warn '尚未安装 iperf3，请先选择“安装测速依赖”。'; return; }
@@ -1109,7 +1134,7 @@ ui_network_benchmark_menu() {
 ui_traffic_group_menu() {
   local c id members quota day mode group data
   printf '1. 查看共享配额\n2. 创建/修改共享配额\n3. 移除配额组\n4. 重置组用量\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1)
       data=$(traffic_group_cli status)
@@ -1132,7 +1157,7 @@ ui_traffic_group_menu() {
 ui_shaping_menu() {
   local c interface capacity
   printf '1. 查看 tc 整形设置\n2. 预览并启用下行平滑限速\n3. 停用并恢复网卡队列\n4. 安装 tc 依赖\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1) jq -r '(.shaping // {enabled:false,interface:"",capacity_bps:1000000000})|"tc 下行整形：\(if .enabled then "启用" else "停用" end)；网卡：\(.interface)；容量：\(.capacity_bps) bit/s"' "$SBM_STATE";;
     2)
@@ -1150,7 +1175,7 @@ ui_shaping_menu() {
 ui_tunnel_routes_menu() {
   local c id credentials host url path items route
   printf '1. 查看路由\n2. 导入命名 Tunnel 凭据\n3. 添加/修改路由\n4. 删除路由\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1) jq -r '(.tunnel.routes // [])|if length==0 then "暂无路由。" else .[]|"\(.id)  \(.hostname)\(.path) → \(.service)" end' "$SBM_STATE";;
     2)
@@ -1173,7 +1198,7 @@ ui_tunnel_routes_menu() {
 ui_substore_menu() {
   local c port version frontend file name current current_frontend
   printf '1. 查看状态\n2. 安装/升级 Sub-Store\n3. 启用\n4. 停用\n5. 查看本机访问地址\n6. 接入本机节点（自动更新）\n7. 备份 Sub-Store\n8. 恢复 Sub-Store\n9. 其他服务器来源与自动合并\n10. 本机动态订阅地址管理\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 10
+  ui_menu_choice c '选择操作' 10
   case "$c" in
     1) jq -r '(.substore // {enabled:false,port:3001,version:"",frontend_version:""})|"Sub-Store：\(if .version=="" then "未安装" elif .enabled then "已启用" else "已停用" end)；本机端口：\(.port)","后端版本：\(.version)；前端版本：\(.frontend_version)"' "$SBM_STATE";;
     2)
@@ -1194,7 +1219,7 @@ ui_substore_menu() {
 ui_substore_sources_menu() {
   local c name url collection items
   printf '1. 查看来源与组合\n2. 添加/更新服务器来源（自动加入组合）\n3. 测试来源拉取\n4. 移除来源\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 4
+  ui_menu_choice c '选择操作' 4
   case "$c" in
     1) substore_cli source list;;
     2|3|4)
@@ -1215,7 +1240,7 @@ ui_substore_sources_menu() {
 ui_subscription_menu() {
   local c base duration id items
   printf '1. 生成动态订阅地址（节点变更后自动更新）\n2. 查看有效期与状态\n3. 撤销订阅地址\n0. 返回\n'
-  ui_menu_choice c '选择操作' '0' 3
+  ui_menu_choice c '选择操作' 3
   case "$c" in
     1)
       base=$(jq -r --arg service "http://127.0.0.1:$SBM_SUBSCRIPTION_PORT" 'first(.tunnel.routes[]?|select(.service==$service and .path=="")|"https://"+.hostname) // ""' "$SBM_STATE")
@@ -1235,31 +1260,38 @@ ui_subscription_menu() {
 
 ui_main() {
   [[ -t 0 ]] || { sb_help; return; }
-  local choice page default_choice
+  local choice page
+  local -a page_args=()
   SBM_UI_RESULT=0
   while true; do
     ui_header
-    printf '普通输入可用 q 取消当前操作；0 返回上级；Ctrl-D 退出面板。\n'
+    printf '菜单中 Enter / 0 返回上级；结果页 Enter 返回主菜单，r 继续操作。\n'
+    printf '填写配置时 Enter 保留当前值，q 取消；主菜单 Enter 留在此处，0 / q / Ctrl-D 退出。\n'
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
-      default_choice=2
-      printf '还没有节点：按 Enter 快速创建；没有域名可选 Shadowsocks 2022。\n'
-    else default_choice=0; fi
+      printf '还没有节点：输入 2 快速创建；没有域名可选 Shadowsocks 2022。\n'
+    fi
     printf '1. 查看统一运行状态\n2. 快速创建节点（含证书与客户端导入）\n3. 管理现有节点\n4. 分享链接与客户端导出\n5. 完整客户端配置导出\n6. 域名与证书管理\n7. Cloudflare Tunnel 管理\n8. 核心与组件更新\n9. sing-box API/Dashboard\n10. Hysteria Realm\n11. 日志\n12. 诊断与修复\n13. 备份与恢复\n14. 全局设置\n15. 防火墙与协议端口\n16. 流量统计、配额与限速\n17. 通知与定时健康检查\n18. 节点模板与批量操作\n19. 卸载与彻底清理\n20. Sub-Store 组件与订阅同步\n0. 退出\n\n'
-    prompt_value choice '请选择' "$default_choice" || return 0
+    # Stay at the root on empty input without reopening a page or redrawing
+    # the entire menu for every buffered Enter key.
+    while true; do
+      prompt_value choice '请选择（Enter 留在主菜单）' '' || return 0
+      [[ -z "$choice" ]] || break
+    done
     page=''
+    page_args=()
+    SBM_UI_RESULT=0
     case "$choice" in
-      1) ui_run status_summary;;
+      1) page=status_summary;;
       2) page=ui_quick_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
-      11) ui_run show_logs all 100;; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;
+      11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;
       14) page=ui_settings_menu;; 15) page=ui_firewall_menu;; 16) page=ui_traffic_menu;;
       17) page=ui_notification_health_menu;; 18) page=ui_template_menu;;
       19) page=ui_uninstall_menu;; 20) page=ui_substore_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
-    if [[ -n "$page" ]]; then ui_menu_loop "$page"
-    else ui_pause || return 0; fi
+    ui_menu_loop "$page" "${page_args[@]}"
     case "$SBM_UI_RESULT" in
       201|202) return 0;;
       203) ui_reload;;

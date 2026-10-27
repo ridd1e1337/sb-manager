@@ -31,12 +31,20 @@ and retains backend locking, validation, and rollback. Catching a function
 failure with `if` or `||` in the menu's own shell would suppress Bash errexit
 inside that function; the separate process preserves strict error handling.
 
-Worker statuses 200–205 distinguish back, EOF, completed uninstall, manager
-reload, cancellation, and parent-page redraw from ordinary action failures.
-Nested loops propagate session-ending statuses to the main menu. Global
+Worker statuses 200–206 distinguish back, EOF, completed uninstall, manager
+reload, cancellation, parent-page redraw, and return to the main menu from
+ordinary action failures. Nested loops propagate session-ending statuses and
+the main-menu return through every parent. Global
 yes/dry-run/quiet/no-color options survive worker launches and reloads.
 Selectors return IDs through caller variables, and edits load defaults from
 state. No persistent UI state or new runtime dependency is required.
+
+Menu and selector Enter input always goes back; recommendations are displayed
+without selecting them. Result pages return to the main menu on Enter and
+only reopen the current page when the operator enters `r`. At the main menu,
+empty input stays at the prompt even when no nodes exist; exit requires an
+explicit `0`, `q`, or EOF. Configuration fields retain their displayed defaults,
+and invalid edits do not replace valid defaults in retrying prompts.
 
 `sb quick` and the main node-creation entry use protocol presets and a final
 editable summary. Certificate selection can invoke a dedicated worker to issue

@@ -207,7 +207,10 @@ main() {
 
   case "$cmd" in
     menu) ui_main ;;
-    quick) ui_menu_loop ui_quick_add_node ;;
+    quick)
+      ui_menu_loop ui_quick_add_node
+      case ${SBM_UI_RESULT:-0} in 203) ui_reload;; 0|206) ui_main;; esac
+      ;;
     __ui-step) shift; ui_worker "$@" ;;
     substore) shift; substore_cli "$@" ;;
     status)

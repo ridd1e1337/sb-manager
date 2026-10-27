@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.42
+
+- Unify Enter as back across menu choices, certificate and resource selectors,
+  protocol options, creation confirmation, and client export modes. Empty new
+  IDs, member selections and certificate domains can leave the current action.
+- Return from result pages to the main menu on Enter; require `r` to remain
+  in the current menu. Propagate this return through nested worker processes.
+- Keep the main menu waiting on Enter, including installations without nodes,
+  and require explicit selection for node creation or panel exit.
+- Preserve valid field defaults after invalid edits and synchronize navigation
+  documentation. Static checks only; no test scripts or procedures added.
+
 ## 0.1.0-alpha.41
 
 - Make Enter return from node selection instead of selecting the first node,
