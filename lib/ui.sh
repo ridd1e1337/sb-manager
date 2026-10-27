@@ -13,7 +13,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_quick_add_node|ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -243,7 +243,9 @@ ui_select_node() {
     [[ -n "$node" ]] || continue
     selected_id=$(jq -r '.id' <<<"$node")
     ids+=("$selected_id")
-    printf '%d. %-18s %s\n' "${#ids[@]}" "$selected_id" "$(node_protocol_label "$(jq -r '.protocol' <<<"$node")")"
+    printf '%d. %s | %s | %s | ID: %s\n' "${#ids[@]}" "$(jq -r '.name' <<<"$node")" \
+      "$(node_protocol_label "$(jq -r '.protocol' <<<"$node")")" \
+      "$(jq -r '(if .enabled then "启用" else "停用" end)+" / "+(.port|tostring)' <<<"$node")" "$selected_id"
   done < <(state_list_nodes)
   ((${#ids[@]} > 0)) || { log_warn '当前没有节点。'; return 1; }
   [[ "$allow_all" == 1 ]] && printf 'a. 全部节点\n'
@@ -271,58 +273,91 @@ ui_select_node() {
 ui_client_address_default() {
   local domain=${1:-} ipv4 fallback
   [[ -n "$domain" ]] && { printf '%s\n' "$domain"; return 0; }
+  fallback=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
+  [[ -n "$fallback" ]] && { printf '%s\n' "$fallback"; return 0; }
   ipv4=$(jq -r '.settings.public_ipv4 // ""' "$SBM_STATE")
   [[ -n "$ipv4" ]] || ipv4=$(detect_public_ipv4 2>/dev/null || true)
-  [[ -n "$ipv4" ]] && { printf '%s\n' "$ipv4"; return 0; }
-  fallback=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
-  printf '%s\n' "$fallback"
+  printf '%s\n' "$ipv4"
+}
+
+ui_certificate_usable() {
+  local domain=$1
+  validate_domain "$domain" || return 1
+  [[ -s "$SBM_CERTS/$domain/fullchain.pem" && -s "$SBM_CERTS/$domain/key.pem" ]] || return 1
+  openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkend 0 >/dev/null 2>&1 \
+    && openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkhost "$domain" >/dev/null 2>&1
 }
 
 ui_require_certificate() {
-  local domain=$1
-  if [[ ! -s "$SBM_CERTS/$domain/fullchain.pem" || ! -s "$SBM_CERTS/$domain/key.pem" ]]; then
-    log_error "尚无 $domain 的完整证书，请先在“域名与证书”中签发。"
-    return 1
+  ui_certificate_usable "$1" || { log_error "证书 $1 不完整、已过期或域名不匹配。"; return 1; }
+}
+
+ui_issue_certificate() {
+  local domain=$1 reset_credentials=${2:-0}
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '证书申请不支持 --dry-run；请退出预览模式后再操作。'
+  validate_domain "$domain" || die "无效域名：$domain"
+  if ui_certificate_usable "$domain"; then log_info "复用现有证书：$domain"; return; fi
+  printf '\n正在为 %s 准备证书。域名需由 Cloudflare 托管 DNS。\n' "$domain"
+  printf '用于连接节点的 DNS 记录应指向本机公网 IP，并关闭橙云代理。\n'
+  if [[ "$reset_credentials" == 1 || ! -s "$SBM_CF_DNS_ENV" || -z $(jq -r '.settings.acme_email // ""' "$SBM_STATE") ]]; then
+    printf '首次需要 Cloudflare API Token（区域读取、DNS 编辑权限）和邮箱；保存后后续复用。\n'
+    cert_setup_cloudflare
   fi
+  cert_issue "$domain"
+  ui_require_certificate "$domain"
 }
 
 ui_select_certificate_domain() {
-  local __var=$1 choice selected_domain days i cert_domain
+  local __var=$1 choice selected_domain days i cert_domain reset_credentials=0
   local -a domains=()
   while IFS= read -r cert_domain; do
     [[ -n "$cert_domain" ]] || continue
-    [[ -s "$SBM_CERTS/$cert_domain/fullchain.pem" && -s "$SBM_CERTS/$cert_domain/key.pem" ]] || continue
-    openssl x509 -in "$SBM_CERTS/$cert_domain/fullchain.pem" -noout -checkend 0 >/dev/null 2>&1 || continue
     domains+=("$cert_domain")
   done < <(jq -r '[.certificates[]?.domain] | unique[]' "$SBM_STATE")
 
-  if ((${#domains[@]} == 0)); then
-    log_warn '没有发现可用的已签发证书，请先在“域名与证书”中签发。'
-    prompt_value selected_domain '手动输入 TLS 域名' ''
-    ui_require_certificate "$selected_domain" || return 1
-    printf -v "$__var" '%s' "$selected_domain"
-    return 0
-  fi
-
-  printf '可用的 TLS 证书：\n'
-  for ((i=0; i<${#domains[@]}; i++)); do
-    selected_domain=${domains[$i]}
-    days=$(x509_days_remaining "$SBM_CERTS/$selected_domain/fullchain.pem" 2>/dev/null || printf '?')
-    printf '%d. %s（剩余 %s 天）\n' "$((i + 1))" "$selected_domain" "$days"
+  while true; do
+    if ((${#domains[@]} == 0)); then
+      printf '还没有证书。输入域名即可在这里申请，无需返回其他菜单。\n'
+      prompt_value selected_domain '证书域名（如 edge.example.com；q 取消）' '' || return 1
+    else
+      printf '选择证书（可复用；过期证书会进入续签）：\n'
+      for ((i=0; i<${#domains[@]}; i++)); do
+        selected_domain=${domains[$i]}
+        if ui_certificate_usable "$selected_domain"; then
+          days=$(x509_days_remaining "$SBM_CERTS/$selected_domain/fullchain.pem" 2>/dev/null || printf '?')
+          printf '%d. %s（剩余 %s 天）\n' "$((i + 1))" "$selected_domain" "$days"
+        else printf '%d. %s（需要签发/续签）\n' "$((i + 1))" "$selected_domain"; fi
+      done
+      printf 'n. 使用其他域名（自动复用或申请）\n0. 返回\n'
+      prompt_value choice '证书域名' '1' || return 1
+      case "$choice" in
+        n|N|m|M) prompt_value selected_domain '证书域名' '' || return 1;;
+        0) return 1;;
+        *)
+          if [[ "$choice" =~ ^[1-9][0-9]{0,5}$ ]] && (( choice <= ${#domains[@]} )); then
+            selected_domain=${domains[$((choice - 1))]}
+          else selected_domain=$choice; fi;;
+      esac
+    fi
+    if validate_domain "$selected_domain"; then break; fi
+    log_error '请输入有效域名，不要带 https://、端口或路径。'
   done
-  printf 'm. 手动输入域名\n0. 返回\n'
-  prompt_value choice '选择 TLS 证书域名' '1'
-  case "$choice" in
-    m|M)
-      prompt_value selected_domain 'TLS 域名（必须已有证书）' ''
-      ;;
-    0) return 1;;
-    * )
-      [[ "$choice" =~ ^[1-9][0-9]{0,5}$ ]] || { log_error '选择无效'; return 1; }
-      (( choice <= ${#domains[@]} )) || { log_error '选择无效'; return 1; }
-      selected_domain=${domains[$((choice - 1))]}
-      ;;
-  esac
+  selected_domain=${selected_domain%.}
+  while ! ui_certificate_usable "$selected_domain"; do
+    # Certificate mutations run in a fresh worker: the selector's caller may
+    # be using ||, which would otherwise suppress errexit in the ACME steps.
+    ui_run ui_issue_certificate "$selected_domain" "$reset_credentials"
+    case "$SBM_UI_LAST_STATUS" in
+      0) break;;
+      201|202|203) ui_end_session "$SBM_UI_LAST_STATUS"; return 1;;
+      204) return 1;;
+      *)
+        log_error '证书申请未完成，尚未创建节点。'
+        printf '1. 使用现有凭据重试\n2. 更新 Cloudflare DNS 凭据后重试\n0. 返回\n'
+        ui_menu_choice choice '下一步' '0' 2 || return 1
+        case "$choice" in 1) reset_credentials=0;; 2) reset_credentials=1;; *) return 1;; esac;;
+    esac
+  done
   ui_require_certificate "$selected_domain" || return 1
   printf -v "$__var" '%s' "$selected_domain"
 }
@@ -346,7 +381,148 @@ ui_prompt_port() {
   prompt_value "$__var" "$label（推荐 $suggested）" "$suggested"
 }
 
+ui_prompt_server_address() {
+  local __address_var=$1 __address_default=${2:-} __address_value
+  while true; do
+    prompt_value __address_value '客户端连接地址（域名或公网 IP）' "$__address_default" || return 1
+    if validate_ipv4 "$__address_value" || validate_ipv6 "$__address_value" || validate_domain "$__address_value"; then
+      printf -v "$__address_var" '%s' "$__address_value"; return 0
+    fi
+    log_error '请输入域名或 IP，不要带协议、端口或路径。'
+  done
+}
+
+ui_node_finish_menu() {
+  local id=$1 choice node user_id output max_choice=5
+  node=$(state_get_node "$id")
+  [[ -n "$node" ]] || { ui_page_back; return; }
+  printf '\n%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
+  printf '1. 再次显示链接和二维码\n2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址（所有启用节点）\n4. 管理这个节点\n5. 查看防火墙与协议端口\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
+  printf '0. 完成，返回主菜单\n'
+  ui_menu_choice choice '下一步' '0' "$max_choice"
+  case "$choice" in
+    1) node_share "$id" 1;;
+    2)
+      user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
+      [[ -n "$user_id" ]] || die '该节点没有启用用户。'
+      output="$SBM_EXPORTS/nodes/$id/$user_id/client.json"
+      export_node_client_config "$id" "$user_id" "$output" >/dev/null
+      printf '\n在 sing-box 客户端导入以下完整 JSON；其中含节点凭据，请妥善保存：\n'
+      cat "$output"
+      ;;
+    3) ui_open_submenu ui_subscription_menu;;
+    4) ui_open_submenu ui_manage_nodes "$id";;
+    5) ui_open_submenu ui_firewall_menu;;
+    6)
+      if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then ui_open_submenu ui_tunnel_menu "$id"
+      else log_error '当前节点不使用 Cloudflare Tunnel。'; fi;;
+  esac
+}
+
+ui_add_node_and_deliver() {
+  local type=$1 id node kind
+  shift
+  id="${type}-$(random_hex 4)"
+  node_add "$type" --id "$id" "$@"
+  node=$(state_get_node "$id")
+  printf '\n节点已创建：%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
+  if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then
+    printf '下一步请在 Cloudflare Tunnel 菜单关联这个节点，再获取公网分享链接。\n'
+  else
+    if [[ $(jq -r '.listen' <<<"$node") == 127.0.0.1 || $(jq -r '.listen' <<<"$node") == ::1 ]]; then
+      printf '该入口只监听本机；远程使用需要 SSH/VPN 等受保护通道。\n'
+    else
+      while IFS= read -r kind; do
+        printf '公网连接需要放行 %s/%s（云安全组和主机防火墙）。\n' "$(jq -r '.port' <<<"$node")" "${kind^^}"
+      done < <(node_transport_kinds "$node")
+    fi
+    printf '客户端可从剪贴板导入下面的分享链接，或扫描二维码。\n'
+    ui_run node_share "$id" 1
+    if [[ "$SBM_UI_LAST_STATUS" != 0 ]]; then
+      log_warn "节点 $id 已保留；导出未完成，可在下面重试或管理节点，无需重复创建。"
+    fi
+  fi
+  ui_menu_loop ui_node_finish_menu "$id"
+  ui_page_back
+}
+
+ui_quick_add_node() {
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '快速创建不支持 --dry-run；创建前会显示配置供确认。'
+  local choice protocol label kind=tcp domain='' certificate=0 reality=0 address port name action
+  local -a args=() ports=(443 8443 9443 10443)
+  printf '\n快速创建：选择协议，确认推荐配置，立即获取客户端导入内容。\n'
+  printf '1. AnyTLS（已有域名或准备申请证书）\n2. Hysteria2（UDP，需要域名证书）\n3. Shadowsocks 2022（无需域名和证书）\n4. VLESS Reality（无需自有域名证书）\n5. Snell v5（无需证书，Surge/mihomo）\n6. Trojan（需要域名证书）\n7. TUIC（UDP，需要域名证书）\na. 全部协议 / 自定义高级参数\n0. 返回\n'
+  while true; do
+    ui_menu_choice choice '选择协议' '1'
+    case "$choice" in
+      1) protocol=anytls; label=AnyTLS; certificate=1; break;;
+      2) protocol=hy2; label=Hysteria2; kind=udp; certificate=1; break;;
+      3) protocol=ss; label='Shadowsocks 2022'; ports=(8388 8389 8390 8443); break;;
+      4) protocol=vless; label='VLESS Reality'; reality=1; domain=www.apple.com; break;;
+      5) protocol=snell; label='Snell v5'; ports=(6160 6161 443 8443); break;;
+      6) protocol=trojan; label=Trojan; certificate=1; break;;
+      7) protocol=tuic; label=TUIC; kind=udp; certificate=1; break;;
+      a|A) ui_menu_loop ui_add_node; ui_page_back; return;;
+      0) return;;
+      *) log_error '请选择 1–7，或输入 a 使用高级参数。';;
+    esac
+  done
+  if [[ "$protocol" == snell ]] && ! version_ge "$(core_current_version)" 1.14.0-rc.1; then
+    die 'Snell 需要 sing-box 1.14+；可先选择 Shadowsocks 2022，或在核心更新菜单升级。'
+  fi
+  if (( certificate )); then
+    ui_select_certificate_domain domain || { ui_cancel; return; }
+    address=$domain
+  else
+    address=$(ui_client_address_default '')
+    if ! { validate_ipv4 "$address" || validate_ipv6 "$address" || validate_domain "$address"; }; then
+      ui_prompt_server_address address "$address"
+    fi
+  fi
+  port=$(ui_port_default "$kind" "${ports[@]}")
+  name="$label $port"
+  while true; do
+    printf '\n名称：%s\n协议：%s\n连接地址：%s\n端口：%s/%s\n' "$name" "$label" "$address" "$port" "${kind^^}"
+    if (( certificate )); then printf '证书域名：%s（验证开启）\n' "$domain"; fi
+    if (( reality )); then printf 'Reality 握手域名：%s\n' "$domain"; fi
+    printf '1. 创建并显示导入内容\n2. 修改名称、地址或端口\n'
+    if (( certificate )); then printf '3. 更换证书域名\n'; fi
+    if (( reality )); then printf '3. 修改握手域名\n'; fi
+    printf '0. 取消\n'
+    ui_menu_choice action '确认配置' '1' 3
+    case "$action" in
+      1) break;;
+      2)
+        prompt_value name '节点名称' "$name"
+        ui_prompt_server_address address "$address"
+        while true; do
+          prompt_value port '端口' "$port"
+          if validate_port "$port"; then port=$((10#$port)); break; fi
+          log_error '端口必须是 1–65535 的整数。'
+        done;;
+      3)
+        if (( certificate )); then
+          ui_select_certificate_domain domain || { ui_cancel; return; }
+          address=$domain
+        elif (( reality )); then
+          while true; do
+            prompt_value domain 'Reality 握手域名' "$domain"
+            validate_domain "$domain" && break
+            log_error '请输入有效握手域名。'
+          done
+        else log_error '这个协议不需要域名证书。'; fi;;
+      0) return;;
+    esac
+  done
+  args=(--name "$name" --address "$address" --port "$port")
+  if (( certificate )); then args+=(--domain "$domain"); fi
+  if (( reality )); then args+=(--security reality --domain "$domain" --handshake-server "$domain"); fi
+  ui_add_node_and_deliver "$protocol" "${args[@]}"
+}
+
 ui_add_node() {
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
   local choice domain address port name id obfs method security security_choice snell_obfs_choice snell_obfs_host snell_version_choice snell_mode_choice
   local hy2_obfs_choice hy2_min_packet_size hy2_max_packet_size hy2_disable_chrome hy2_bbr_profile hy2_brutal_debug hy2_realm_choice hy2_realm_id hy2_realm_ip hy2_realm_mapping
   local handshake_server handshake_port congestion_control network strict_mode wildcard_sni
@@ -370,17 +546,17 @@ ui_add_node() {
       local args=(vmess --name "$name")
       [[ -n "$domain" ]] && args+=(--domain "$domain")
       [[ -n "$address" ]] && args+=(--address "$address")
-      node_add "${args[@]}"
+      ui_add_node_and_deliver "${args[@]}"
       ;;
     2)
       prompt_value name '节点名称' 'Shadowsocks 2022'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 8388 8389 8390 8443
       printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm（默认）\n3. 2022-blake3-chacha20-poly1305\n'; prompt_value method '选择方法' '2'
       case "$method" in 1) method=2022-blake3-aes-128-gcm;; 2) method=2022-blake3-aes-256-gcm;; 3) method=2022-blake3-chacha20-poly1305;; *) log_error '选择无效'; return;; esac
-      node_add ss --name "$name" --address "$address" --port "$port" --method "$method"
+      ui_add_node_and_deliver ss --name "$name" --address "$address" --port "$port" --method "$method"
       ;;
     3)
       prompt_value name '节点名称' 'AnyTLS'; ui_select_certificate_domain domain || { ui_cancel; return; }; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-      node_add anytls --name "$name" --domain "$domain" --address "$address" --port "$port"
+      ui_add_node_and_deliver anytls --name "$name" --domain "$domain" --address "$address" --port "$port"
       ;;
     4)
       prompt_value name '节点名称' 'Hysteria2'; ui_select_certificate_domain domain || { ui_cancel; return; }; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
@@ -416,19 +592,19 @@ ui_add_node() {
           [[ "$hy2_realm_mapping" =~ ^[Yy]$ ]] && hy2_args+=(--realm-port-mapping)
         fi
       fi
-      node_add "${hy2_args[@]}"
+      ui_add_node_and_deliver "${hy2_args[@]}"
       ;;
     5)
       prompt_value name '节点名称' 'Trojan'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-      node_add trojan --name "$name" --domain "$domain" --address "$address" --port "$port"
+      ui_add_node_and_deliver trojan --name "$name" --domain "$domain" --address "$address" --port "$port"
       ;;
     6)
       prompt_value name '节点名称' 'TUIC'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
       printf '1. cubic（默认）\n2. new_reno\n3. bbr\n'; prompt_value congestion_control '拥塞控制' '1'
       case "$congestion_control" in 1) congestion_control=cubic;; 2) congestion_control=new_reno;; 3) congestion_control=bbr;; *) log_error '选择无效'; return;; esac
-      node_add tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
+      ui_add_node_and_deliver tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
       ;;
     7)
       prompt_value name '节点名称' 'VLESS'
@@ -437,12 +613,12 @@ ui_add_node() {
         1)
           security=tls; ui_select_certificate_domain domain || { ui_cancel; return; }
           prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-          node_add vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security"
+          ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security"
           ;;
         2)
           security=reality; prompt_value domain 'Reality SNI' 'www.apple.com'; prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
           prompt_value handshake_server 'Reality 握手域名' 'www.apple.com'; prompt_value handshake_port 'Reality 握手端口' '443'
-          node_add vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" --handshake-server "$handshake_server" --handshake-port "$handshake_port"
+          ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" --handshake-server "$handshake_server" --handshake-port "$handshake_port"
           ;;
         *) log_error '选择无效';;
       esac
@@ -453,14 +629,14 @@ ui_add_node() {
       printf '1. HTTPS/TCP（默认）\n2. QUIC/UDP\n'; prompt_value security_choice '选择传输' '1'
       case "$security_choice" in 1) network=tcp;; 2) network=udp;; *) log_error '选择无效'; return;; esac
       ui_prompt_port port "$network" '端口' 443 8443 9443 10443
-      node_add naive --name "$name" --domain "$domain" --address "$address" --port "$port" --network "$network"
+      ui_add_node_and_deliver naive --name "$name" --domain "$domain" --address "$address" --port "$port" --network "$network"
       ;;
     9)
       prompt_value name '节点名称' 'ShadowTLS'; prompt_value handshake_server '握手目标域名' ''; prompt_value handshake_port '握手目标端口' '443'
       printf '节点包含 Shadowsocks 2022 加密内层；客户端须导入完整 sing-box 配置，或支持 shadow-tls 插件的分享链接。\n'
       prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
       prompt_value strict_mode '严格模式（true/false）' 'true'; prompt_value wildcard_sni '通配 SNI（off/authed/all）' 'off'
-      node_add shadowtls --name "$name" --address "$address" --port "$port" --handshake-server "$handshake_server" --handshake-port "$handshake_port" --strict-mode "$strict_mode" --wildcard-sni "$wildcard_sni"
+      ui_add_node_and_deliver shadowtls --name "$name" --address "$address" --port "$port" --handshake-server "$handshake_server" --handshake-port "$handshake_port" --strict-mode "$strict_mode" --wildcard-sni "$wildcard_sni"
       ;;
     10)
       prompt_value name '节点名称' 'Snell'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 6160 443 8443 9443 10443
@@ -469,15 +645,15 @@ ui_add_node() {
         1)
           printf '1. 不启用 HTTP 混淆（默认）\n2. HTTP 混淆\n'; prompt_value snell_obfs_choice '选择混淆' '1'
           case "$snell_obfs_choice" in
-            1) obfs=none; node_add snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs none ;;
-            2) prompt_value snell_obfs_host 'HTTP 混淆 Host' 'bing.com'; node_add snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs http --obfs-host "$snell_obfs_host" ;;
+            1) obfs=none; ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs none ;;
+            2) prompt_value snell_obfs_host 'HTTP 混淆 Host' 'bing.com'; ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs http --obfs-host "$snell_obfs_host" ;;
             *) log_error '选择无效';;
           esac
           ;;
         2)
           printf '1. default（默认）\n2. unshaped\n3. unsafe-raw\n'; prompt_value snell_mode_choice 'Snell v6 traffic shaping mode' '1'
           case "$snell_mode_choice" in 1) snell_mode_choice=default;; 2) snell_mode_choice=unshaped;; 3) snell_mode_choice=unsafe-raw;; *) log_error '选择无效'; return;; esac
-          node_add snell --name "$name" --address "$address" --port "$port" --snell-version 6 --snell-mode "$snell_mode_choice"
+          ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 6 --snell-mode "$snell_mode_choice"
           ;;
         *) log_error '选择无效';;
       esac
@@ -489,7 +665,7 @@ ui_add_node() {
       prompt_value address '客户端连接地址' "$(ui_proxy_address_default "$proxy_listen")"
       ui_prompt_port port tcp '监听端口' 1080 1081 8080 8081
       prompt_value name '节点名称' '认证代理'
-      node_add "$proxy_type" --listen "$proxy_listen" --address "$address" --port "$port" --name "$name"
+      ui_add_node_and_deliver "$proxy_type" --listen "$proxy_listen" --address "$address" --port "$port" --name "$name"
       ;;
     0) return;; *) log_error '选择无效';;
   esac
@@ -565,21 +741,21 @@ ui_cert_menu() {
   case "$c" in
     1) cert_list;;
     2) cert_setup_cloudflare;;
-    3) prompt_value domain '域名' ''; cert_issue "$domain";;
+    3) prompt_value domain '域名' ''; ui_issue_certificate "$domain";;
     4) cert_renew;;
     5) prompt_value domain '域名' ''; cert_inspect "$domain";;
   esac
 }
 
 ui_tunnel_menu() {
-  local c id domain address
+  local c id=${1:-} domain address
   printf '1. 查看 Tunnel 状态\n2. 安装/更新 cloudflared\n3. 配置固定 Tunnel\n4. 启动 Quick Tunnel\n5. 刷新 Quick Tunnel 域名\n6. 更换固定 Tunnel Token\n7. 停止 Tunnel\n8. 多域名/路径路由管理\n0. 返回\n'
   ui_menu_choice c '选择操作' '0' 8
   case "$c" in
     1) tunnel_status;;
     2) cloudflared_install;;
-    3) ui_select_node id || { ui_cancel; return; }; prompt_value domain 'Tunnel 公网域名' ''; prompt_value address '客户端 add 地址' "$domain"; tunnel_setup_fixed "$id" "$domain" '' "$address";;
-    4) ui_select_node id || { ui_cancel; return; }; tunnel_setup_quick "$id";;
+    3) [[ -n "$id" ]] || ui_select_node id || { ui_cancel; return; }; prompt_value domain 'Tunnel 公网域名' ''; prompt_value address '客户端 add 地址' "$domain"; tunnel_setup_fixed "$id" "$domain" '' "$address";;
+    4) [[ -n "$id" ]] || ui_select_node id || { ui_cancel; return; }; tunnel_setup_quick "$id";;
     5) tunnel_refresh_quick;; 6) tunnel_set_token;; 7) confirm '停止 Tunnel？' N && tunnel_stop;;
     8) ui_open_submenu ui_tunnel_routes_menu;;
   esac
@@ -1035,17 +1211,21 @@ ui_subscription_menu() {
 
 ui_main() {
   [[ -t 0 ]] || { sb_help; return; }
-  local choice page
+  local choice page default_choice
   SBM_UI_RESULT=0
   while true; do
     ui_header
     printf '普通输入可用 q 取消当前操作；0 返回上级；Ctrl-D 退出面板。\n'
-    printf '1. 查看统一运行状态\n2. 添加协议节点\n3. 管理现有节点\n4. 分享链接与客户端导出\n5. 完整客户端配置导出\n6. 域名与证书管理\n7. Cloudflare Tunnel 管理\n8. 核心与组件更新\n9. sing-box API/Dashboard\n10. Hysteria Realm\n11. 日志\n12. 诊断与修复\n13. 备份与恢复\n14. 全局设置\n15. 防火墙与协议端口\n16. 流量统计、配额与限速\n17. 通知与定时健康检查\n18. 节点模板与批量操作\n19. 卸载与彻底清理\n20. Sub-Store 组件与订阅同步\n0. 退出\n\n'
-    prompt_value choice '请选择' '0' || return 0
+    if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
+      default_choice=2
+      printf '还没有节点：按 Enter 快速创建；没有域名可选 Shadowsocks 2022。\n'
+    else default_choice=0; fi
+    printf '1. 查看统一运行状态\n2. 快速创建节点（含证书与客户端导入）\n3. 管理现有节点\n4. 分享链接与客户端导出\n5. 完整客户端配置导出\n6. 域名与证书管理\n7. Cloudflare Tunnel 管理\n8. 核心与组件更新\n9. sing-box API/Dashboard\n10. Hysteria Realm\n11. 日志\n12. 诊断与修复\n13. 备份与恢复\n14. 全局设置\n15. 防火墙与协议端口\n16. 流量统计、配额与限速\n17. 通知与定时健康检查\n18. 节点模板与批量操作\n19. 卸载与彻底清理\n20. Sub-Store 组件与订阅同步\n0. 退出\n\n'
+    prompt_value choice '请选择' "$default_choice" || return 0
     page=''
     case "$choice" in
       1) ui_run status_summary;;
-      2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
+      2) page=ui_quick_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
       11) ui_run show_logs all 100;; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;

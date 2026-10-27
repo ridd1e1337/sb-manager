@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.38`。
+> 当前版本：`0.1.0-alpha.39`。
 
 ## 功能
 
@@ -20,6 +20,7 @@
 - Hysteria2 官方 UDP 缓冲区优化的一键开启、状态查看和恢复
 - Cloudflare Tunnel 按需安装与独立更新（默认不下载 cloudflared）
 - 节点添加、编辑、启停、删除和凭据轮换
+- `sb quick` 串联推荐配置、证书申请、节点创建和客户端导入；高级参数按需展开
 - 节点级双向流量统计、月配额与独立上/下行速率控制
 - SOCKS5、HTTP 和 mixed 认证代理入口，默认仅监听本机
 - 节点到期停用与续期、多节点共享流量配额、可选 tc 下行平滑限速
@@ -234,6 +235,29 @@ sudo ./setup.sh
 
 ## 快速开始
 
+### 创建节点并导入客户端
+
+```bash
+sb quick
+```
+
+也可在 `sb` 主菜单选择“2. 快速创建节点”；没有节点时，主菜单按 Enter 即进入快速创建。
+选择 AnyTLS、Hysteria2、Shadowsocks 2022、VLESS Reality、Snell v5、Trojan 或 TUIC，
+确认推荐配置即可创建。地址和空闲端口会自动建议，名称、地址和端口都可在创建前修改；
+其他协议、混淆和高级参数放在 `a. 全部协议 / 自定义高级参数` 中。
+
+需要证书的协议会直接让你选择已有证书，或输入新域名进行申请。首次办证在当前流程内配置
+Cloudflare API Token 和邮箱；后续复用已保存的凭据。过期或不匹配的证书不会直接使用。
+域名需由 Cloudflare 托管 DNS，连接记录指向服务器并关闭橙云。没有自有域名可选择 Shadowsocks 2022。
+
+创建成功后立即显示分享链接；安装了 `qrencode` 时同时显示二维码。v2rayN 等支持相应协议的客户端
+可从剪贴板导入链接。完成页还可直接显示该节点的完整 sing-box JSON，或创建包含所有启用节点的动态订阅。
+单节点的 `client.json` 位于 `exports/nodes/<节点>/<用户>/`，包含必要的 DNS、入口和出站配置；
+ShadowTLS 的两个出站也会一起包含，不需要手工拼接。完整配置以 `0600` 权限保存。
+
+证书申请失败不会继续创建节点。节点已经创建但导出失败时，会留在该节点的完成页，可重试导出，
+不会重复创建。云安全组和主机防火墙仍需按完成页显示的端口放行；管理器不会自动修改防火墙。
+
 ### 查看状态与诊断
 
 ```bash
@@ -358,7 +382,7 @@ sb node add snell --id snell-main --address YOUR_SERVER_IP --port 6160 --snell-v
 sb share snell-main
 ```
 
-`sb share` 会同时保存 sing-box outbound、Surge 配置片段和 mihomo JSON/YAML 配置（位于 `exports/nodes/<节点>/<用户>/`）。对于 Snell，终端还会直接打印一行 Sub-Store 可识别的单节点内容，可复制后在 Sub-Store 的本地订阅中添加；同一内容保存在 `substore.txt`。
+`sb share` 会同时保存 sing-box outbound、完整 `client.json`、Surge 配置片段和 mihomo JSON/YAML 配置（位于 `exports/nodes/<节点>/<用户>/`）。对于 Snell，终端还会直接打印一行 Sub-Store 可识别的单节点内容，可复制后在 Sub-Store 的本地订阅中添加；同一内容保存在 `substore.txt`。
 
 如果通过 Sub-Store 管理订阅，请使用 `sb subscription create 24h mixed` 输出的 **Sub-Store URL**（URL 带 `?format=substore`），不要把 sing-box JSON URL 当作普通 URI 订阅。该格式会把 Snell 转成 Sub-Store 能识别的 Surge 单行配置；Snell v6 需要将目标客户端设为支持 v6 的 Surge 或 sing-box，mihomo 仍不支持 v6。
 

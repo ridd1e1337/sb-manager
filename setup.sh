@@ -615,6 +615,7 @@ printf '\n安装完成。\n'
 printf '  服务管理：%s\n' "$BACKEND"
 printf '  安装档位：%s\n' "$INSTALL_PROFILE"
 printf '  面板命令：sb\n'
+printf '  快速创建：sb quick（准备证书、添加节点并获取导入内容）\n'
 printf '  状态检查：sb status\n'
 printf '  诊断命令：sb doctor（自动修复：sb doctor --repair）\n'
 printf '  数据目录：%s\n' "$SBM_ETC"

@@ -68,6 +68,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb [--json] [--yes] [--dry-run] [--quiet] <命令>  通用选项可放在命令前
   sb status [--json]              查看统一状态
   sb node list [--json] [--tag TAG] [--region REGION] 列出节点
+  sb quick                       快速创建节点：准备证书并直接获取导入内容
   sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]
   sb node expiry ID [--days N|--at UTC_TIMESTAMP|--clear]
   sb node show <ID>
@@ -174,6 +175,11 @@ main() {
   export SBM_OUTPUT_JSON=$cli_json SBM_ASSUME_YES=$cli_yes SBM_DRY_RUN=$cli_dry_run SBM_QUIET=$cli_quiet
   if [[ ${NO_COLOR:-} != "" ]]; then C_RESET=''; C_BOLD=''; C_RED=''; C_GREEN=''; C_YELLOW=''; C_BLUE=''; C_CYAN=''; fi
   local cmd=${1:-menu}
+  if [[ "$cmd" == quick ]]; then
+    (($# == 1)) || usage_die '用法：sb quick（交互式快速创建）'
+    [[ -t 0 ]] || usage_die 'sb quick 需要交互终端；脚本调用请使用 sb node add。'
+    (( cli_dry_run == 0 )) || usage_die 'sb quick 不支持 --dry-run；创建前会显示配置供确认。'
+  fi
   case "$cmd" in
     -h|--help|help) sb_help; return 0;;
     -V|--version|version) printf 'sb-manager %s\n' "$SBM_VERSION"; return 0;;
@@ -200,6 +206,7 @@ main() {
 
   case "$cmd" in
     menu) ui_main ;;
+    quick) ui_menu_loop ui_quick_add_node ;;
     __ui-step) shift; ui_worker "$@" ;;
     substore) shift; substore_cli "$@" ;;
     status)

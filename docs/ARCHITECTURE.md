@@ -38,6 +38,15 @@ yes/dry-run/quiet/no-color options survive worker launches and reloads.
 Selectors return IDs through caller variables, and edits load defaults from
 state. No persistent UI state or new runtime dependency is required.
 
+`sb quick` and the main node-creation entry use protocol presets and a final
+editable summary. Certificate selection can invoke a dedicated worker to issue
+or renew a certificate without nesting state locks or suppressing backend errors.
+Node creation commits before import rendering. A separate completion page keeps
+the node ID across export failures, so retries cannot create duplicate nodes.
+Full per-user client profiles include every required outbound and are validated
+before an atomic file replacement; the existing full-subscription export remains
+available. Advanced protocol parameters use the original creation wizard.
+
 ## Traffic control plane
 
 ```text

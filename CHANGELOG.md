@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.39
+
+- Add `sb quick` and a guided node-creation path with protocol presets,
+  suggested addresses/ports, and an editable summary before creation.
+- Issue or renew certificates inside the node workflow, reusing saved DNS
+  credentials and preserving cancellation/failure handling in separate workers.
+- Deliver links and available QR codes immediately after creation; keep a
+  completion page for import, subscription, node management and firewall access.
+- Export complete per-user sing-box profiles alongside outbound fragments,
+  retaining both ShadowTLS outbounds and publishing validated files atomically.
+- Keep advanced protocol options available and reject creation in dry-run mode.
+  No test scripts, environments or procedures are added; checks are static only.
+
 ## 0.1.0-alpha.38
 
 - Rotate the actual Snell PSK for single-user credentials and persist multi-user
