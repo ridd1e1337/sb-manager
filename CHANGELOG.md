@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.43
+
+- Add a sing-box-native TCP/SNI frontend using scoped TLS sniffing, fixed
+  loopback routes and a final reject for unknown traffic. No extra binary,
+  package or daemon is needed; backend TLS and certificate verification remain.
+- Default new mux configurations to sing-box while preserving existing Nginx
+  routes and explicit backend choices. Add CLI/panel backend switching within
+  the existing candidate validation and rollback transaction.
+- Reuse public-port exports, live subscriptions, loopback traffic accounting,
+  restore and disable behavior. Make status, health, logs and repair aware of
+  the selected backend and extend port reservations to local service listeners.
+- Document Alpine resource expectations, migration and TCP-only scope.
+  Only static checks were performed; no test scripts or procedures were added.
+
 ## 0.1.0-alpha.42
 
 - Unify Enter as back across menu choices, certificate and resource selectors,

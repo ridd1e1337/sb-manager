@@ -18,12 +18,12 @@ node_transport_kinds() {
 
 validate_state_semantics() {
   local state=$1 ids count node id protocol port domain cert_dir kind key user_ids user_id enabled_users realm_url realm_domain realm_port realm_id
-  state_validate "$state"
+  state_validate "$state" || return 1
   if declare -F traffic_validate_state >/dev/null 2>&1; then
-    traffic_validate_state "$state"
+    traffic_validate_state "$state" || return 1
   fi
   if declare -F nginx_stream_validate_state >/dev/null 2>&1; then
-    nginx_stream_validate_state "$state" || die 'Nginx Stream 状态无效。'
+    nginx_stream_validate_state "$state" || die 'TCP/SNI 复用状态无效。'
   fi
   ids=$(jq -r '.nodes[].id' "$state" | sort)
   count=$(printf '%s\n' "$ids" | sed '/^$/d' | uniq -d | wc -l)
@@ -44,6 +44,10 @@ validate_state_semantics() {
   fi
 
   declare -A occupied=() realm_ids=()
+  if nginx_stream_state_enabled "$state"; then
+    port=$(jq -r '.nginx_stream.port' "$state")
+    occupied[tcp:$port]='TCP/SNI 复用入口'
+  fi
   while IFS= read -r node; do
     [[ -n "$node" ]] || continue
     id=$(jq -r '.id' <<<"$node")
@@ -143,8 +147,10 @@ render_inbound_for_node() {
 }
 
 render_config_from_state() {
+  local mux_config
   local state=$1 output=$2 node node_id credentials node_secret inbound inbounds='[]' log_level api_enabled api_secret api_port dashboard strategy dns_optimistic dns_optimistic_timeout dns_timeout dns_advanced core_version realm_enabled realm_listen realm_port realm_url realm_token realm_user realm_max realm_domain
-  validate_state_semantics "$state"
+  validate_state_semantics "$state" || return 1
+  mux_config=$(mux_builtin_config "$state") || return 1
   while IFS= read -r node; do
     [[ -n "$node" ]] || continue
     node_id=$(jq -r '.id' <<<"$node")
@@ -181,6 +187,7 @@ render_config_from_state() {
   fi
   [[ "$api_enabled" != true ]] || api_secret=$(state_get_secret api | jq -r '.secret')
   jq -n --argjson metered_proxies "$(jq '[.nodes[]|select(.enabled and .traffic.enabled and (.protocol|IN("socks","mixed")))|"in-"+.id]' "$state")" --arg level "$log_level" --arg strategy "$strategy" --argjson inbounds "$inbounds" --argjson api_enabled "$api_enabled" \
+    --argjson mux "$mux_config" \
     --arg secret "$api_secret" --argjson api_port "$api_port" --argjson dashboard "$dashboard" --arg dashboard_path "$SBM_VAR/dashboard" \
     --argjson dns_advanced "$dns_advanced" --argjson dns_optimistic "$dns_optimistic" --arg dns_optimistic_timeout "$dns_optimistic_timeout" --arg dns_timeout "$dns_timeout" \
     --argjson realm_enabled "$realm_enabled" --arg realm_listen "$realm_listen" --argjson realm_port "$realm_port" --arg realm_url "$realm_url" --arg realm_token "$realm_token" --arg realm_user "$realm_user" --argjson realm_max "$realm_max" --arg realm_domain "$realm_domain" --arg cert_dir "$SBM_CERTS" '{
@@ -192,6 +199,10 @@ render_config_from_state() {
     route:{default_domain_resolver:"dns-local",final:"direct"}
   }
   | if ($metered_proxies|length)>0 then .route.rules=[{inbound:$metered_proxies,network:"udp",action:"reject"}] else . end
+  | if ($mux.inbounds|length)>0 then
+      .inbounds += $mux.inbounds
+      | .route.rules=($mux.rules + (.route.rules // []))
+    else . end
   | if $dns_advanced then
       .dns.timeout=$dns_timeout
       | .dns.optimistic=(if $dns_optimistic then {enabled:true,timeout:$dns_optimistic_timeout} else false end)

@@ -16,6 +16,7 @@ source "$SBM_LIB/lib/dependencies.sh"
 source "$SBM_LIB/lib/service.sh"
 source "$SBM_LIB/lib/state.sh"
 source "$SBM_LIB/lib/nginx_stream.sh"
+source "$SBM_LIB/lib/mux.sh"
 source "$SBM_LIB/protocols/vmess_ws_cf.sh"
 source "$SBM_LIB/protocols/shadowsocks.sh"
 source "$SBM_LIB/protocols/anytls.sh"
@@ -104,7 +105,8 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb network speed HOST [--port N] [--seconds 1-30] [--streams 1-16] [--direction up|down] [--json]
   sb network history [--json]|compare BEFORE AFTER [--json]
   sb hy2 buffer enable|disable|status [--json]
-  sb mux status [--json]|enable [PORT]|disable|route list|route add NODE_ID SNI [BACKEND_PORT]|route remove NODE_ID
+  sb mux status [--json]|enable [PORT] [--backend sing-box|nginx]|disable|backend sing-box|nginx
+  sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID
   sb traffic group set ID --nodes NODE1,NODE2 --quota 500G [--reset-day 1] [--quota-mode total|download]
   sb traffic group status [--json]|remove ID|reset ID
   sb traffic shaping plan|enable IFACE --capacity 1G | disable | status [--json]
@@ -146,7 +148,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb acme update
   sb doctor [--repair|--network]
   sb repair                      修复权限、配置与服务状态
-  sb logs [all|singbox|tunnel|follow] [行数]
+  sb logs [all|singbox|tunnel|mux|nginx|follow] [行数]
   sb backup [文件] [--recipient AGE_RECIPIENT]
   sb restore <文件> [--identity AGE_PRIVATE_KEY] [--yes]
   sb restart
@@ -412,22 +414,7 @@ main() {
       esac
       ;;
     mux|nginx-stream)
-      local action=${2:-status}
-      case "$action" in
-        status) nginx_stream_status "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
-        enable) nginx_stream_enable "${3:-}" ;;
-        disable) nginx_stream_disable ;;
-        route)
-          local route_action=${3:-list}
-          case "$route_action" in
-            list) nginx_stream_route_list ;;
-            add) nginx_stream_route_add "${4:?缺少节点 ID}" "${5:?缺少 SNI}" "${6:-}" ;;
-            remove|del) nginx_stream_route_remove "${4:?缺少节点 ID}" ;;
-            *) usage_die '用法：sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID' ;;
-          esac
-          ;;
-        *) usage_die '用法：sb mux status|enable [PORT]|disable|route list|route add NODE_ID SNI [BACKEND_PORT]|route remove NODE_ID' ;;
-      esac
+      mux_cli "$@"
       ;;
     traffic)
       if [[ ${2:-} == shaping ]]; then shift 2; shaping_cli "$@"; return $?; fi

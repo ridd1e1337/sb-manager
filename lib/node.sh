@@ -22,6 +22,10 @@ node_protocol_label() {
 
 node_port_in_state() {
   local kind=$1 port=$2 state=${3:-$SBM_STATE} node k
+  if [[ "$kind" == tcp ]] && jq -e --argjson port "$port" '
+    (.nginx_stream.enabled==true and .nginx_stream.port==$port)
+    or any(.nginx_stream.routes[]?; .backend_port==$port)
+  ' "$state" >/dev/null; then return 0; fi
   while IFS= read -r node; do
     while IFS= read -r k; do [[ "$k" == "$kind" && $(jq -r '.port' <<<"$node") == "$port" ]] && return 0; done < <(node_transport_kinds "$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$state")
@@ -120,7 +124,7 @@ node_show() {
   if declare -F nginx_stream_route_for_node >/dev/null 2>&1; then
     local route
     route=$(nginx_stream_route_for_node "$SBM_STATE" "$id")
-    [[ -z "$route" ]] || printf 'Nginx Stream：%s\n' "$(jq -c . <<<"$route")"
+    [[ -z "$route" ]] || printf 'TCP/SNI 复用（%s）：%s\n' "$(mux_backend_label)" "$(jq -c . <<<"$route")"
   fi
   printf '用户：%s 个，启用 %s 个\n' "$(jq '.users|length' <<<"$node")" "$(jq '[.users[]|select(.enabled)]|length' <<<"$node")"
 }

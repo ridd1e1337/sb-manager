@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.42",
+  "manager_version": "0.1.0-alpha.43",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -24,6 +24,7 @@ Simplified example:
   },
   "nginx_stream": {
     "enabled": true,
+    "backend": "sing-box",
     "listen": "::",
     "port": 443,
     "routes": [
@@ -125,7 +126,13 @@ Multiple TLS nodes may reference the same `certificates[].domain` and certificat
 
 Every node has a normalized `traffic` object. `configured` distinguishes a never-configured node from a disabled policy; `enabled` controls runtime rules without discarding policy or usage. `quota_bytes` and either directional rate may be `null` for unlimited. `quota_mode` is `total` (upload plus download) or `download`; `reset_day` is an integer from 1 through 28 and is evaluated in UTC. Rate values are stored as bit/s. Accumulated counters are runtime data and live in `/var/lib/sb-manager/traffic-usage.json`, not in state or generated sing-box configuration.
 
-`nginx_stream.routes` separates the public frontend from sing-box's runtime listener. A node keeps its original direct `listen`/`port`; while the mux is enabled, rendering substitutes `127.0.0.1:<backend_port>` and exports substitute the shared public port. Node IDs, SNI values, and backend ports must each be unique. Older schema-v2 files without this section are normalized to a disabled empty configuration before validation.
+`nginx_stream` retains its historical key for both TCP/SNI mux backends.
+`backend` is `sing-box` or `nginx`. New empty configurations default to
+`sing-box`; legacy configurations missing `backend` keep `nginx` when enabled
+or when any routes were saved. Explicit choices survive upgrades and disabling.
+Older schema-v2 files without this section normalize to a disabled empty mux.
+
+`nginx_stream.routes` separates the public frontend from sing-box's runtime listener. A node keeps its original direct `listen`/`port`; while the mux is enabled, rendering substitutes `127.0.0.1:<backend_port>` and exports substitute the shared public port. Node IDs, case-insensitive SNI values, and backend ports must each be unique. The built-in backend adds a TCP-only direct inbound, scoped TLS sniffing, fixed loopback route destinations and a final reject for that inbound. It adds no credentials and does not terminate TLS. API, subscriptions, Realm, Sub-Store and node port reservations are checked before applying a candidate.
 
 The optional top-level `realm` object configures sing-box's `hysteria-realm` service. Its bearer token is stored only in `secrets/realm.json`; `realm.public_url` is used by Hysteria2 inbound/outbound `realm` blocks. A Hysteria2 node opts in with `realm_enabled`/`realm_id`, and may restrict Realm traffic to IPv4/IPv6 or request UPnP/NAT-PMP port mapping. Realm cannot be disabled while an enabled Hysteria2 node still references it.
 

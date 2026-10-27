@@ -73,7 +73,7 @@ status_collect_json_unlocked() {
   tunnel_mode=$(jq -r '.tunnel.mode' "$SBM_STATE")
   if [[ "$tunnel_mode" == none ]]; then tunnel_state=off; else tunnel_state=$(status_service_state "$SBM_TUNNEL_SERVICE"); fi
   nginx_enabled=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE")
-  if [[ "$nginx_enabled" == true ]]; then nginx_state=$(status_service_state "$SBM_NGINX_STREAM_SERVICE"); else nginx_state=off; fi
+  if [[ "$nginx_enabled" == true ]]; then nginx_state=$(status_service_state "$(mux_service)"); else nginx_state=off; fi
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
   if (( traffic_count == 0 )); then traffic_state=off
   elif traffic_runtime_complete; then traffic_state=running
@@ -88,6 +88,7 @@ status_collect_json_unlocked() {
   jq -n --arg now "$(now_iso)" --arg version "$SBM_VERSION" --arg init "$(init_system_label)" \
     --arg sb_ver "$sb_ver" --arg service_state "$service_state" --arg cf_ver "$cf_ver" \
     --arg tunnel_mode "$tunnel_mode" --arg tunnel_state "$tunnel_state" --arg nginx_state "$nginx_state" \
+    --arg mux_backend "$(mux_backend)" \
     --argjson nginx_port "$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")" --arg traffic_state "$traffic_state" \
     --argjson traffic_count "$traffic_count" --arg ufw_state "$ufw_state" --arg fail2ban_state "$fail2ban_state" \
     --arg pending "$pending" --argjson enabled_count "$enabled_count" --argjson nodes "$nodes" --argjson certs "$certs" \
@@ -100,7 +101,7 @@ status_collect_json_unlocked() {
      components:{
        sing_box:{version:(if $sb_ver=="" then null else $sb_ver end),state:$service_state,pending_version:(if $pending=="" then null else $pending end)},
        cloudflared:{version:(if $cf_ver=="" then null else $cf_ver end),mode:$tunnel_mode,state:$tunnel_state},
-       nginx_stream:{state:$nginx_state,port:$nginx_port},traffic:{state:$traffic_state,configured_nodes:$traffic_count,shared_groups:$groups,shaping:$shaping},substore:$substore,
+       nginx_stream:{state:$nginx_state,port:$nginx_port,backend:$mux_backend},traffic:{state:$traffic_state,configured_nodes:$traffic_count,shared_groups:$groups,shaping:$shaping},substore:$substore,
        ufw:{state:$ufw_state},fail2ban:{state:$fail2ban_state},notifications:$notify,health:($health + {resources_current:$resources})},
      nodes:$nodes,certificates:$certs,issues:$issues}
   '
@@ -120,7 +121,7 @@ status_show() {
   printf '服务管理      : %s\n' "$(jq -r '.manager.init_system' <<<"$data")"
   printf 'sing-box     : %s (%s)\n' "$(jq -r '.components.sing_box.version // "未安装"' <<<"$data")" "$(jq -r '.components.sing_box.state' <<<"$data")"
   printf 'cloudflared  : %s (Tunnel: %s/%s)\n' "$(jq -r '.components.cloudflared.version // "未安装"' <<<"$data")" "$(jq -r '.components.cloudflared.mode' <<<"$data")" "$(jq -r '.components.cloudflared.state' <<<"$data")"
-  printf 'Nginx Stream : %s (%s/TCP)\n' "$(jq -r '.components.nginx_stream.state' <<<"$data")" "$(jq -r '.components.nginx_stream.port' <<<"$data")"
+  printf 'TCP/SNI 复用 : %s (%s/TCP, %s)\n' "$(jq -r '.components.nginx_stream.state' <<<"$data")" "$(jq -r '.components.nginx_stream.port' <<<"$data")" "$(jq -r '.components.nginx_stream.backend' <<<"$data")"
   printf '安全组件      : UFW %s，Fail2ban %s\n' "$(jq -r '.components.ufw.state' <<<"$data")" "$(jq -r '.components.fail2ban.state' <<<"$data")"
   printf '通知/健康检查 : %s/%s\n' "$(jq -r 'if .components.notifications.enabled then .components.notifications.provider else "off" end' <<<"$data")" "$(jq -r 'if .components.health.enabled then "on" else "off" end' <<<"$data")"
   printf '节点/证书/异常: %s（启用 %s）/%s/%s\n\n' "$(jq -r '.summary.nodes' <<<"$data")" "$(jq -r '.summary.enabled_nodes' <<<"$data")" "$(jq -r '.summary.certificates' <<<"$data")" "$(jq -r '.summary.issues' <<<"$data")"

@@ -32,7 +32,7 @@ status_summary() {
   printf 'cloudflared  : %s (Tunnel: %s)\n' "${cf_ver:-未安装}" "$mode"
   printf '节点          : %s 个，启用 %s 个\n' "$nodes" "$enabled"
   printf '证书          : %s 个\n' "$certs"
-  printf 'Nginx复用     : %s (%s/TCP)\n' "$([[ "$mux_state" == true ]] && echo '启用' || echo '停用')" "$mux_port"
+  printf 'TCP/SNI 复用 : %s (%s/TCP, %s)\n' "$([[ "$mux_state" == true ]] && echo '启用' || echo '停用')" "$mux_port" "$(mux_backend_label)"
   printf '流量控制      : %s 个节点\n' "$traffic_count"
 }
 
@@ -51,7 +51,7 @@ doctor_repair_runtime() {
   fi
   ensure_program_permissions
   prepare_singbox_binary_for_backend "$(readlink -f "$SBM_SING_BOX_BIN")"
-  if [[ $(jq -r '.nginx_stream.enabled // false' "$SBM_STATE" 2>/dev/null || true) == true ]] && declare -F nginx_stream_prepare_binary_for_backend >/dev/null 2>&1; then
+  if mux_uses_nginx && declare -F nginx_stream_prepare_binary_for_backend >/dev/null 2>&1; then
     nginx_stream_prepare_binary_for_backend "$SBM_NGINX_STREAM_BIN" "$(effective_init_system)"
   fi
   if id "$SBM_SERVICE_USER" >/dev/null 2>&1; then
@@ -115,7 +115,7 @@ doctor_repair_safe() {
     traffic_reconcile || { log_error '重建流量 nftables 规则失败。'; rc=1; }
   fi
   if declare -F nginx_stream_reconcile >/dev/null 2>&1; then
-    nginx_stream_reconcile || { log_error '协调 Nginx Stream 服务失败。'; rc=1; }
+    nginx_stream_reconcile || { log_error '协调 TCP/SNI 复用服务失败。'; rc=1; }
   fi
   if [[ "$SBM_SKIP_INIT" != 1 ]] && service_exists "$SBM_SERVICE" && state_runtime_required && ! service_active "$SBM_SERVICE"; then
     log_warn '检测到 sing-box 应运行但当前未运行，尝试一次受控重启。'
@@ -184,10 +184,10 @@ doctor_network_probe() {
   fi
   while IFS= read -r kind; do
     if [[ -n "$mux_route" ]]; then
-      if service_active "$SBM_NGINX_STREAM_SERVICE" && host_port_in_use tcp "$port"; then
-        check_line PASS "$id 通过 Nginx Stream 监听 ${port}/TCP"
+      if service_active "$(mux_service)" && host_port_in_use tcp "$port"; then
+        check_line PASS "$id 通过 $(mux_backend_label) 监听 ${port}/TCP"
       else
-        check_line FAIL "$id 的 Nginx Stream 未监听 ${port}/TCP"
+        check_line FAIL "$id 的 TCP/SNI 复用入口未监听 ${port}/TCP"
         failures=$((failures + 1))
       fi
       continue
@@ -528,7 +528,7 @@ doctor_run() {
     if singbox_has_bind_capability "${core_target:-$SBM_SING_BOX_BIN}"; then check_line PASS 'OpenRC sing-box 核心具备低端口绑定能力'
     else check_line FAIL 'OpenRC sing-box 核心缺少 cap_net_bind_service；运行 sb repair'; failures=$((failures + 1)); fi
   fi
-  if [[ "$backend" == openrc && $(jq -r '.nginx_stream.enabled // false' "$SBM_STATE") == true ]] && (( $(jq -r '.nginx_stream.port' "$SBM_STATE") < 1024 )); then
+  if [[ "$backend" == openrc ]] && mux_uses_nginx && (( $(jq -r '.nginx_stream.port' "$SBM_STATE") < 1024 )); then
     if nginx_stream_file_capabilities "$SBM_NGINX_STREAM_OPENRC_BIN" | grep -q cap_net_bind_service; then
       check_line PASS 'OpenRC Nginx 核心具备低端口绑定能力'
     else
@@ -607,13 +607,14 @@ show_logs() {
   case "$target" in
     singbox|core) service_logs "$SBM_SERVICE" "$lines" 0 ;;
     tunnel|cloudflared) service_logs "$SBM_TUNNEL_SERVICE" "$lines" 0 ;;
-    nginx|mux|nginx-stream) service_logs "$SBM_NGINX_STREAM_SERVICE" "$lines" 0 ;;
+    mux) service_logs "$(mux_service)" "$lines" 0 ;;
+    nginx|nginx-stream) service_logs "$SBM_NGINX_STREAM_SERVICE" "$lines" 0 ;;
     all)
       printf '%s\n' '---- sing-box ----'
       service_logs "$SBM_SERVICE" "$lines" 0 || true
       printf '%s\n' '---- cloudflared ----'
       service_logs "$SBM_TUNNEL_SERVICE" "$lines" 0 || true
-      if nginx_stream_state_enabled "$SBM_STATE"; then
+      if mux_uses_nginx; then
         printf '%s\n' '---- nginx stream ----'
         service_logs "$SBM_NGINX_STREAM_SERVICE" "$lines" 0 || true
       fi
@@ -622,6 +623,6 @@ show_logs() {
       if [[ $(init_system) == systemd ]]; then journalctl -u "$SBM_SERVICE" -u "$SBM_TUNNEL_SERVICE" -u "$SBM_NGINX_STREAM_SERVICE" -f
       else service_logs "$SBM_SERVICE" "$lines" 1; fi
       ;;
-    *) die '日志目标应为 all、singbox、tunnel、nginx 或 follow。' ;;
+    *) die '日志目标应为 all、singbox、tunnel、mux、nginx 或 follow。' ;;
   esac
 }

@@ -52,6 +52,7 @@ state_default_json() {
       },
       nginx_stream: {
         enabled: false,
+        backend: "sing-box",
         listen: "::",
         port: 443,
         routes: []
@@ -202,6 +203,9 @@ state_normalize_v2_file() {
     | .realm.user_name //= "default"
     | .realm.max_realms //= 0
     | .nginx_stream //= {enabled:false,listen:"::",port:443,routes:[]}
+    | if .nginx_stream.backend==null then
+        .nginx_stream.backend=(if .nginx_stream.enabled==true or ((.nginx_stream.routes // [])|length)>0 then "nginx" else "sing-box" end)
+      else . end
     | .notifications //= {enabled:false,provider:"none",traffic_thresholds:[80,90,100]}
     | .notifications.enabled //= false
     | .notifications.provider //= "none"
@@ -464,6 +468,7 @@ state_validate() {
       and (.max_realms | type == "number" and floor == . and . >= 0 and . <= 1000000))
     and (.nginx_stream | type == "object"
       and (.enabled | type == "boolean")
+      and (.backend | IN("sing-box", "nginx"))
       and (.listen | nonempty)
       and (.port | port)
       and (.routes | type == "array")
@@ -786,7 +791,7 @@ state_install_candidate() {
   fi
   if declare -F nginx_stream_reconcile >/dev/null 2>&1; then
     if ! nginx_stream_reconcile; then
-      log_error 'Nginx Stream 服务启动失败，正在回滚。'
+      log_error 'TCP/SNI 复用服务协调失败，正在回滚。'
       snapshot_restore "$backup" || log_error '自动回滚失败，请立即检查快照。'
       return 1
     fi

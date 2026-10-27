@@ -72,7 +72,7 @@ state.json: nodes[].traffic                 /var/lib/sb-manager/traffic-usage.js
 
 The traffic subsystem is separate from sing-box rendering but participates in the same manager lock, snapshots, state transitions, backup/restore, and rollback. Node state holds policy (`quota_bytes`, `quota_mode`, reset day, and directional bit rates); the protected runtime journal holds only cycle IDs and accumulated counters. Before replacing rules, live named counters are checkpointed and used as the initial values of the new atomic nftables transaction. A systemd lifecycle unit restores rules at boot and checkpoints at shutdown; a timer checkpoints and processes UTC billing-cycle rollover every five minutes without rebuilding an already-correct table. OpenRC uses an equivalent boot service and, when `dcron` is installed, a 15-minute periodic job.
 
-Rules match the effective listener returned by the Nginx Stream topology layer. Direct nodes therefore match their public listener, routed nodes match the unique loopback backend, and Tunnel-backed VMess matches its loopback origin. Loopback listeners are matched on the `output` hook in both destination (client/Tunnel → sing-box) and source (sing-box → client/Tunnel) directions; direct listeners use `input` for upload and `output` for download. Each rule includes the protocol transport, so TCP and UDP nodes may retain the same numeric port without sharing counters.
+Rules match the effective listener returned by the shared TCP/SNI topology layer. Direct nodes therefore match their public listener, routed nodes match the unique loopback backend, and Tunnel-backed VMess matches its loopback origin. Loopback listeners are matched on the `output` hook in both destination (client/Tunnel → sing-box) and source (sing-box → client/Tunnel) directions; direct listeners use `input` for upload and `output` for download. Each rule includes the protocol transport, so TCP and UDP nodes may retain the same numeric port without sharing counters.
 
 The implementation deliberately does not install `tc` qdiscs. Rate enforcement uses nftables named byte-rate limits as a policer, which avoids replacing an operator's root qdisc and works uniformly for IPv4, IPv6, TCP, UDP, and loopback traffic. The owned table is not persisted in the host firewall configuration and never adds allow rules; boot reconciliation rebuilds it from manager state.
 
@@ -133,19 +133,40 @@ Internet → TCP <Snell v5 port>
 
 VMess-WS-CF never listens on a public interface. AnyTLS and Hysteria2 can share the same numeric port because one is TCP and the other UDP.
 
-### Optional Nginx Stream SNI passthrough
+### Optional TCP/SNI passthrough
 
-```text
-Internet :443/TCP
-        │
-        ▼
-sb-nginx-stream (ssl_preread; no TLS termination)
-        ├─ SNI trojan.example.com → 127.0.0.1:20000 → Trojan
-        ├─ SNI vless.example.com  → 127.0.0.1:20001 → VLESS
-        └─ unknown/missing SNI     → reject backend
-```
+New mux configurations use the existing sing-box process. A TCP-only `direct`
+inbound tagged `sbm-mux-tcp` listens on the public port. Only that inbound runs
+TLS sniffing (300ms timeout), then exact SNI rules forward to fixed
+`127.0.0.1:<backend_port>` targets. A final reject prevents unknown, missing-SNI
+or non-TLS traffic from reaching the normal direct outbound. Backend inbounds
+have different tags, so their authenticated traffic cannot loop into the mux.
+TLS, Reality and ShadowTLS handshakes remain at the backend; no TLS termination,
+new keys, certificate-verification bypass, process or package is introduced.
 
-The feature is off by default. On systemd it uses a hardened unit; on OpenRC it uses a foreground `supervise-daemon` service and a persistent copy of the Nginx binary with only `cap_net_bind_service`. State retains each node's direct listen port and stores separate route backend ports. Rendering substitutes loopback backends only while the mux is enabled; exports substitute the public mux port. Transition order is stop mux → validate/install candidate → restart sing-box → validate/start mux. Any failure restores the previous state, sing-box configuration, and service topology.
+The feature remains opt-in. The historical `nginx_stream` state key and helper
+names retain shared routes and topology; `backend` selects `sing-box` or `nginx`.
+Missing backend values preserve Nginx when legacy routes exist or the feature
+is enabled. Empty configurations default to sing-box. Backend selection persists
+across disabling and upgrades. `lib/mux.sh` owns selection, built-in rendering
+and CLI dispatch; `lib/nginx_stream.sh` retains common route handling and the
+optional independent Nginx service.
+
+State keeps each node's independent listen/port. Active routes render unique
+loopback backends, exports use the public mux port, and traffic accounting
+continues on the loopback ports. Port reservations include the frontend,
+backends, nodes and enabled API/Realm/Sub-Store listeners plus subscriptions.
+UDP stays independent. Sniffing and connection buffers still consume resources;
+no fixed memory ceiling is promised.
+
+Candidate core validation occurs before stopping the old Nginx frontend.
+Installation then restarts sing-box and reconciles the selected backend. The
+built-in backend stops/disables only the manager's Nginx service; Nginx mode
+retains its systemd/OpenRC service and installs dependencies only when enabled.
+Rollback stops that service before restoring state/config and restarting the
+previous topology. Public-port exports and live subscriptions follow the same
+transaction. Health, status, logs and repair use the selected service. The
+compatibility `components.nginx_stream` JSON field includes the backend name.
 
 ## Trust boundaries
 

@@ -247,7 +247,7 @@ ui_header() {
   printf '  服务管理 %-16s\n' "$(init_system_label)"
   printf '  服务 %-18s Tunnel %-18s\n' "$service_state" "$(jq -r '.tunnel.mode' "$SBM_STATE")"
   mux_state=$(jq -r 'if .nginx_stream.enabled then ((.nginx_stream.port|tostring) + "/TCP") else "off" end' "$SBM_STATE")
-  printf '  Nginx Stream %-36s\n' "$mux_state"
+  printf '  TCP/SNI 复用 %-36s\n' "$mux_state"
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
   printf '  流量控制 %-36s\n' "${traffic_count} 个节点"
   notify_state=$(jq -r 'if .notifications.enabled then .notifications.provider else "off" end' "$SBM_STATE")
@@ -909,10 +909,11 @@ ui_backup_menu() {
 }
 
 ui_nginx_stream_menu() {
-  local c id sni backend port node
+  local c id sni backend port node engine_choice
   nginx_stream_status
-  printf '\n1. 添加 SNI 路由\n2. 删除 SNI 路由\n3. 启用 443/TCP 复用\n4. 停用 443/TCP 复用\n5. 查看路由\n0. 返回\n'
-  ui_menu_choice c '选择操作' 5
+  printf '不同节点需使用不同 SNI；证书验证保持开启，UDP 节点仍使用独立监听。\n'
+  printf '\n1. 添加 SNI 路由\n2. 删除 SNI 路由\n3. 启用 TCP 端口复用（默认 443）\n4. 停用复用，恢复独立端口\n5. 查看路由\n6. 切换复用方式\n0. 返回\n'
+  ui_menu_choice c '选择操作' 6
   case "$c" in
     1)
       ui_select_node id || { ui_cancel; return; }
@@ -933,12 +934,16 @@ ui_nginx_stream_menu() {
       ;;
     4) nginx_stream_disable;;
     5) nginx_stream_route_list;;
+    6)
+      printf '1. sing-box 内置（推荐小内存服务器，无新增进程或软件包）\n2. Nginx Stream（按需安装并启动独立服务）\n0. 返回\n'
+      ui_menu_choice engine_choice '选择复用方式' 2
+      case "$engine_choice" in 1) mux_set_backend sing-box;; 2) mux_set_backend nginx;; esac;;
   esac
 }
 
 ui_settings_menu() {
   local c v
-  printf '1. 设置默认服务器地址\n2. 修改日志级别\n3. Nginx Stream 443/TCP 多协议复用\n4. 出站 IP 优先级\n5. 配置校验与差异预览\n6. sing-box 1.14 DNS 优化\n7. 一键开启/恢复 BBR\n8. Hysteria2 UDP 缓冲区优化\n9. 按带宽/延迟优化 TCP\n0. 返回\n'; ui_menu_choice c '选择操作' 9
+  printf '1. 设置默认服务器地址\n2. 修改日志级别\n3. TCP/443 多协议复用（内置 / Nginx）\n4. 出站 IP 优先级\n5. 配置校验与差异预览\n6. sing-box 1.14 DNS 优化\n7. 一键开启/恢复 BBR\n8. Hysteria2 UDP 缓冲区优化\n9. 按带宽/延迟优化 TCP\n0. 返回\n'; ui_menu_choice c '选择操作' 9
   case "$c" in
     1) prompt_value v '域名或 IP' "$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")"; settings_set_default_address "$v";;
     2) prompt_value v '日志级别 (trace/debug/info/warn/error/fatal/panic)' "$(jq -r '.settings.log_level' "$SBM_STATE")"; settings_set_log_level "$v";;

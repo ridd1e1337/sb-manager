@@ -96,8 +96,12 @@ health_collect_json() {
           health_node_runtime "$node" || health_issue error "node_not_listening:$id" node "节点 $id 的监听端口未就绪。"
         done < <(state_enabled_nodes "$SBM_STATE")
       fi
-      if [[ $(jq -r '.nginx_stream.enabled // false' "$SBM_STATE") == true ]] && ! service_active "$SBM_NGINX_STREAM_SERVICE"; then
-        health_issue error nginx_stream_inactive nginx-stream 'Nginx Stream 已启用但服务未运行。'
+      if nginx_stream_state_enabled "$SBM_STATE"; then
+        if ! service_active "$(mux_service)"; then
+          health_issue error mux_inactive mux "TCP/SNI 复用已启用但服务未运行（$(mux_backend_label)）。"
+        elif ! host_port_in_use tcp "$(jq -r '.nginx_stream.port' "$SBM_STATE")"; then
+          health_issue error mux_not_listening mux 'TCP/SNI 复用公网端口未就绪。'
+        fi
       fi
       mode=$(jq -r '.tunnel.mode' "$SBM_STATE")
       if [[ "$mode" != none ]] && ! service_active "$SBM_TUNNEL_SERVICE"; then

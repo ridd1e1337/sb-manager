@@ -66,53 +66,55 @@ nginx_stream_public_node() {
 }
 
 nginx_stream_validate_state() {
-  local state=$1 cfg enabled listen port routes route node node_id sni expected_sni backend protocol
+  local state=$1 cfg enabled listen port routes route node node_id sni expected_sni backend protocol engine
   local route_count=0
   cfg=$(jq -c '.nginx_stream' "$state" 2>/dev/null) || return 1
   enabled=$(jq -r '.enabled // false' <<<"$cfg")
   listen=$(jq -r '.listen // ""' <<<"$cfg")
   port=$(jq -r '.port // 0' <<<"$cfg")
   routes=$(jq -c '.routes // []' <<<"$cfg")
+  engine=$(mux_backend "$state") || return 1
+  case "$engine" in sing-box|nginx) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
+  if [[ "$enabled" == true && "$engine" == sing-box ]]; then
+    version_ge "$(core_current_version)" 1.11.0 || { log_error '内置 TCP/SNI 分流需要 sing-box 1.11 或更高版本。'; return 1; }
+  fi
   [[ "$enabled" == true || "$enabled" == false ]] || { log_error 'nginx_stream.enabled 必须是布尔值。'; return 1; }
-  [[ "$listen" == '::' ]] || { log_error 'Nginx Stream 当前只支持监听 ::（双栈）。'; return 1; }
-  validate_port "$port" || { log_error "Nginx Stream 公网端口无效：$port"; return 1; }
-  if [[ "$enabled" == true && $(jq -r '.api.enabled // false' "$state") == true && $(jq -r '.api.port' "$state") == "$port" ]]; then
-    log_error "Nginx Stream 公网端口与 API 端口冲突：$port/TCP"; return 1
+  [[ "$listen" == '::' ]] || { log_error 'TCP/SNI 当前只支持监听 ::（双栈）。'; return 1; }
+  validate_port "$port" || { log_error "TCP/SNI 公网端口无效：$port"; return 1; }
+  if [[ "$enabled" == true ]] && mux_reserved_port "$state" "$port"; then
+    log_error "TCP/SNI 公网端口与 API、订阅、Realm 或 Sub-Store 端口冲突：$port/TCP"; return 1
   fi
-  if [[ "$enabled" == true && "$SBM_SUBSCRIPTION_PORT" == "$port" ]]; then
-    log_error "Nginx Stream 公网端口与订阅端口冲突：$port/TCP"; return 1
-  fi
-  [[ $(jq -r 'type' <<<"$routes") == array ]] || { log_error 'Nginx Stream routes 必须是数组。'; return 1; }
+  [[ $(jq -r 'type' <<<"$routes") == array ]] || { log_error 'TCP/SNI routes 必须是数组。'; return 1; }
   declare -A seen_nodes=() seen_sni=() seen_backends=()
   while IFS= read -r route; do
     [[ -n "$route" ]] || continue
     route_count=$((route_count + 1))
     node_id=$(jq -r '.node_id // ""' <<<"$route")
     sni=$(jq -r '.sni // ""' <<<"$route")
+    sni=${sni,,}
     backend=$(jq -r '.backend_port // 0' <<<"$route")
-    [[ -n "$node_id" && -z ${seen_nodes[$node_id]+x} ]] || { log_error "Nginx Stream 节点路由重复或缺少 node_id：$node_id"; return 1; }
-    [[ -n "$sni" ]] || { log_error 'Nginx Stream 路由缺少 SNI。'; return 1; }
-    validate_domain "$sni" || { log_error "Nginx Stream SNI 必须是完整域名：$sni"; return 1; }
-    validate_port "$backend" || { log_error "Nginx Stream 后端端口无效：$backend"; return 1; }
-    (( backend != port )) || { log_error "Nginx Stream 后端端口不能等于公网端口：$backend"; return 1; }
-    [[ "$backend" != "$SBM_SUBSCRIPTION_PORT" ]] || { log_error "Nginx Stream 后端端口不能使用订阅端口：$backend"; return 1; }
-    if [[ $(jq -r '.api.enabled // false' "$state") == true && $(jq -r '.api.port' "$state") == "$backend" ]]; then
-      log_error "Nginx Stream 后端端口与 API 端口冲突：$backend"; return 1
+    [[ -n "$node_id" && -z ${seen_nodes[$node_id]+x} ]] || { log_error "TCP/SNI 节点路由重复或缺少 node_id：$node_id"; return 1; }
+    [[ -n "$sni" ]] || { log_error 'TCP/SNI 路由缺少 SNI。'; return 1; }
+    validate_domain "$sni" || { log_error "SNI 必须是完整域名：$sni"; return 1; }
+    validate_port "$backend" || { log_error "TCP/SNI 后端端口无效：$backend"; return 1; }
+    (( backend != port )) || { log_error "TCP/SNI 后端端口不能等于公网端口：$backend"; return 1; }
+    if mux_reserved_port "$state" "$backend"; then
+      log_error "TCP/SNI 后端端口与 API、订阅、Realm 或 Sub-Store 端口冲突：$backend/TCP"; return 1
     fi
-    [[ -z ${seen_sni[$sni]+x} ]] || { log_error "Nginx Stream SNI 重复：$sni"; return 1; }
-    [[ -z ${seen_backends[$backend]+x} ]] || { log_error "Nginx Stream 后端端口重复：$backend"; return 1; }
+    [[ -z ${seen_sni[$sni]+x} ]] || { log_error "SNI 重复：$sni"; return 1; }
+    [[ -z ${seen_backends[$backend]+x} ]] || { log_error "TCP/SNI 后端端口重复：$backend"; return 1; }
     node=$(jq -c --arg id "$node_id" '.nodes[]? | select(.id==$id)' "$state")
-    [[ -n "$node" ]] || { log_error "Nginx Stream 路由引用了不存在的节点：$node_id"; return 1; }
-    nginx_stream_supported_node "$node" || { log_error "协议不支持 Nginx Stream SNI 复用：$(jq -r '.protocol' <<<"$node")/$node_id"; return 1; }
+    [[ -n "$node" ]] || { log_error "TCP/SNI 路由引用了不存在的节点：$node_id"; return 1; }
+    nginx_stream_supported_node "$node" || { log_error "协议不支持 TCP/SNI 复用：$(jq -r '.protocol' <<<"$node")/$node_id"; return 1; }
     expected_sni=$(nginx_stream_node_sni "$node")
     [[ "${sni,,}" == "${expected_sni,,}" ]] || { log_error "节点 $node_id 的路由 SNI 必须与协议 server_name 一致：$expected_sni"; return 1; }
     if [[ "$enabled" == true && $(jq -r '.enabled' <<<"$node") != true ]]; then
-      log_error "Nginx Stream 已启用，但节点未启用：$node_id"; return 1
+      log_error "TCP/SNI 已启用，但节点未启用：$node_id"; return 1
     fi
     seen_nodes[$node_id]=1; seen_sni[$sni]=1; seen_backends[$backend]=1
   done < <(jq -c '.[]' <<<"$routes")
   if [[ "$enabled" == true && $route_count -eq 0 ]]; then
-    log_error 'Nginx Stream 已启用，但没有任何 SNI 路由。'; return 1
+    log_error 'TCP/SNI 已启用，但没有任何 SNI 路由。'; return 1
   fi
   if [[ "$enabled" == true ]]; then
     while IFS= read -r node; do
@@ -122,10 +124,10 @@ nginx_stream_validate_state() {
       if [[ -z ${seen_nodes[$node_id]+x} ]]; then
         case "$protocol" in
           vmess-ws-cf|anytls|trojan|shadowtls|vless|shadowsocks|snell)
-            [[ $(jq -r '.port' <<<"$node") != "$port" ]] || { log_error "节点 $node_id 占用 Nginx Stream 公网端口 ${port}/TCP。"; return 1; }
+            [[ $(jq -r '.port' <<<"$node") != "$port" ]] || { log_error "节点 $node_id 占用 TCP/SNI 公网端口 ${port}/TCP。"; return 1; }
             ;;
           naive)
-            [[ $(jq -r '.network' <<<"$node") != tcp || $(jq -r '.port' <<<"$node") != "$port" ]] || { log_error "节点 $node_id 占用 Nginx Stream 公网端口 ${port}/TCP。"; return 1; }
+            [[ $(jq -r '.network' <<<"$node") != tcp || $(jq -r '.port' <<<"$node") != "$port" ]] || { log_error "节点 $node_id 占用 TCP/SNI 公网端口 ${port}/TCP。"; return 1; }
             ;;
         esac
       fi
@@ -323,17 +325,19 @@ EOF_UNIT
 
 nginx_stream_prepare_transition() {
   [[ ${SBM_SKIP_INIT:-0} == 1 ]] && return 0
-  if nginx_stream_state_enabled "$SBM_STATE" && service_exists "$SBM_NGINX_STREAM_SERVICE"; then
+  if service_exists "$SBM_NGINX_STREAM_SERVICE" && service_active "$SBM_NGINX_STREAM_SERVICE"; then
     service_stop "$SBM_NGINX_STREAM_SERVICE"
+    if service_active "$SBM_NGINX_STREAM_SERVICE"; then log_error '原 Nginx 复用入口无法停止，取消切换。'; return 1; fi
   fi
 }
 
 nginx_stream_reconcile() {
   [[ ${SBM_SKIP_INIT:-0} == 1 ]] && return 0
-  if ! nginx_stream_state_enabled "$SBM_STATE"; then
+  if ! mux_uses_nginx "$SBM_STATE"; then
     if service_exists "$SBM_NGINX_STREAM_SERVICE"; then
-      service_disable "$SBM_NGINX_STREAM_SERVICE" || true
-      service_stop "$SBM_NGINX_STREAM_SERVICE" || true
+      service_disable "$SBM_NGINX_STREAM_SERVICE" || return 1
+      service_stop "$SBM_NGINX_STREAM_SERVICE" || return 1
+      if service_active "$SBM_NGINX_STREAM_SERVICE"; then log_error 'Nginx 复用服务仍在运行。'; return 1; fi
     fi
     return 0
   fi
@@ -357,21 +361,14 @@ nginx_stream_backend_port_used() {
 }
 
 nginx_stream_choose_backend_port() {
-  local state=$1 p node protocol network
+  local state=$1 p public_port
+  public_port=$(jq -r '.nginx_stream.port' "$state") || return 1
   for ((p=20000; p<=29999; p++)); do
+    [[ "$p" != "$public_port" ]] || continue
+    mux_reserved_port "$state" "$p" && continue
     host_port_in_use tcp "$p" && continue
     nginx_stream_backend_port_used "$state" "$p" && continue
-    while IFS= read -r node; do
-      [[ -n "$node" ]] || continue
-      [[ $(jq -r '.enabled' <<<"$node") == true ]] || continue
-      protocol=$(jq -r '.protocol' <<<"$node"); network=$(jq -r '.network // "tcp"' <<<"$node")
-      case "$protocol" in
-        hysteria2|tuic) continue ;;
-        shadowsocks) [[ "$network" == tcp ]] || continue ;;
-        naive) [[ "$network" == tcp ]] || continue ;;
-      esac
-      [[ $(jq -r '.port' <<<"$node") == "$p" ]] && continue 2
-    done < <(jq -c '.nodes[]?' "$state")
+    node_port_in_state tcp "$p" "$state" && continue
     printf '%s\n' "$p"; return 0
   done
   return 1
@@ -381,33 +378,34 @@ _nginx_stream_route_add() {
   local node_id=$1 sni=$2 backend_port=${3:-} node route candidate expected_sni
   node=$(jq -c --arg id "$node_id" '.nodes[]? | select(.id==$id)' "$SBM_STATE")
   [[ -n "$node" ]] || { log_error "节点不存在：$node_id"; return 1; }
-  [[ $(jq -r '.enabled' <<<"$node") == true ]] || { log_error "节点必须先启用才能加入 Nginx Stream：$node_id"; return 1; }
-  nginx_stream_supported_node "$node" || { log_error "协议不支持 Nginx Stream SNI 复用：$(jq -r '.protocol' <<<"$node")"; return 1; }
+  [[ $(jq -r '.enabled' <<<"$node") == true ]] || { log_error "节点必须先启用才能加入 TCP/SNI：$node_id"; return 1; }
+  nginx_stream_supported_node "$node" || { log_error "协议不支持 TCP/SNI 复用：$(jq -r '.protocol' <<<"$node")"; return 1; }
   validate_domain "$sni" || { log_error "SNI 必须是完整域名：$sni"; return 1; }
   expected_sni=$(nginx_stream_node_sni "$node")
   [[ "${sni,,}" == "${expected_sni,,}" ]] || { log_error "SNI 必须与节点协议的 server_name 一致：$expected_sni"; return 1; }
   sni=${sni,,}
   route=$(jq -c --arg id "$node_id" '.nginx_stream.routes[]? | select(.node_id==$id)' "$SBM_STATE")
-  [[ -z "$route" ]] || { log_error "节点已经存在 Nginx Stream 路由：$node_id"; return 1; }
+  [[ -z "$route" ]] || { log_error "节点已经存在 TCP/SNI 路由：$node_id"; return 1; }
   if jq -e --arg sni "$sni" '.nginx_stream.routes[]? | select(.sni==$sni)' "$SBM_STATE" >/dev/null; then
     log_error "SNI 已经被使用：$sni"; return 1
   fi
-  if [[ -z "$backend_port" ]]; then backend_port=$(nginx_stream_choose_backend_port "$SBM_STATE") || { log_error '无法分配 Nginx Stream 后端端口。'; return 1; }; fi
+  if [[ -z "$backend_port" ]]; then backend_port=$(nginx_stream_choose_backend_port "$SBM_STATE") || { log_error '无法分配 TCP/SNI 后端端口。'; return 1; }; fi
   validate_port "$backend_port" || { log_error "后端端口无效：$backend_port"; return 1; }
+  node_port_in_state tcp "$backend_port" "$SBM_STATE" && { log_error "后端端口已被节点保留：$backend_port/TCP"; return 1; }
   host_port_in_use tcp "$backend_port" && { log_error "后端端口已被系统占用：$backend_port/TCP"; return 1; }
   nginx_stream_backend_port_used "$SBM_STATE" "$backend_port" && { log_error "后端端口已被其他路由使用：$backend_port"; return 1; }
   candidate=$(state_candidate)
   jq --arg id "$node_id" --arg sni "$sni" --argjson p "$backend_port" '.nginx_stream.routes += [{node_id:$id,sni:$sni,backend_port:$p}]' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "nginx-route-add-$node_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
-  log_ok "已添加 Nginx Stream 路由：$node_id → $sni（后端 $backend_port）"
+  log_ok "已添加 TCP/SNI 路由：$node_id → $sni（后端 $backend_port）"
 }
 
 nginx_stream_route_add() { with_state_transaction nginx-route-add _nginx_stream_route_add "$@"; }
 
 _nginx_stream_route_remove() {
   local node_id=$1 candidate
-  jq -e --arg id "$node_id" '.nginx_stream.routes[]? | select(.node_id==$id)' "$SBM_STATE" >/dev/null || { log_error "Nginx Stream 路由不存在：$node_id"; return 1; }
+  jq -e --arg id "$node_id" '.nginx_stream.routes[]? | select(.node_id==$id)' "$SBM_STATE" >/dev/null || { log_error "TCP/SNI 路由不存在：$node_id"; return 1; }
   if nginx_stream_state_enabled "$SBM_STATE" && [[ $(jq '.nginx_stream.routes|length' "$SBM_STATE") == 1 ]]; then
     log_error '不能删除启用中的最后一条路由；请先执行 sb mux disable。'; return 1
   fi
@@ -415,26 +413,27 @@ _nginx_stream_route_remove() {
   jq --arg id "$node_id" '.nginx_stream.routes |= map(select(.node_id!=$id))' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "nginx-route-remove-$node_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
-  log_ok "已删除 Nginx Stream 路由：$node_id"
+  log_ok "已删除 TCP/SNI 路由：$node_id"
 }
 
 nginx_stream_route_remove() { with_state_transaction nginx-route-remove _nginx_stream_route_remove "$@"; }
 
 _nginx_stream_enable() {
-  local public_port=${1:-} candidate
+  local public_port=${1:-} backend=${2:-} candidate
+  case "$backend" in ''|sing-box|nginx) ;; *) usage_die '复用方式只能是 sing-box 或 nginx。';; esac
   if [[ $(jq '.nginx_stream.routes|length' "$SBM_STATE") == 0 ]]; then
     log_error '请先添加至少一条 SNI 路由：sb mux route add NODE_ID SNI。'; return 1
   fi
   candidate=$(state_candidate)
-  if [[ -n "$public_port" ]]; then
-    validate_port "$public_port" || { rm -f "$candidate"; log_error "公网端口无效：$public_port"; return 1; }
-    jq --argjson port "$public_port" '.nginx_stream.enabled=true | .nginx_stream.port=$port' "$SBM_STATE" >"$candidate"
-  else
-    jq '.nginx_stream.enabled=true' "$SBM_STATE" >"$candidate"
-  fi
+  [[ -n "$public_port" ]] || public_port=$(jq -r '.nginx_stream.port' "$SBM_STATE")
+  validate_port "$public_port" || { rm -f "$candidate"; log_error "公网端口无效：$public_port"; return 1; }
+  if ! jq --argjson port "$public_port" --arg backend "$backend" '
+    .nginx_stream.enabled=true | .nginx_stream.port=$port
+    | if $backend=="" then . else .nginx_stream.backend=$backend end
+  ' "$SBM_STATE" >"$candidate"; then rm -f "$candidate"; return 1; fi
   if ! apply_candidate_state "$candidate" nginx-enable; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
-  log_ok "Nginx Stream 复用已启用（公网端口 $(jq -r '.nginx_stream.port' "$SBM_STATE")/TCP）。"
+  log_ok "TCP/SNI 复用已启用：$(mux_backend_label)，公网端口 $(jq -r '.nginx_stream.port' "$SBM_STATE")/TCP。"
 }
 
 nginx_stream_enable() { with_state_transaction nginx-enable _nginx_stream_enable "$@"; }
@@ -445,7 +444,7 @@ _nginx_stream_disable() {
   jq '.nginx_stream.enabled=false' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" nginx-disable; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
-  log_ok 'Nginx Stream 复用已停用；路由配置已保留。'
+  log_ok 'TCP/SNI 复用已停用；路由配置已保留。'
 }
 
 nginx_stream_disable() { with_state_transaction nginx-disable _nginx_stream_disable; }
@@ -455,22 +454,24 @@ nginx_stream_route_list() {
 }
 
 nginx_stream_status() {
-  local json=${1:-0} enabled port routes backend service_state
+  local json=${1:-0} enabled port routes backend service_state service
   enabled=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE")
   port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
   routes=$(jq '.nginx_stream.routes|length' "$SBM_STATE")
   backend=$(init_system 2>/dev/null || true)
+  service=$(mux_service)
   if [[ "$json" == 1 ]]; then
     if [[ "$enabled" != true ]]; then service_state=off
     elif [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state=test
-    elif service_active "$SBM_NGINX_STREAM_SERVICE"; then service_state=running
+    elif service_active "$service"; then service_state=running
     else service_state=stopped; fi
     jq --arg state "$service_state" '.nginx_stream + {service_state:$state}' "$SBM_STATE"
     return
   fi
-  printf 'Nginx Stream 复用：%s，公网端口：%s/TCP，路由：%s 条\n' "$([[ "$enabled" == true ]] && echo '启用' || echo '停用')" "$port" "$routes"
-  if [[ "$enabled" == true && "$SBM_SKIP_INIT" != 1 && ("$backend" == systemd || "$backend" == openrc) ]] && service_exists "$SBM_NGINX_STREAM_SERVICE"; then
-    service_status_text "$SBM_NGINX_STREAM_SERVICE" || true
+  printf 'TCP/SNI 复用：%s，方式：%s，公网端口：%s/TCP，路由：%s 条\n' "$([[ "$enabled" == true ]] && echo '启用' || echo '停用')" "$(mux_backend_label)" "$port" "$routes"
+  if [[ $(mux_backend) == sing-box ]]; then printf '复用现有 sing-box 核心，无需额外代理进程；仅转发已登记的 TLS SNI。\n'; fi
+  if [[ "$enabled" == true && "$SBM_SKIP_INIT" != 1 && ("$backend" == systemd || "$backend" == openrc) ]] && service_exists "$service"; then
+    service_status_text "$service" || true
   fi
 }
 
@@ -480,6 +481,14 @@ nginx_stream_doctor_check() {
   [[ "$enabled" == true ]] || return 0
   port=$(jq -r '.nginx_stream.port' "$SBM_STATE"); routes=$(jq '.nginx_stream.routes|length' "$SBM_STATE")
   backend=$(init_system 2>/dev/null || true)
+  if [[ $(mux_backend) == sing-box ]]; then
+    if service_active "$SBM_SERVICE" && singbox_port_in_use tcp "$port"; then
+      check_line PASS "sing-box 内置 TCP/SNI 分流正在运行（${port}/TCP，${routes} 条路由）"
+    else
+      check_line FAIL "sing-box 内置 TCP/SNI 分流未就绪：${port}/TCP"; failures=$((failures + 1))
+    fi
+    return 0
+  fi
   if [[ "$backend" != systemd && "$backend" != openrc ]]; then
     check_line FAIL 'Nginx Stream 复用已启用，但当前不是 systemd/OpenRC 后端'; failures=$((failures + 1)); return 0
   fi

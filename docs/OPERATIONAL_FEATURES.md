@@ -216,7 +216,7 @@ sb traffic shaping disable
 
 对所选网卡上直连节点的**下行**执行 HTB + fq_codel 排队整形。容量参数是
 该网卡总整形上限，也涵盖同一网卡的其他流量，应填写实际链路容量。上行、
-Tunnel/Nginx loopback 回源和其他网卡的流量继续使用 nftables 限速；预览列出
+Tunnel/TCP-SNI 复用的 loopback 回源和其他网卡的流量继续使用 nftables 限速；预览列出
 适用和排除节点。
 
 只接管内核默认 noqueue/mq/fq/fq_codel，或管理器之前恢复的相同队列。自定义

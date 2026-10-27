@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.42`。
+> 当前版本：`0.1.0-alpha.43`。
 
 ## 功能
 
@@ -12,7 +12,7 @@
 - Hysteria2（UDP/QUIC，可选 salamander）
 - Trojan（TLS）、TUIC（QUIC）、VLESS（TLS/Reality）
 - NaiveProxy（HTTPS/QUIC）、ShadowTLS v3 与 Snell v5
-- 可选 Nginx Stream SNI 透传，让多个 TLS/TCP 协议共享一个公网端口
+- 可选 TCP/SNI 端口复用，默认使用 sing-box 内置转发，无需新增进程；保留 Nginx Stream 方式
 - acme.sh + Cloudflare DNS-01 证书申请、部署与续期
 - sing-box 核心检查、自动更新策略、版本切换与回滚
 - 管理器脚本默认每日错峰自动更新；手动关闭后，后续升级保留关闭设置
@@ -58,7 +58,7 @@ Snell 单用户轮换会更换 PSK，多用户模式固定保留 userkey 认证�
 
 ### 节点流量控制
 
-流量控制按节点的实际 sing-box 监听端口识别 TCP/UDP 流量，同时覆盖 IPv4、IPv6、Cloudflare Tunnel 回源和 Nginx Stream loopback 后端。配置保存在 `state.json`；累计用量保存在权限为 `0600` 的 `/var/lib/sb-manager/traffic-usage.json`，不会从生成的 `config.json` 反推。
+流量控制按节点的实际 sing-box 监听端口识别 TCP/UDP 流量，同时覆盖 IPv4、IPv6、Cloudflare Tunnel 回源和 TCP/SNI 复用的 loopback 后端。配置保存在 `state.json`；累计用量保存在权限为 `0600` 的 `/var/lib/sb-manager/traffic-usage.json`，不会从生成的 `config.json` 反推。
 
 ```bash
 # 双向合计 100 GiB/月，每月 1 日 UTC 重置；上行 20 Mbit/s、下行 100 Mbit/s
@@ -101,22 +101,45 @@ AnyTLS 的 `443/TCP` 与 Hysteria2 的 `443/UDP` 可以同时使用。VMess-WS �
 
 ### 端口规划
 
-sing-box 官方不会为这些协议强制规定唯一端口，文档示例常用 `443`（TLS/QUIC）、`8388`（Shadowsocks）和 `8443`（TLS/QUIC 备用）。同一 IP 上的多个 TCP/TLS 入站不能同时绑定 `443/TCP`；要统一走 443，需要显式启用下面的 Nginx Stream SNI 透传功能。面板会按传输类型检查端口冲突：TCP 与 UDP 可以使用同一个数字端口，但两个 TCP 入站不能重复占用；推荐端口被占用时会依次建议 `8443`、`9443`、`10443`，也可以手工输入其他端口。API `9090`、订阅服务 `9080` 和 mixed 客户端 `2080` 默认只监听 loopback。
+sing-box 官方不会为这些协议强制规定唯一端口，文档示例常用 `443`（TLS/QUIC）、`8388`（Shadowsocks）和 `8443`（TLS/QUIC 备用）。同一 IP 上的多个 TCP/TLS 入站不能同时绑定 `443/TCP`；要统一走 443，需要显式启用下面的 TCP/SNI 透传功能。面板会按传输类型检查端口冲突：TCP 与 UDP 可以使用同一个数字端口，但两个 TCP 入站不能重复占用；推荐端口被占用时会依次建议 `8443`、`9443`、`10443`，也可以手工输入其他端口。API `9090`、订阅服务 `9080` 和 mixed 客户端 `2080` 默认只监听 loopback。
 
-证书按域名保存，AnyTLS、Trojan、VLESS TLS、NaiveProxy 等节点可以复用同一域名证书，不需要按协议重复申请。证书复用不等于端口复用：同一证书的多个 TCP 节点仍需使用不同端口；如果要让它们共同使用公网 `443/TCP`，请为每个节点配置唯一 SNI 并启用 Nginx Stream 复用。`443/TCP` 与 `443/UDP` 可以并存，但 Hysteria2、TUIC 等 UDP 入站之间仍不能直接共用同一端口。
+证书按域名保存，AnyTLS、Trojan、VLESS TLS、NaiveProxy 等节点可以复用同一域名证书，不需要按协议重复申请。证书复用不等于端口复用：同一证书的多个 TCP 节点仍需使用不同端口；如果要让它们共同使用公网 `443/TCP`，请为每个节点配置唯一 SNI 并启用 TCP/SNI 复用。`443/TCP` 与 `443/UDP` 可以并存，但 Hysteria2、TUIC 等 UDP 入站之间仍不能直接共用同一端口。
 
-### 可选 Nginx Stream 端口复用
+### 可选 TCP/443 端口复用（适合小内存 Alpine）
 
-systemd 或 Alpine/OpenRC 均可选择启用独立的 Nginx Stream SNI 透传服务。它不终止 TLS，只读取 ClientHello 的 SNI，把公网 `443/TCP` 转发到 sing-box 的不同 loopback 后端。支持 AnyTLS、Trojan、VLESS TLS/Reality、Naive TCP 和 ShadowTLS v3；每个路由必须使用唯一且与协议 `server_name` 一致的域名。Shadowsocks、VMess Tunnel、Hysteria2、TUIC 和 Naive QUIC 不属于该 TCP/SNI 复用范围。
+alpha.43 起，首次配置默认选择 **sing-box 内置**方式；复用功能仍需手动启用。
+适用于 512MB 内存、1GB 磁盘的 Alpine/OpenRC，也支持 systemd。已有 sing-box 核心直接监听
+公网 TCP 入口，仅嗅探 TLS ClientHello 的 SNI，再转发到本进程的不同 loopback 入站。
+无需安装 Nginx、Caddy、Go 工具链或新增常驻服务。连接缓冲和转发仍有开销，实际用量取决于并发。
+
+支持 AnyTLS、Trojan、VLESS TLS/Reality、Naive TCP 和 ShadowTLS v3。每个路由的 SNI 必须唯一，
+并与节点及客户端的 `server_name` 一致；证书必须覆盖对应域名，证书验证保持开启，入口不终止 TLS。
+只允许已登记的 SNI 转到固定本机端口，未知/缺失 SNI 和非 TLS 流量直接拒绝。
+使用 ECH 隐藏目标 SNI 的连接不适用；后端看到的是本机转发连接，用户鉴权仍由原协议处理。
+Shadowsocks、VMess Tunnel、Hysteria2、TUIC 和 Naive QUIC 不属于此复用范围；UDP 仍各自监听。
+
+面板入口：`14. 全局设置 → 3. TCP/443 多协议复用（内置 / Nginx）`。
+先创建使用不同独立端口和 SNI 的节点，再添加路由并启用；以下节点 ID 和域名替换为实际值：
 
 ```bash
 sb mux route add trojan-main trojan.example.com
 sb mux route add vless-main vless.example.com
-sb mux enable 443
+sb mux enable 443 --backend sing-box
 sb mux status
+sb logs mux 100
 ```
 
-启用时按需安装 Debian 的 `nginx-core`/`libnginx-mod-stream` 或 Alpine 的 `nginx`/`nginx-mod-stream`，将已登记节点改为 `127.0.0.1:<自动后端端口>`，分享链接和客户端导出使用公网复用端口。未知 SNI 会被拒绝。执行 `sb mux disable` 后恢复节点原来的独立监听端口；路由定义保留，便于再次启用。系统已有 Nginx 配置不会被改写，目标端口冲突会触发事务回滚。OpenRC 使用独立的前台 supervise-daemon 服务，并把 Nginx 复制到持久化数据目录后仅授予 `cap_net_bind_service`，避免升级覆盖能力设置。
+脚本自动分配 `127.0.0.1:<后端端口>`，分享链接、客户端配置和动态订阅使用公网复用端口。
+启用后刷新客户端订阅或重新导入链接。`sb mux disable` 恢复原来的独立监听端口，保留路由和方式选择。
+启用、切换及停用可能短暂重启连接；端口冲突或应用失败沿用事务回滚。脚本不会自动开放防火墙端口。
+
+已经启用 Nginx 或保存了旧路由的服务器，升级后继续使用 Nginx。可在面板“切换复用方式”中选择
+内置方式，或执行 `sb mux backend sing-box`；当前启用状态和路由保持不变。切换成功会停止项目独立的
+Nginx 复用服务，不卸载 Nginx 软件包，也不改动系统其他 Nginx 配置。需要切回可运行 `sb mux backend nginx`。
+
+Nginx 方式仅在启用时按需安装 Debian 的 `nginx-core`/`libnginx-mod-stream` 或 Alpine 的
+`nginx`/`nginx-mod-stream`，继续使用独立服务和 TLS 透传。旧命令 `sb nginx-stream enable` 显式选择
+Nginx；`sb mux enable` 则沿用保存的方式。内置分流使用 sing-box 1.11+ 路由动作，应用前由实际核心校验配置。
 
 ## 支持环境
 
