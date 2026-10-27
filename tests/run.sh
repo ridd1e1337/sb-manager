@@ -99,11 +99,11 @@ kill "$runtime_pid"; wait "$runtime_pid" 2>/dev/null || true
 
 node_share_uri vm-test | grep -q '^vmess://'
 node_share_uri ss-test | grep -q '^ss://'
-node_share_uri any-test | grep -q '^anytls://.*fp=chrome'
+node_share_uri any-test | grep -q '^anytls://.*fp=chrome&insecure=0&allowInsecure=0#'
 node_share_uri hy2-test | grep -q '^hysteria2://'
 node_client_outbound vm-test | jq -e '.type=="vmess"' >/dev/null
 node_client_outbound ss-test | jq -e '.type=="shadowsocks"' >/dev/null
-node_client_outbound any-test | jq -e '.type=="anytls" and .tls.utls.enabled==true and .tls.utls.fingerprint=="chrome"' >/dev/null
+node_client_outbound any-test | jq -e '.type=="anytls" and .tls.insecure==false and .tls.server_name=="edge.example.com" and .tls.utls.enabled==true and .tls.utls.fingerprint=="chrome"' >/dev/null
 node_client_outbound hy2-test | jq -e '.type=="hysteria2"' >/dev/null
 
 # Validate every generated client outbound with the real core.
@@ -114,7 +114,7 @@ for id in vm-test ss-test any-test hy2-test; do
   "$SBM_SING_BOX_BIN" check -c "$cfg"
 done
 node_client_outbound ss-test alice | jq -e '.type=="shadowsocks" and (.password|contains(":"))' >/dev/null
-node_client_outbound any-test alice | jq -e '.type=="anytls" and .tls.utls.enabled==true and .tls.utls.fingerprint=="chrome"' >/dev/null
+node_client_outbound any-test alice | jq -e '.type=="anytls" and .tls.insecure==false and .tls.server_name=="edge.example.com" and .tls.utls.enabled==true and .tls.utls.fingerprint=="chrome"' >/dev/null
 
 # Fixed Tunnel token stays in a protected file and never appears in the unit.
 tunnel_setup_fixed vm-test cdn.example.com test-tunnel-token cdn.example.com

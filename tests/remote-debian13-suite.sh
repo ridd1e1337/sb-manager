@@ -36,6 +36,7 @@ for test in \
   tests/cert-hook-lock-smoke.sh \
   tests/cert-reload-smoke.sh \
   tests/run.sh \
+  tests/anytls-tls-smoke.sh \
   tests/state-safety-smoke.sh \
   tests/state-migration-smoke.sh \
   tests/protocol-suite-smoke.sh \
@@ -65,6 +66,7 @@ done
 
 if [[ -n ${SBM_TEST_COMPONENT_ASSETS:-} ]]; then
   run_stable tests/substore-sources-smoke.sh
+  SBM_TEST_SUBSTORE_BUNDLE="$SBM_TEST_COMPONENT_ASSETS/sub-store.bundle.js" bash "$PROJECT/tests/anytls-substore-smoke.sh"
 fi
 
 printf '\n===== tests/api-preview-smoke.sh (preview) =====\n'

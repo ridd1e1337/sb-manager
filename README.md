@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.35`。请先在测试 VPS 验证，不要直接覆盖仍在使用的生产节点。
+> 当前版本：`0.1.0-alpha.36`。请先在测试 VPS 验证，不要直接覆盖仍在使用的生产节点。
 
 ## 功能
 
@@ -186,7 +186,7 @@ sudo bash install.sh
 bash <(curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh)
 ```
 
-`install.sh` 默认先解析 `main` 的最新 commit SHA，再按该不可变 commit 下载源码；也可设置 `SBM_INSTALL_REF=v0.1.0-alpha.35` 固定版本。显式指定 `main` 等可变分支仍需 `SBM_ALLOW_MUTABLE_REF=1`。离线发布包可使用 `build-release.sh` 生成，并核验 `SHA256SUMS`、`PROVENANCE-SHA256SUMS` 及可选的 GPG 签名文件。
+`install.sh` 默认先解析 `main` 的最新 commit SHA，再按该不可变 commit 下载源码；也可设置 `SBM_INSTALL_REF=<完整 commit SHA 或已发布 tag>` 固定版本。显式指定 `main` 等可变分支仍需 `SBM_ALLOW_MUTABLE_REF=1`。离线发布包可使用 `build-release.sh` 生成，并核验 `SHA256SUMS`、`PROVENANCE-SHA256SUMS` 及可选的 GPG 签名文件。
 
 同一台服务器可以重复执行安装器。重复安装会保留 `/etc/sb-manager` 下的节点、密钥、证书和备份，并重新生成服务定义；默认会复用已安装的 sing-box 核心。升级管理器脚本时可直接执行：
 
@@ -409,6 +409,15 @@ sb cert issue edge.example.com your-email@example.com
 sb node add anytls --id any-main --domain edge.example.com --address edge.example.com --port 443
 sb node add hy2    --id hy2-main --domain edge.example.com --address edge.example.com --port 443
 ```
+
+AnyTLS 需要服务端证书，客户端应验证证书链和域名。管理器分享链接明确设置
+`insecure=0&allowInsecure=0`，sing-box 导出明确设置 `tls.insecure=false`；连接地址即使是 IP，
+SNI 仍使用证书域名。`fp=chrome` 只设置 TLS 指纹，不会关闭证书验证。
+
+如果经 Sub-Store 导入 v2rayN 后显示“跳过证书验证”，检查**来源和组合**的“快捷设置”：
+“跳过证书验证”应设为“默认/沿用来源”，不要强制启用；同时检查脚本处理器和客户端设置。
+修改后在客户端更新订阅并确认该项关闭。转换兼容说明与排查步骤见
+[AnyTLS 证书验证](docs/ANYTLS_TLS_VERIFICATION.md)。
 
 开放：
 
@@ -656,6 +665,8 @@ find . -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
 ```bash
 SBM_TEST_SING_BOX=/path/to/sing-box bash tests/run.sh
+SBM_TEST_SING_BOX=/path/to/sing-box bash tests/anytls-tls-smoke.sh
+SBM_TEST_SUBSTORE_BUNDLE=/path/to/verified/sub-store.bundle.js bash tests/anytls-substore-smoke.sh
 SBM_TEST_SING_BOX=/path/to/sing-box bash tests/install-smoke.sh
 bash tests/systemd-exec-smoke.sh
 bash tests/openrc-lifecycle.sh
@@ -674,7 +685,8 @@ bash tests/alpine-network-smoke.sh
 
 在指定 Debian 13 测试机上运行完整验收（官方核心目录放在仓库外）：
 
-目前没有可用的远程测试机；使用本地隔离测试与 Alpine 容器验证，远程 Debian/VPS 验收尚未执行。
+alpha.36 已在用户提供的 Debian 13 ARM64 主机上执行 AnyTLS 专项隔离验证，详见
+[验证记录](docs/ANYTLS_TLS_VERIFICATION.md#验证记录)。本版本未运行下面的完整远程验收套件。
 
 ```bash
 SBM_TEST_SING_BOX_STABLE=/opt/sing-box-1.13.19/sing-box \

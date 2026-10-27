@@ -28,7 +28,9 @@ protocol_anytls_share() {
   name=$(jq -r '.name' <<<"$node")
   [[ -n "$address" ]] || { log_warn "节点 $(jq -r '.id' <<<"$node") 尚未配置服务器地址。"; return 1; }
   hp=$(format_hostport "$address" "$port")
-  printf 'anytls://%s@%s?security=tls&sni=%s&fp=chrome&insecure=0#%s\n' \
+  # Sub-Store can omit insecure=0 when producing V2Ray links. Its AnyTLS
+  # round-trip preserves allowInsecure=0, which v2rayN also understands.
+  printf 'anytls://%s@%s?security=tls&sni=%s&fp=chrome&insecure=0&allowInsecure=0#%s\n' \
     "$(urlencode "$password")" "$hp" "$(urlencode "$domain")" "$(urlencode "$name")"
 }
 
@@ -40,5 +42,5 @@ protocol_anytls_client_outbound() {
     --argjson port "$(jq -r '.port' <<<"$node")" \
     --arg password "$(jq -r '.password' <<<"$secret")" \
     --arg domain "$(jq -r '.domain' <<<"$node")" \
-    '{type:"anytls",tag:$tag,server:$server,server_port:$port,password:$password,tls:{enabled:true,server_name:$domain,utls:{enabled:true,fingerprint:"chrome"}}}'
+    '{type:"anytls",tag:$tag,server:$server,server_port:$port,password:$password,tls:{enabled:true,server_name:$domain,insecure:false,utls:{enabled:true,fingerprint:"chrome"}}}'
 }

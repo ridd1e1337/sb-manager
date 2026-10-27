@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.36
+
+- Preserve explicit AnyTLS certificate verification through Sub-Store V2Ray
+  URI conversion with `allowInsecure=0` alongside `insecure=0`; explicitly
+  export `tls.insecure=false` in sing-box profiles.
+- Document how Sub-Store collection quick settings can override secure source
+  links, and how to restore source verification before refreshing v2rayN.
+- Add real AnyTLS TLS success/untrusted-CA/hostname-mismatch tests and real
+  Sub-Store IPv4/IPv6 conversion and collection-override regression coverage.
+- Validate local stable/preview cores, Sub-Store 2.43.1/2.44.2, Alpine 3.23,
+  and isolated Debian 13 ARM64 checks. The full remote acceptance suite was
+  not run; no state migration is required.
+
 ## 0.1.0-alpha.35
 
 - Migrate repository, installation and update URLs to ridd1e1337 on GitHub.
