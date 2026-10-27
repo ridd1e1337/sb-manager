@@ -18,12 +18,12 @@ Every generated server configuration includes the official `$schema` URL and mus
 | TUIC | `05/06-*/Hysteria-Hysteria2-TUIC.md` | `with_quic`, UDP, supported congestion control, 0-RTT disabled |
 | VLESS TLS/Reality | VLESS chapters and `02-配置基础/TLS-ECH-Reality-uTLS.md` | UUID, Vision flow, Reality keypair/Short ID, `with_utls` |
 | Naive | Naive chapters and build-tag matrix | TLS/QUIC mode; client requires `with_naive_outbound` and `libcronet.so` |
-| ShadowTLS v3 | ShadowTLS chapters | outer transport only; encrypted inner proxy and detour composition are not implemented |
+| ShadowTLS v3 | ShadowTLS and Shadowsocks chapters | v3 outer transport with certificate verification, authenticated SS2022 inner inbound on loopback, paired client/server detours |
 | Snell v5 | `05/06-*/Naive-ShadowTLS-AnyTLS-Snell.md` | 1.14+ only; server v5, client v4, PSK/userkey, optional HTTP obfs |
 | Nginx Stream passthrough | Official rule that duplicate listeners require an explicit reuse layer; Nginx `ssl_preread` semantics | unique exact SNI, loopback backends, no TLS termination, unknown-SNI rejection, transactional rollback |
 
 Protocol field mappings do not imply a complete security audit. Snell credential
-rotation and ShadowTLS composition limitations are recorded in
+lifecycle and ShadowTLS composition are described in
 [`PROTOCOL_SECURITY.md`](PROTOCOL_SECURITY.md).
 
 ## Configuration and Security Rules

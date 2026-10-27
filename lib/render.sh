@@ -98,8 +98,11 @@ validate_state_semantics() {
       while IFS= read -r user_id; do
         [[ -r "$(state_user_secret_path "$id" "$user_id")" ]] || die "节点 $id 的用户 $user_id 缺少密钥文件。"
       done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
-      if [[ "$protocol" == hysteria2 || "$protocol" == snell || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
+      if [[ "$protocol" == hysteria2 || "$protocol" == snell || "$protocol" == shadowtls || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
         [[ -r "$(state_secret_path "$id")" ]] || die "节点 $id 缺少协议级密钥文件。"
+      fi
+      if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
+        [[ $(jq -r '.credential_revision // 0' <<<"$node") == 1 ]] || die "节点 $id 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"
       fi
     fi
   done < <(jq -c '.nodes[]?' "$state")
@@ -133,7 +136,7 @@ render_inbound_for_node() {
     vless) protocol_vless_render "$node" "$credentials" "$node_secret" ;;
     socks|http|mixed) protocol_proxy_render "$node" "$credentials" ;;
     naive) protocol_naive_render "$node" "$credentials" ;;
-    shadowtls) protocol_shadowtls_render "$node" "$credentials" ;;
+    shadowtls) protocol_shadowtls_render "$node" "$credentials" "$node_secret" ;;
     snell) protocol_snell_render "$node" "$credentials" "$node_secret" ;;
     *) die "未知协议：$protocol" ;;
   esac
@@ -151,8 +154,8 @@ render_config_from_state() {
     credentials=$(node_enabled_credentials "$node")
     node_secret='{}'
     [[ ! -r $(state_secret_path "$node_id") ]] || node_secret=$(state_get_secret "$node_id")
-    inbound=$(render_inbound_for_node "$node" "$credentials" "$node_secret")
-    inbounds=$(jq -c --argjson x "$inbound" '. + [$x]' <<<"$inbounds")
+    inbound=$(render_inbound_for_node "$node" "$credentials" "$node_secret") || return 1
+    inbounds=$(jq -c --argjson x "$inbound" '. + ($x | if type=="array" then . else [.] end)' <<<"$inbounds") || return 1
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$state")
   log_level=$(jq -r '.settings.log_level // "info"' "$state")
   api_enabled=$(jq -r '.api.enabled // false' "$state")

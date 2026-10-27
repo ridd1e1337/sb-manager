@@ -91,6 +91,7 @@ state_init_dirs() {
 }
 
 _state_init() {
+  local upgrade_protocols=${1:-1}
   state_init_dirs
   if [[ ! -s "$SBM_STATE" ]]; then
     local tmp
@@ -100,9 +101,61 @@ _state_init() {
     mv "$tmp" "$SBM_STATE"
   fi
   state_migrate
-  state_validate "$SBM_STATE"
+  state_validate "$SBM_STATE" || return 1
+  if [[ "$upgrade_protocols" == 1 && -x "$SBM_SING_BOX_BIN" ]] && state_protocol_credentials_need_upgrade "$SBM_STATE"; then
+    # state_init already holds the manager lock. Reuse the transactional
+    # runner directly so no nested flock can deadlock this migration.
+    _state_transaction_run protocol-credentials _state_upgrade_protocol_credentials || return 1
+  fi
 }
-state_init() { with_lock _state_init; }
+state_init() { with_lock _state_init "$@"; }
+
+state_protocol_credentials_need_upgrade() {
+  jq -e 'any(.nodes[]?; (.protocol|IN("snell","shadowtls")) and (.credential_revision // 0)==0)' "$1" >/dev/null
+}
+
+# Called only inside a state transaction; secrets and live subscriptions are
+# included in its rollback snapshot. Never regenerate keys for revision 1.
+state_prepare_protocol_credentials() {
+  local candidate=$1 node id protocol secret user_id mode tmp
+  while IFS= read -r node; do
+    id=$(jq -r '.id' <<<"$node"); protocol=$(jq -r '.protocol' <<<"$node")
+    if [[ "$protocol" == shadowtls ]]; then
+      secret=$(jq -n --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '{shadowsocks_server_password:$key}') || return 1
+      state_write_secret "$id" "$secret" || return 1
+      while IFS= read -r user_id; do
+        secret=$(state_get_user_secret "$id" "$user_id") || return 1
+        secret=$(jq --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '.shadowsocks_password=$key' <<<"$secret") || return 1
+        state_write_user_secret "$id" "$user_id" "$secret" || return 1
+      done < <(jq -r '.users[].id' <<<"$node")
+      log_warn "ShadowTLS 节点 $id 已补齐 Shadowsocks 2022 内层；请重新导入完整客户端配置。"
+    else
+      secret=$(state_get_secret "$id") || return 1
+      # A legacy single-user node may have deleted former users, so the old
+      # PSK cannot be assumed private even when the current user count is one.
+      secret=$(jq --arg psk "$(random_password 24)" '.psk=$psk' <<<"$secret") || return 1
+      state_write_secret "$id" "$secret" || return 1
+      log_warn "Snell 节点 $id 已更换旧 PSK 并固定认证模式；全部用户需要重新导入配置。"
+    fi
+    mode=$(jq -r '.credential_mode // (if (.users|length)>1 then "multi" else "single" end)' <<<"$node")
+    tmp=$(mktemp "$SBM_RUN/credential-state.XXXXXX") || return 1
+    if ! jq --arg id "$id" --arg mode "$mode" '(.nodes[]|select(.id==$id)) |=
+      (.credential_revision=1 | if .protocol=="snell" then .credential_mode=$mode else . end)' "$candidate" >"$tmp"; then
+      rm -f "$tmp"; return 1
+    fi
+    chmod 0600 "$tmp" && must_mv "$tmp" "$candidate" || { rm -f "$tmp"; return 1; }
+  done < <(jq -c '.nodes[]? | select((.protocol|IN("snell","shadowtls")) and (.credential_revision // 0)==0)' "$candidate")
+}
+
+_state_upgrade_protocol_credentials() {
+  local candidate
+  candidate=$(state_candidate) || return 1
+  cp "$SBM_STATE" "$candidate" || { rm -f "$candidate"; return 1; }
+  if ! state_prepare_protocol_credentials "$candidate" || ! apply_candidate_state "$candidate" protocol-credentials; then
+    rm -f "$candidate"; return 1
+  fi
+  rm -f "$candidate"
+}
 
 state_migrate() {
   local version backup
@@ -185,6 +238,7 @@ state_normalize_v2_file() {
         | if .protocol == "snell" then
             .snell_version //= 5
             | .snell_mode //= "default"
+            | .credential_mode //= (if (.users|length)>1 then "multi" else "single" end)
           else . end
         | if .protocol == "hysteria2" then
             .realm_enabled //= false
@@ -345,6 +399,7 @@ state_validate() {
         and (.quic_congestion_control | IN("cubic", "new_reno", "bbr"))
       elif .protocol == "shadowtls" then
         (.server_address | string) and (.handshake_server | nonempty)
+        and ((.credential_revision // 0) | IN(0,1))
         and (.handshake_port | port)
         and (.strict_mode | type == "boolean")
         and (.wildcard_sni | IN("off", "authed", "all"))
@@ -352,6 +407,9 @@ state_validate() {
         (.server_address | nonempty) and (.listen | IN("127.0.0.1", "::1", "0.0.0.0", "::"))
       elif .protocol == "snell" then
         (.server_address | string)
+        and ((.credential_revision // 0) | IN(0,1))
+        and ((.credential_mode // "single") | IN("single","multi"))
+        and (if .credential_mode=="single" then (.users|length)==1 else true end)
         and (.snell_version | IN(5, 6))
         and (.snell_mode | IN("default", "unshaped", "unsafe-raw"))
         and (.obfs_mode | IN("none", "http"))

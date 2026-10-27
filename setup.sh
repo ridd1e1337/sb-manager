@@ -456,6 +456,8 @@ source "$TARGET_LIB/protocols/proxy.sh"
 source "$TARGET_LIB/protocols/shadowtls.sh"
 source "$TARGET_LIB/protocols/snell.sh"
 source "$TARGET_LIB/lib/render.sh"
+source "$TARGET_LIB/lib/export.sh"
+source "$TARGET_LIB/lib/node.sh"
 source "$TARGET_LIB/lib/traffic.sh"
 source "$TARGET_LIB/lib/traffic_groups.sh"
 source "$TARGET_LIB/lib/shaping.sh"
@@ -484,7 +486,7 @@ BACKEND=$(init_system 2>/dev/null || true)
 
 printf '[3/7] 创建低权限服务用户和数据目录…\n'
 create_service_account
-state_init
+state_init 0
 mkdir -p "$SBM_VAR/dashboard" "$SBM_LOG_DIR"
 if [[ "$INSTALL_CLOUDFLARED" == 1 || -x "$SBM_CLOUDFLARED_BIN" || $(jq -r '.tunnel.mode // "none"' "$SBM_STATE") != none ]]; then
   mkdir -p "$SBM_VAR/cloudflared-home"
@@ -535,6 +537,7 @@ else
 fi
 
 printf '[6/7] 生成配置与 %s 服务…\n' "$BACKEND"
+if [[ "$NO_START" == 1 ]]; then SBM_SKIP_INIT=1 state_init; else state_init; fi
 render_current_config
 # Stop a stale restart loop before replacing the service definition. The
 # final reconcile below restores the correct state based on enabled nodes.

@@ -20,7 +20,7 @@ node_share_uri() {
     vless) protocol_vless_share "$node" "$secret" "$node_secret" ;;
     socks|http|mixed) protocol_proxy_share "$node" "$secret" ;;
     naive) protocol_naive_share "$node" "$secret" ;;
-    shadowtls) protocol_shadowtls_share "$node" "$secret" ;;
+    shadowtls) protocol_shadowtls_share "$node" "$secret" "$node_secret" ;;
     snell) protocol_snell_share "$node" "$secret" "$node_secret" ;;
   esac
 }
@@ -34,6 +34,7 @@ node_client_outbound() {
   user=$(state_get_user "$id" "$user_id"); secret=$(jq -s '.[0]+.[1]' <(printf '%s\n' "$user") <(state_get_user_secret "$id" "$user_id"))
   [[ ! -r $(state_secret_path "$id") ]] || node_secret=$(state_get_secret "$id")
   protocol=$(jq -r '.protocol' <<<"$node")
+  tag="proxy-${id}-${user_id}"
   case "$protocol" in
     vmess-ws-cf) outbound=$(protocol_vmess_client_outbound "$node" "$secret" "$node_secret") ;;
     shadowsocks) outbound=$(protocol_ss_client_outbound "$node" "$secret" "$node_secret") ;;
@@ -44,12 +45,11 @@ node_client_outbound() {
     vless) outbound=$(protocol_vless_client_outbound "$node" "$secret" "$node_secret") ;;
     socks|http|mixed) outbound=$(protocol_proxy_client_outbound "$node" "$secret") ;;
     naive) outbound=$(protocol_naive_client_outbound "$node" "$secret") ;;
-    shadowtls) outbound=$(protocol_shadowtls_client_outbound "$node" "$secret") ;;
+    shadowtls) outbound=$(protocol_shadowtls_client_outbound "$node" "$secret" "$node_secret" "$tag") || return 1 ;;
     snell) outbound=$(protocol_snell_client_outbound "$node" "$secret" "$node_secret") ;;
     *) die "不支持导出的协议：$protocol" ;;
   esac
-  tag="proxy-${id}-${user_id}"
-  jq --arg tag "$tag" '.tag=$tag' <<<"$outbound"
+  jq --arg tag "$tag" 'if type=="array" then . else .tag=$tag end' <<<"$outbound"
 }
 
 node_substore_line() {
@@ -89,7 +89,7 @@ node_share() {
   uri=$(node_share_uri "$id" "$user_id") || return 1
   out_dir="$SBM_EXPORTS/nodes/$id/$user_id"; mkdir -p "$out_dir"; chmod 0700 "$out_dir" 2>/dev/null || true
   printf '%s\n' "$uri" >"$out_dir/share.txt"; chmod 0600 "$out_dir/share.txt"
-  outbound=$(node_client_outbound "$id" "$user_id")
+  outbound=$(node_client_outbound "$id" "$user_id") || return 1
   printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
   rm -f "$out_dir/surge.conf" "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"
   node=$(state_get_node "$id")
@@ -121,6 +121,9 @@ node_share() {
   fi
   printf '\n%s节点/用户：%s/%s%s\n\n%s\n\n' "$C_BOLD" "$id" "$user_id" "$C_RESET" "$uri"
   printf 'sing-box 客户端 outbound：%s\n' "$out_dir/outbound.json"
+  if [[ "$protocol" == shadowtls ]]; then
+    printf 'ShadowTLS 文件包含 Shadowsocks 内层与 ShadowTLS 外层两个 outbound，须一起导入；分享链接需要客户端支持 shadow-tls 插件。\n'
+  fi
   if [[ -r "$out_dir/surge.conf" ]]; then printf 'Surge 配置片段：%s\n' "$out_dir/surge.conf"; fi
   if [[ -r "$out_dir/mihomo.yaml" ]]; then printf 'mihomo 配置：%s\n' "$out_dir/mihomo.yaml"; fi
   if [[ -r "$out_dir/substore.txt" ]]; then
@@ -151,8 +154,8 @@ export_all_outbounds() {
   while IFS= read -r node; do
     id=$(jq -r '.id' <<<"$node")
     while IFS= read -r user_id; do
-      ob=$(node_client_outbound "$id" "$user_id")
-      arr=$(jq -c --argjson x "$ob" '. + [$x]' <<<"$arr")
+      ob=$(node_client_outbound "$id" "$user_id") || return 1
+      arr=$(jq -c --argjson x "$ob" '. + ($x | if type=="array" then . else [.] end)' <<<"$arr")
     done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")
   printf '%s\n' "$arr" | jq . >"$out"; chmod 0600 "$out"
@@ -169,8 +172,8 @@ export_client_config() {
   mkdir -p "$(dirname "$output")"
   while IFS= read -r node; do
     while IFS= read -r user_id; do
-      ob=$(node_client_outbound "$(jq -r '.id' <<<"$node")" "$user_id")
-      outbounds=$(jq -c --argjson x "$ob" '. + [$x]' <<<"$outbounds")
+      ob=$(node_client_outbound "$(jq -r '.id' <<<"$node")" "$user_id") || return 1
+      outbounds=$(jq -c --argjson x "$ob" '. + ($x | if type=="array" then . else [.] end)' <<<"$outbounds")
     done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")
   final=$(jq -r 'first(.[]?.tag) // "direct"' <<<"$outbounds")

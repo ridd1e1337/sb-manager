@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.38
+
+- Rotate the actual Snell PSK for single-user credentials and persist multi-user
+  authentication after users are disabled or deleted; never fall back to PSK-only
+  authentication based on the enabled-user count.
+- Compose ShadowTLS v3 with an authenticated Shadowsocks 2022 inner inbound,
+  independent per-user inner keys, loopback binding, and matching client detours.
+  Export plugin-aware SS links and include both outbounds in profiles and feeds.
+- Upgrade legacy protocol credentials inside the existing snapshot/rollback
+  transaction, including backup restore and live subscription publication.
+  Legacy Snell PSKs rotate once; affected clients must re-import credentials.
+- Update protocol security and state documentation. No test infrastructure or
+  procedures are added; validation for this change is limited to static review.
+
 ## 0.1.0-alpha.37
 
 - Remove the development test suite, fixtures, test-host instructions,

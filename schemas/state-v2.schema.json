@@ -162,6 +162,8 @@
           "listen": {"type": "string", "minLength": 1},
           "port": {"type": "integer", "minimum": 1, "maximum": 65535},
           "created_at": {"type": "string", "minLength": 1},
+          "credential_revision": {"type": "integer", "enum": [0, 1]},
+          "credential_mode": {"enum": ["legacy", "single", "multi"]},
           "expiry": {
             "type": "object", "required": ["at", "suspended", "resume_enabled"],
             "properties": {"at": {"type": ["integer", "null"], "minimum": 1, "maximum": 253402300799},

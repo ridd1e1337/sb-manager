@@ -117,6 +117,7 @@ _restore_backup() {
     set_group_if_exists "$SBM_SERVICE_USER" "${SBM_TUNNEL_TOKEN_FILE:-$SBM_SECRETS/cloudflared.token}"
   fi
   candidate=$(state_candidate); cp "$stage/etc/state.json" "$candidate"
+  state_prepare_protocol_credentials "$candidate" || { rm -f "$candidate"; return 1; }
   apply_candidate_state "$candidate" restore || { rm -f "$candidate"; return 1; }
   rm -f "$candidate"
   mv -f "$SBM_TRAFFIC_USAGE.restore" "$SBM_TRAFFIC_USAGE"

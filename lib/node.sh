@@ -225,6 +225,8 @@ _node_add() {
       ;;
     shadowtls)
       protocol=shadowtls; base=shadowtls; transport=tcp; port=${port:-443}; handshake_server=${handshake_server:?ShadowTLS 必须指定 --handshake-server。}; validate_domain "$handshake_server" || die "无效握手域名：$handshake_server"; validate_port "$handshake_port" || die "无效握手端口：$handshake_port"; case "$strict_mode" in true|false) ;; *) die 'strict-mode 必须是 true 或 false。';; esac; case "$wildcard_sni" in off|authed|all) ;; *) die 'wildcard-sni 必须是 off、authed 或 all。';; esac; name=${name:-ShadowTLS}; address=${address:-${default_address:-$handshake_server}}; domain=$handshake_server; secret=$(jq -n --arg password "$(random_password 24)" '{password:$password}')
+      secret=$(jq --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '.shadowsocks_password=$key' <<<"$secret")
+      node_secret=$(jq -n --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '{shadowsocks_server_password:$key}')
       ;;
     socks|socks5|http|mixed)
       protocol=$type; [[ "$protocol" != socks5 ]] || protocol=socks
@@ -320,6 +322,9 @@ _node_add() {
     .traffic={configured:false,enabled:false,quota_bytes:null,quota_mode:"total",reset_day:1,upload_rate_bps:null,download_rate_bps:null}
     | .metadata={remark:$remark,region:$region,purpose:$purpose,line:$line,tags:($tags | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)}
   ' <<<"$node")
+  if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
+    node=$(jq '.credential_revision=1 | if .protocol=="snell" then .credential_mode="single" else . end' <<<"$node")
+  fi
   if [[ "$protocol" != vmess-ws-cf ]]; then
     node=$(jq --arg source "$address_source" '.server_address_source=$source' <<<"$node")
   fi
@@ -390,7 +395,7 @@ _node_delete() {
 node_delete() { with_state_transaction node-delete _node_delete "$1"; }
 
 _node_rotate() {
-  local id=$1 user_id=${2:-default} node protocol path old new candidate backup
+  local id=$1 user_id=${2:-default} node protocol path old new candidate backup node_secret
   node=$(state_get_node "$id"); [[ -n "$node" ]] || die "节点不存在：$id"
   state_user_exists "$id" "$user_id" || die "用户不存在：$id/$user_id"
   protocol=$(jq -r '.protocol' <<<"$node"); path=$(state_user_secret_path "$id" "$user_id"); backup=$(mktemp "$SBM_RUN/secret.backup.XXXXXX"); cp -a "$path" "$backup"
@@ -404,8 +409,15 @@ _node_rotate() {
     tuic) new=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}') ;;
     vless) new=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') ;;
     socks|http|mixed|naive) new=$(jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}') ;;
-    shadowtls) new=$(jq -n --arg password "$(random_password 24)" '{password:$password}') ;;
-    snell) new=$(jq -n --arg userkey "$(random_password 24)" '{userkey:$userkey}') ;;
+    shadowtls) new=$(node_user_generate_secret "$node" "$user_id") ;;
+    snell)
+      new=$(jq -n --arg userkey "$(random_password 24)" '{userkey:$userkey}')
+      if ! protocol_snell_multiuser "$node"; then
+        node_secret=$(state_get_secret "$id") || return 1
+        node_secret=$(jq --arg psk "$(random_password 24)" '.psk=$psk' <<<"$node_secret") || return 1
+        state_write_secret "$id" "$node_secret" || return 1
+      fi
+      ;;
   esac
   state_write_user_secret "$id" "$user_id" "$new" || return 1
   candidate=$(state_candidate); cp "$SBM_STATE" "$candidate"
@@ -492,7 +504,7 @@ node_user_generate_secret() {
     tuic) jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}' ;;
     vless) jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}' ;;
     socks|http|mixed|naive) jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}' ;;
-    shadowtls) jq -n --arg password "$(random_password 24)" '{password:$password}' ;;
+    shadowtls) jq -n --arg password "$(random_password 24)" --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '{password:$password,shadowsocks_password:$key}' ;;
     snell) jq -n --arg userkey "$(random_password 24)" '{userkey:$userkey}' ;;
     *) die "协议暂不支持多用户：$protocol" ;;
   esac
@@ -525,6 +537,11 @@ _node_user_add() {
     jq --arg nid "$node_id" '(.nodes[] | select(.id==$nid) | .credential_mode)="multi"' "$candidate" >"$candidate.tmp"
     mv "$candidate.tmp" "$candidate"
     log_warn "Shadowsocks 节点已切换到 2022 多用户模式；原单用户分享链接需要重新导出。"
+  fi
+  if [[ "$protocol" == snell ]] && ! protocol_snell_multiuser "$node"; then
+    jq --arg nid "$node_id" '(.nodes[] | select(.id==$nid) | .credential_mode)="multi"' "$candidate" >"$candidate.tmp" || return 1
+    mv "$candidate.tmp" "$candidate" || return 1
+    log_warn 'Snell 已切换到持久多用户模式；全部用户需要重新导入含 userkey 的 sing-box 配置，之后不会自动退回 PSK 单用户模式。'
   fi
   if ! apply_candidate_state "$candidate" "user-add-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"

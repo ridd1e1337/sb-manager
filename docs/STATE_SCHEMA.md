@@ -87,7 +87,28 @@ Protocol credentials are excluded from the state file. User credentials live und
 
 Notification provider choice and thresholds are non-secret state. Telegram tokens/chat IDs and Webhook URLs live only in `secrets/notifications.json` with mode `0600`. Delivery deduplication and the last health report are runtime journals under `/var/lib/sb-manager/`.
 
-Snell nodes require a sing-box 1.14.0-rc.1 or newer core. `snell_version` is 5 or 6 (existing schema-v2 nodes normalize to 5; new nodes default to 6). Version 5 uses `obfs_mode`/`obfs_host` and exports a compatible v4 client; version 6 uses `snell_mode` (`default`, `unshaped`, or `unsafe-raw`) and requires sing-box 1.14.0-rc.2 or newer. Their protocol-level secret stores the server `psk`; each user secret stores a Snell `userkey`.
+Snell nodes require a sing-box 1.14.0-rc.1 or newer core. `snell_version` is 5 or 6 (existing schema-v2 nodes normalize to 5; new nodes default to 5). Version 5 uses `obfs_mode`/`obfs_host` and exports a compatible v4 client; version 6 uses `snell_mode` (`default`, `unshaped`, or `unsafe-raw`) and requires sing-box 1.14.0-rc.2 or newer. Their protocol-level secret stores the server `psk`; each user secret stores a Snell `userkey`.
+
+Snell `credential_mode` is `single` or `multi`. Adding a second user changes it
+to `multi` permanently; disabling or deleting users never changes it back.
+Single-user rotation replaces both the node PSK and userkey; multi-user rotation
+replaces only the selected userkey. A `single` node must have exactly one user.
+
+Snell and ShadowTLS nodes carry `credential_revision:1`. Missing/zero revision
+identifies legacy credentials. Under the manager lock, migration snapshots state,
+secrets, config and subscriptions, prepares new credentials, validates the candidate
+with the real installed core, installs it and publishes live feeds; failure restores
+the snapshot. Legacy Snell PSKs rotate once, including nodes with deleted former
+users. Existing total user count determines the initial mode. Migration is deferred
+until the core is available, and backup restoration applies the same preparation.
+
+ShadowTLS node secrets hold `shadowsocks_server_password`; user secrets hold the
+outer `password` and independent `shadowsocks_password`. The inner method is fixed
+at `2022-blake3-aes-128-gcm` with 16-byte base64 keys. Its generated inbound uses
+`in-<id>:ss`, listens on `127.0.0.1:0` and receives the outer inbound's detour.
+Exports use the ordinary user proxy tag for the inner SS outbound and append
+`:tls` for the outer ShadowTLS outbound. Both outbounds are required. These
+generated tags and internal ports are not independent persistent nodes.
 
 Hysteria2 nodes may set `obfs.type` to `salamander` or the sing-box 1.14-only `gecko`. Gecko stores `min_packet_size` and `max_packet_size` in the node state (defaults 512 and 1200); its password remains in the protected node secret. `disable_chrome_parrot` controls the 1.14 Hysteria2 client fingerprint option and defaults to `false`. `bbr_profile` accepts `conservative`, `standard`, or `aggressive`; `brutal_debug` enables Hysteria Brutal diagnostics. Enabled nodes using these 1.14 options require sing-box 1.14.0-rc.1 or newer.
 

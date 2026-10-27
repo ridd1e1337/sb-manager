@@ -5,7 +5,7 @@
 # exports a compatible v4 client; version 6 uses traffic shaping and exports v6.
 protocol_snell_multiuser() {
   local node=$1
-  [[ $(jq '[.users[]? | select(.enabled==true)] | length' <<<"$node") -gt 1 ]]
+  [[ $(jq -r '.credential_mode // (if (.users|length)>1 then "multi" else "single" end)' <<<"$node") == multi ]]
 }
 
 protocol_snell_render() {

@@ -11,31 +11,40 @@
 | VLESS Reality | 生成独立密钥对和 Short ID；客户端使用公钥、Short ID、SNI 和 uTLS，不能与关闭普通证书验证混为一谈。 |
 | VMess WS + Cloudflare Tunnel | VMess 用户 UUID、客户端 TLS 验证；WS 回源默认只监听 loopback。Cloudflare 是 TLS 入口链路中的参与方。 |
 | Shadowsocks 2022 | 仅提供 2022 AEAD 算法和随机密钥，默认 AES-256-GCM；无需 X.509 证书，安全依赖密钥保密。 |
-| Snell v5/v6 | 使用随机节点 PSK；多用户时还使用 userkey，但当前用户生命周期存在下述缺陷。 |
-| ShadowTLS v3 | 当前只生成外层伪装传输，缺少内层加密代理及完整转接关系，不能视为完整的加密代理节点。 |
+| Snell v5/v6 | 使用随机节点 PSK；单用户轮换更换 PSK，多用户固定要求 userkey，不随启用人数减少而降级。 |
+| ShadowTLS v3 | 外层证书验证和用户认证，内层 Shadowsocks 2022 加密；服务端与客户端均生成完整 detour 链路。 |
 | SOCKS5、HTTP、mixed | 随机用户名/密码，默认监听 `127.0.0.1`；协议不提供传输加密，凭据和代理流量不适合直接暴露到不可信网络。 |
 
-## 已知实现限制
+## 凭据与链路策略
 
-### ShadowTLS 缺少内层组合
+### ShadowTLS 双层配置
 
-`protocols/shadowtls.sh` 生成 v3 握手目标、用户认证和严格模式配置，但没有生成
-Shadowsocks 等内层入站、服务端 `detour`，也没有生成内层客户端出站。
-ShadowTLS 官方说明其不负责应用数据加密和代理请求封装，需要与加密代理配合。
-当前普通节点导出不能代表这套完整组合已经实现。
+`protocols/shadowtls.sh` 将 v3 握手、外层用户认证与 Shadowsocks 2022 加密组合。
+每个用户的外层密码和内层密钥分别随机生成；内层另有独立节点服务端密钥。
+停用或删除用户会同时从两层认证列表移除该用户，轮换会同时更换其两层凭据。
+
+内层使用 `2022-blake3-aes-128-gcm`，仅在 `127.0.0.1` 上分配临时 TCP 端口。
+客户端先用内层 SS outbound 封装请求，再经其 `detour` 进入 ShadowTLS 外层；
+外层显式设置 `insecure=false`。服务端执行相反的转接顺序。
+
+单节点 JSON 导出包含两个 outbound，完整配置和动态订阅也会保留这两项。
+分享链接为带 `shadow-tls` 插件参数的 `ss://`，只适用于支持该组合的客户端或转换器。
+旧版只有外层的 `shadowtls://` 链接必须重新导入。
 
 参考：[ShadowTLS 官方说明](https://github.com/ihciah/shadow-tls#how-to-use-it)。
 
 ### Snell 的用户轮换和撤销
 
-`protocols/snell.sh` 在只剩一个启用用户时省略 `users`/`userkey`，改用节点 PSK。
-`lib/node.sh` 的 Snell 用户轮换分支目前只更换 userkey，不更换节点 PSK。
-因此单用户节点执行用户凭据轮换后，旧 PSK 链接仍可能有效；多用户减少到单用户时，
-原持有者仍知道节点 PSK，不能仅凭停用某个 userkey 就认定其访问已撤销。
-CLI 当前通用的“旧分享链接立即失效”提示不能用于证明上述 Snell 场景已经撤销。
+新建节点以 `credential_mode=single` 保留 Surge/mihomo 的 PSK 兼容性。
+单用户轮换会真正更换节点 PSK；添加第二个用户后改为 `multi`，之后停用、删除用户
+都不会退回单用户模式，即使只剩一个启用用户也继续要求 userkey。
+多用户轮换仅替换目标 userkey，不改变其他用户凭据；该模式需要支持 userkey 的 sing-box 客户端。
 
-在完善 PSK 轮换和用户模式转换之前，泄漏或需要撤销 PSK 时应停用旧节点，
-新建独立 Snell 节点并重新分发凭据。当前问题尚未修复。
+alpha.38 对旧节点进行一次凭据迁移：Snell 更换旧 PSK，避免早期已删用户仍持有可用 PSK；
+ShadowTLS 补齐独立内层密钥。迁移与节点修改、备份恢复、动态订阅发布沿用完整快照/回滚事务，
+新配置必须通过已安装核心的运行时配置校验。受影响的客户端需要重新导入。
+静态订阅不会自动改写；恢复未迁移的旧备份也会执行迁移。恢复已迁移的备份会恢复其中的凭据，
+可能恢复备份之后撤销的访问，因此不能用旧订阅内容判断当前访问权限。
 
 ### 明文入口及辅助服务
 

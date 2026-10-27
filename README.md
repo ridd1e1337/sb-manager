@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.37`。
+> 当前版本：`0.1.0-alpha.38`。
 
 ## 功能
 
@@ -28,7 +28,7 @@
 - 可选 Sub-Store 前后端安装、升级、节点同步、备份与恢复
 - 分享 URI 与 sing-box outbound JSON 导出
 - 客户端导出支持 IPv4 优先、IPv6 优先或仅 IPv4 的出站解析策略
-- Naive 分享链接使用与服务端一致的用户账号；ShadowTLS 当前只提供外层传输配置，尚未自动配套内层加密代理
+- Naive 分享链接使用与服务端一致的用户账号；ShadowTLS 自动配套 Shadowsocks 2022 内层及完整客户端链路
 - 原子配置写入、`sing-box check`、快照和失败回滚
 - 备份、恢复、日志、`sb doctor` 诊断与 `sb repair` 自动修复
 - systemd 使用低权限服务用户；OpenRC 的 sing-box 为兼容受限 VPS 以 root 运行；不会关闭或清空系统防火墙
@@ -46,9 +46,13 @@
 ### 协议安全边界
 
 TLS/QUIC 类节点默认验证证书，VLESS Reality 使用公钥认证，Shadowsocks 2022 使用预共享密钥加密。
-普通 SOCKS5、HTTP、mixed 只有认证，没有传输加密，默认监听本机；ShadowTLS 当前缺少内层加密代理组合。
-Snell 单用户凭据轮换及多用户减少到单用户时的 PSK 行为存在限制，不能依赖现有用户轮换命令撤销旧 PSK。
-各协议的配置依据和已知问题见[协议安全边界](docs/PROTOCOL_SECURITY.md)。
+普通 SOCKS5、HTTP、mixed 只有认证，没有传输加密，默认监听本机；ShadowTLS 使用独立的 Shadowsocks 2022 内层密钥。
+Snell 单用户轮换会更换 PSK，多用户模式固定保留 userkey 认证，不会随启用人数减少而退回仅 PSK 认证。
+各协议的配置依据和使用边界见[协议安全边界](docs/PROTOCOL_SECURITY.md)。
+
+**alpha.38 升级提示：** 旧 Snell 节点会一次性更换 PSK，以撤销历史上可能仍然有效的旧链接；
+旧 ShadowTLS 节点会补齐加密内层。两者都需要重新导入客户端配置。迁移与状态、密钥、服务配置、
+动态订阅处于同一快照/回滚事务中；初始化时核心不可用则延后迁移。静态订阅和手工复制内容需要重新生成。
 
 ### 节点流量控制
 
@@ -341,7 +345,10 @@ sb traffic set hk-01 --quota 100G --dry-run
 
 ### Snell v5/v6
 
-Snell 需要 sing-box `1.14.0-rc.1` 或更高版本核心。新建节点默认使用 Snell v5（服务端 v5、客户端使用兼容的 v4），分享链接可直接导入 Surge、mihomo 和 sing-box；可按需设置 `--obfs http --obfs-host example.com`。单用户 v5 节点不启用 sing-box 专属多用户扩展，因此三端可以使用同一组 PSK。为 Snell v5 添加第二个启用用户后会切换为 sing-box 多用户模式，此时 Surge/mihomo 不支持，应使用导出的 sing-box outbound。Snell v6 使用 traffic shaping，可选 `default`、`unshaped` 或 `unsafe-raw`，需要 `1.14.0-rc.2` 或更高版本；最新 Surge Beta 支持 v6，mihomo 仍不支持 v6。v6 单用户节点会导出 Surge 配置，v6 多用户节点仍仅适合 sing-box。
+Snell 需要 sing-box `1.14.0-rc.1` 或更高版本核心。新建节点默认使用 Snell v5（服务端 v5、客户端使用兼容的 v4），分享链接可直接导入 Surge、mihomo 和 sing-box；可按需设置 `--obfs http --obfs-host example.com`。单用户 v5 节点不启用 sing-box 专属多用户扩展，因此三端可以使用同一组 PSK。添加第二个用户后会切换为持久的 sing-box 多用户模式，即使之后停用或删除其他用户也不会回退；此时 Surge/mihomo 不支持，应使用导出的 sing-box outbound。Snell v6 使用 traffic shaping，可选 `default`、`unshaped` 或 `unsafe-raw`，需要 `1.14.0-rc.2` 或更高版本；最新 Surge Beta 支持 v6，mihomo 仍不支持 v6。v6 单用户节点会导出 Surge 配置，v6 多用户节点仍仅适合 sing-box。
+
+轮换单用户 Snell 凭据时同时更换节点 PSK；轮换多用户凭据时只更换目标用户的 userkey。
+多用户节点停用或删除用户后，该用户的旧凭据不再用于服务端认证；其他用户的凭据保持不变。
 
 Surge 使用 Snell v6 时需要 `6.7.0 (11520)` 或更新的 Beta/TestFlight。若显示延迟为 0，先运行 `sb probe <节点ID>`：该命令会通过正在运行的入站完成一次本机 Snell 端到端握手和转发。本机测试通过但公网客户端仍失败时，应检查云厂商安全组和主机防火墙是否放行节点的 TCP 端口；管理器不会自动修改防火墙。
 
@@ -354,6 +361,13 @@ sb share snell-main
 `sb share` 会同时保存 sing-box outbound、Surge 配置片段和 mihomo JSON/YAML 配置（位于 `exports/nodes/<节点>/<用户>/`）。对于 Snell，终端还会直接打印一行 Sub-Store 可识别的单节点内容，可复制后在 Sub-Store 的本地订阅中添加；同一内容保存在 `substore.txt`。
 
 如果通过 Sub-Store 管理订阅，请使用 `sb subscription create 24h mixed` 输出的 **Sub-Store URL**（URL 带 `?format=substore`），不要把 sing-box JSON URL 当作普通 URI 订阅。该格式会把 Snell 转成 Sub-Store 能识别的 Surge 单行配置；Snell v6 需要将目标客户端设为支持 v6 的 Surge 或 sing-box，mihomo 仍不支持 v6。
+
+### ShadowTLS v3 + Shadowsocks 2022
+
+ShadowTLS 节点使用 `2022-blake3-aes-128-gcm` 作为加密内层，服务端通过 `detour` 转接；
+内层仅监听本机自动分配端口。每个用户有独立的外层密码和内层密钥，停用、删除或轮换会同时影响两层。
+分享链接为带 `shadow-tls` 插件参数的 `ss://`，需要客户端或订阅转换器支持该插件；不再导出只有外层的 `shadowtls://`。
+单节点 `outbound.json` 是含两个 outbound 的数组，两项必须一起导入；完整 sing-box 导出和动态订阅会自动包含两项。
 
 ### Hysteria2（sing-box 1.14）
 
