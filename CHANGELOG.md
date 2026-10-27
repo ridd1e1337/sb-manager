@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.37
+
+- Remove the development test suite, fixtures, test-host instructions,
+  acceptance records, and tested-core release metadata.
+- Remove test-only installation paths, fake component installation, root-check
+  bypasses, and filesystem/setup fault injection switches. Preserve production
+  diagnostics, configuration validation, and transactional rollback.
+- Record the policy against adding test scripts, environments, or procedures.
+- Document protocol security boundaries, incomplete ShadowTLS composition,
+  Snell PSK rotation/revocation limitations, and plaintext proxy/Realm risks.
+  These protocol limitations remain unresolved by this cleanup.
+
 ## 0.1.0-alpha.36
 
 - Preserve explicit AnyTLS certificate verification through Sub-Store V2Ray
@@ -9,16 +21,10 @@
   export `tls.insecure=false` in sing-box profiles.
 - Document how Sub-Store collection quick settings can override secure source
   links, and how to restore source verification before refreshing v2rayN.
-- Add real AnyTLS TLS success/untrusted-CA/hostname-mismatch tests and real
-  Sub-Store IPv4/IPv6 conversion and collection-override regression coverage.
-- Validate local stable/preview cores, Sub-Store 2.43.1/2.44.2, Alpine 3.23,
-  and isolated Debian 13 ARM64 checks. The full remote acceptance suite was
-  not run; no state migration is required.
 
 ## 0.1.0-alpha.35
 
 - Migrate repository, installation and update URLs to ridd1e1337 on GitHub.
-- Validate shell syntax and isolated update tests locally; remote VPS acceptance is unavailable.
 
 ## 0.1.0-alpha.34
 
@@ -35,9 +41,6 @@
 - Add panel controls for remote sources and live subscription creation/status/
   revocation. Bypass source caching so client subscription refreshes retrieve
   current nodes; Sub-Store is only required on the aggregation server.
-- Add isolated live-feed and real Sub-Store merge/failure tests, including
-  Alpine 3.21–3.24 and low-privilege feed access. Remote VPS acceptance remains
-  pending because no test host is available.
 
 ## 0.1.0-alpha.33
 
@@ -52,10 +55,6 @@
 - Retain existing node/group/route/settings values and Sub-Store ports during
   edits; allow clearing optional metadata and route paths. Suggest available
   proxy ports and listener-aware client addresses.
-- Add isolated PTY coverage for failures, cancellation, nested navigation,
-  node edits, update/reload, uninstall, and option propagation. Verify Alpine
-  3.21–3.24 interactions; remote Debian/VPS acceptance remains pending because
-  no test host is available.
 
 ## 0.1.0-alpha.32
 
@@ -76,9 +75,6 @@
 - Add native Sub-Store frontend/backend installation with verified Release
   digests, systemd/OpenRC services, node synchronization, transactional updates,
   dedicated backups, and integration with full manager backups.
-- Add isolated fault injection and Alpine 3.21–3.24 coverage, plus real proxy,
-  Sub-Store, Cloudflared, iperf3, tc, and nftables tests. Remote VPS acceptance
-  remains pending because no test host is available.
 
 ## 0.1.0-alpha.31
 
@@ -90,8 +86,6 @@
 - Keep TCP tuning independent of BBR and Hysteria2 UDP settings; restore its
   original values before uninstalling. Support Alpine/BusyBox/OpenRC alongside
   Debian/systemd without changing proxy state or installing another kernel.
-- Add isolated fault-injection tests and an Alpine container smoke suite.
-  Remote Debian acceptance is pending because no test host is available.
 
 ## 0.1.0-alpha.30
 
@@ -131,13 +125,13 @@
   `sb cloudflared install|status` commands and retain existing Tunnel
   installations across upgrades.
 - Bound cached core and program-upgrade backups and add free-space checks before
-  large core downloads, with dedicated Alpine/OpenRC minimal-install coverage.
-- Add the complete Go `sb-manager-web` project development specification, including repository boundaries, CLI integration, Web API, Agent enrollment, security, deployment, testing, and phased milestones.
+  large core downloads.
+- Add the complete Go `sb-manager-web` project development specification, including repository boundaries, CLI integration, Web API, Agent enrollment, security, deployment and phased milestones.
 - Start the independent Go `sb-manager-web` repository with SQLite storage, embedded WebUI, local/remote task APIs, Agent enrollment, and systemd/OpenRC deployment.
 - Make the default installation and `sb core update` resolve the newest non-draft GitHub sing-box Release (including prereleases); retain `--core-version` for reproducible pinning.
 - Add one-click BBR enable/status/restore commands and panel controls with transactional sysctl backup and rollback.
 - Add one-click Hysteria2 UDP buffer tuning (`rmem_max`/`wmem_max` 16 MiB) with panel/CLI status, backup, restore, and rollback.
-- Raise the default/tested sing-box core from 1.14.0-rc.1 to 1.14.0-rc.2 so new Snell v6 nodes work immediately after installation.
+- Raise the default sing-box core from 1.14.0-rc.1 to 1.14.0-rc.2 so new Snell v6 nodes work immediately after installation.
 - Add sing-box 1.14 Hysteria2 Gecko obfuscation with configurable packet sizes and the Chrome QUIC fingerprint switch.
 - Add `sb core schema [FILE]` and an interactive panel action for exporting the schema generated by the installed 1.14 core.
 - Add 1.14 optimistic DNS caching and per-query DNS timeout settings with CLI/panel controls and 1.13-safe rendering.
@@ -147,7 +141,7 @@
 - Add `sb core capabilities [--json]` and a panel view of sing-box build tags and compiled 1.14 feature support.
 - Document the complete 1.14 feature coverage matrix and the separate-model boundary for Realm/VPN/desktop-only features.
 - Add Snell v6 traffic-shaping mode with v5 compatibility selection, version-aware exports, migration defaults, and panel/CLI controls.
-- Add Hysteria Realm rendezvous service with protected token storage, TLS/loopback configuration, Hysteria2 node linkage, NAT traversal options, panel controls, and preview-core coverage.
+- Add Hysteria Realm rendezvous service with protected token storage, TLS/loopback configuration, Hysteria2 node linkage, NAT traversal options, panel controls.
 
 ## 0.1.0-alpha.27
 
@@ -178,20 +172,19 @@
 ## 0.1.0-alpha.23
 
 - Extend Nginx Stream SNI multiplexing to Alpine/OpenRC with `apk` dependency installation, supervised foreground service output, persistent low-port capability handling, and OpenRC diagnostics/rollback/uninstall coverage.
-- Verify real Nginx Stream startup on Alpine 3.21, 3.22, 3.23, and 3.24, plus the complete Alpine 3.23 installer/OpenRC smoke path with official sing-box and cloudflared assets.
 
 ## 0.1.0-alpha.22
 
-- Include the setup-time Snell renderer load fix and final Debian firewall regression coverage.
+- Include the setup-time Snell renderer load fix.
 
 ## 0.1.0-alpha.21
 
-- Make sing-box 1.14.0-rc.1 the primary tested core and resolve latest core updates from the newest official release, including prereleases.
+- Make sing-box 1.14.0-rc.1 the primary core and resolve latest core updates from the newest official release, including prereleases.
 - Add explicit firewall/port management commands for protocol port inspection, UFW allow rules, and backed-up INPUT deny cleanup.
 
 ## 0.1.0-alpha.20
 
-- Include the final Snell preview-core fixes and regression coverage in the published release.
+- Include the final Snell preview-core fixes in the published release.
 
 ## 0.1.0-alpha.19
 
@@ -206,7 +199,6 @@
 ## 0.1.0-alpha.17
 
 - Fix Naive inbound authentication to use each user's protocol username instead of the display name, matching generated `naive+https://` links and client outbounds.
-- Add regression coverage for the Naive username/password mapping.
 
 ## 0.1.0-alpha.16
 
@@ -247,14 +239,12 @@
 
 - Fix an ACME deployment deadlock caused by the reload hook re-entering `state_init` while certificate issuance held the manager lock.
 - Fix strict-shell expansion in `cert hook` and `cert inspect`, and add bounded issue/install/cron timeouts with transactional rollback.
-- Add remote Debian regression coverage for a reload hook invoked while the manager lock is held and for ACME timeout handling.
 
 ## 0.1.0-alpha.8
 
 - Add optional Debian/systemd Nginx Stream SNI passthrough for sharing one public TCP port across AnyTLS, Trojan, VLESS TLS/Reality, Naive TCP, and ShadowTLS v3.
 - Move routed sing-box listeners to unique loopback backends while preserving their direct ports for lossless disable/rollback and publishing the mux port in links and client exports.
 - Add CLI/panel management, strict SNI/route validation, unknown-SNI rejection, systemd sandboxing, diagnostics, backup compatibility, and transactional activation rollback.
-- Validate real SNI routing, TLS passthrough, service restart, failure rollback, and disable restoration on the designated Debian 13 server.
 
 ## 0.1.0-alpha.7
 
@@ -262,21 +252,18 @@
 - Add schema-v2 state migration, transactional rollback across state/config/secrets/certificates/subscriptions, hardened restore checks, and optional age-encrypted backups.
 - Add loopback-only expiring subscriptions, gated sing-box 1.14 API/Dashboard support, complete mixed/TUN exports, public-address source tracking, and `sb probe` network diagnostics.
 - Pin remote bootstrap installs to an explicit immutable ref and add release provenance, checksum, and optional GPG signature artifacts.
-- Validate all changes on the designated Debian 13 test server against official sing-box 1.13.19 and 1.14.0-rc.1 binaries.
 
 ## 0.1.0-alpha.6
 
 - Retry all core download failures with bounded backoff instead of relying on curl's limited default retry classes.
 - Stop immediately after a failed or empty download and remove partial files before checksum or extraction steps.
 - Validate GitHub Release API responses and propagate lookup failures without silently converting `latest` into an invalid version.
-- Add deterministic retry/fail-fast coverage while retaining the real first-download smoke test.
 
 ## 0.1.0-alpha.5
 
 - Allow `AF_NETLINK` in the hardened systemd address-family policy so sing-box can subscribe to Linux route updates during startup.
 - Add a real transient systemd startup preflight using the rendered sing-box configuration; the previous `version` check could not detect route-monitor failures.
 - Extend `sb doctor` with an explicit AF_NETLINK policy check and extend `sb repair` with the real startup preflight.
-- Add unit and real PID-1 systemd regressions that start an actual sing-box inbound under the production sandbox.
 
 ## 0.1.0-alpha.4
 
@@ -286,7 +273,6 @@
 - Stop an existing restart loop before replacing service definitions and limit repeated systemd startup failures to five attempts per minute.
 - Extend `sb doctor` and `sb repair` to detect, explain and safely repair file-capability, path-permission, mount and systemd sandbox execution problems.
 - Ensure core download, update, switch and rollback all normalize executable permissions and capabilities for the active service backend.
-- Add Debian/systemd regression coverage for capability cleanup and sandbox preflight.
 
 ## 0.1.0-alpha.3
 
@@ -295,7 +281,6 @@
 - Add OpenRC supervised services for sing-box and cloudflared, plus `dcron` periodic jobs for core updates, ACME renewal, and Quick Tunnel refresh.
 - Keep sing-box unprivileged on OpenRC by applying only `cap_net_bind_service` to installed cores for low-port listeners.
 - Add portable account/group, DNS lookup, and certificate-expiry helpers for musl/BusyBox environments.
-- Add OpenRC lifecycle tests and Alpine 3.21/3.22/3.23/3.24 musl smoke jobs using the real official sing-box and cloudflared assets.
 
 ## 0.1.0-alpha.2
 
@@ -305,7 +290,6 @@
 - Treat an inactive sing-box service as normal when no nodes are enabled; the first enabled node starts it automatically.
 - Fix `sb doctor` exiting at its first warning/failure under `set -e`, and add detailed permission/service diagnostics plus `--repair`.
 - Add interactive normal and full-uninstall options, plus `--yes` automation.
-- Add first-download, service lifecycle, doctor completion, and Debian 13 CI regressions.
 
 ## 0.1.0-alpha.1
 

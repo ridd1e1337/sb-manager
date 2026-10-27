@@ -25,7 +25,7 @@ delete_service_account() {
 }
 
 uninstall_manager() {
-  [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+  require_root
   local purge=${1:-0} assume_yes=${2:-0} message backend
   case "$purge" in 0|1) ;; *) die '卸载模式无效。' ;; esac
 
@@ -123,7 +123,7 @@ uninstall_manager() {
 
   if [[ "$purge" == 1 ]]; then
     rm -rf -- "$SBM_ETC" "$SBM_VAR" "$SBM_LOG_DIR"
-    [[ ${SBM_TEST_MODE:-0} == 1 ]] || delete_service_account
+    delete_service_account
     log_ok 'sb-manager、全部配置、证书、密钥、核心、日志和备份已彻底删除。'
   else
     log_ok "程序已卸载；数据保留在 $SBM_ETC 和 $SBM_VAR。"

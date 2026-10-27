@@ -12,7 +12,7 @@ manager_update() (
   (($# == 0)) || usage_die '用法：sb update [--check]'
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || check_only=1
   if (( ! check_only )); then
-    [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+    require_root
   fi
   require_command curl
   require_command jq

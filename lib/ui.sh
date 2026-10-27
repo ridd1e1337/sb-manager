@@ -214,7 +214,7 @@ ui_header() {
   ui_clear
   enabled=$(state_enabled_count)
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then
-    service_state='测试'
+    service_state='不接管服务'
   elif ! state_runtime_required; then
     service_state='待机'
   elif service_active "$SBM_SERVICE"; then

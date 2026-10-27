@@ -16,6 +16,5 @@ sing-box-official-docs-cn/
 __pycache__/
 *.pyc
 
-# Test and runtime leftovers
-coverage/
+# Runtime leftovers
 .tmp/

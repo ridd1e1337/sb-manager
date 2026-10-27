@@ -250,7 +250,7 @@ tcp_tuning_cli() {
         plan=$(tcp_tuning_plan "$bandwidth" "$rtt") || return $?
         tcp_tuning_show_plan "$plan" "$json"
       else
-        [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+        require_root
         require_command flock
         if [[ "$json" == 1 ]]; then tcp_tuning_enable "$bandwidth" "$rtt" >&2 && tcp_tuning_status 1
         else tcp_tuning_enable "$bandwidth" "$rtt"; fi
@@ -260,7 +260,7 @@ tcp_tuning_cli() {
       [[ -z "$bandwidth$rtt" && "$dry_run" == 0 ]] || usage_die 'status/disable 不接受带宽、RTT 或 --dry-run'
       if [[ "$action" == status ]]; then tcp_tuning_status "$json"
       else
-        [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+        require_root
         require_command flock
         if [[ "$json" == 1 ]]; then tcp_tuning_disable >&2 && tcp_tuning_status 1
         else tcp_tuning_disable; fi

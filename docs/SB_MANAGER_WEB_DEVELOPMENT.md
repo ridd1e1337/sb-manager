@@ -202,7 +202,7 @@ sb-manager/       现有 Bash 项目，独立发布
 sb-manager-web/   新 Go 项目，独立发布
 ```
 
-不建议把整个 `sb-manager` 作为 Git 子模块复制进 WebUI。WebUI 只依赖安装后的 `sb` CLI，并用固定版本的测试夹具进行兼容性测试。
+不建议把整个 `sb-manager` 作为 Git 子模块复制进 WebUI。WebUI 只依赖安装后的 `sb` CLI。
 
 ### 5.2 推荐目录
 
@@ -230,7 +230,6 @@ sb-manager-web/
 │   ├── systemd/
 │   └── openrc/
 ├── docs/
-├── tests/
 ├── go.mod
 ├── go.sum
 ├── Makefile
@@ -873,90 +872,7 @@ sb backup ...
 - 是否包含证书和密钥
 - 当前状态摘要
 
-## 19. 测试计划
-
-### 19.1 Go 单元测试
-
-覆盖：
-
-- 配置解析和默认值
-- 参数白名单
-- CLI 参数构造
-- JSON 响应解析
-- 错误映射
-- enrollment token 过期和单次使用
-- Session、CSRF 和密码哈希
-- SQLite 读写、WAL 和迁移
-- 任务幂等和超时
-- Agent 心跳状态
-
-### 19.2 API 测试
-
-使用假的 `sb` 可执行文件，验证：
-
-- Web 请求不会经过 Shell
-- 参数被正确分割
-- CLI 失败能返回稳定错误码
-- 超时会杀死子进程
-- 敏感输出被脱敏
-- 未登录请求被拒绝
-- CSRF 失败不会触发命令
-
-### 19.3 集成测试
-
-使用真实 sb-manager 和测试 sing-box 核心：
-
-- 节点新增和删除
-- 节点启停
-- 分享链接导出
-- 核心检查、更新、回滚
-- BBR 开启和恢复
-- Hysteria2 UDP 缓冲区开启和恢复
-- 配置失败自动回滚
-- 备份和恢复
-
-### 19.4 Agent 测试
-
-使用本地测试 CA 和临时端口验证：
-
-- 首次注册
-- 令牌重复使用被拒绝
-- 错误证书指纹被拒绝
-- 公钥撤销
-- Agent 断线重连
-- 任务重复投递只执行一次
-- 控制端重启后任务状态不丢失
-
-### 19.5 发行版测试
-
-至少覆盖：
-
-- Debian 12/13 + systemd
-- Ubuntu 22.04/24.04 + systemd
-- Alpine 3.21/3.24 + OpenRC
-- amd64
-- arm64
-
-## 20. CI 和发布
-
-### 20.1 CI 检查
-
-```bash
-gofmt -w .
-go vet ./...
-go test ./...
-go test -race ./...
-go build -trimpath -ldflags '-s -w' ./cmd/sb-web
-```
-
-同时运行：
-
-- 静态检查
-- API 集成测试
-- Agent mTLS 测试
-- 安装器 Bash 语法检查
-- systemd 单元验证
-- Alpine smoke test
+## 20. 发布
 
 ### 20.2 发布资产
 
@@ -1028,7 +944,6 @@ sb-manager-web 0.1.0
 - 实现配置加载、日志、版本输出。
 - 实现 `sb` 路径检测。
 - 实现安全 CLI runner。
-- 建立真实 sb-manager 兼容性测试夹具。
 
 完成标准：可以安全调用 `sb status --json` 并返回结构化结果。
 
@@ -1076,41 +991,6 @@ sb-manager-web 0.1.0
 - 受控灰度发布。
 - 控制端高可用或数据库迁移评估。
 
-## 23. 第一版验收标准
-
-### 安装
-
-- 在 Debian 和 Alpine 上可完成安装。
-- 不需要 Python、Node 或 npm。
-- 安装失败可以恢复旧版本。
-- 默认不开放公网端口。
-
-### 功能
-
-- 可以查看 `sb status --json`。
-- 可以新增、编辑、启停和删除节点。
-- 可以查看分享链接。
-- 可以执行核心升级和回滚。
-- 可以开启/恢复 BBR。
-- 可以开启/恢复 Hysteria2 UDP 缓冲区。
-- 可以查看日志和执行诊断。
-
-### 安全
-
-- 未登录无法执行 CLI。
-- 不存在任意命令 API。
-- 用户输入不会经过 Shell。
-- 密码、私钥和 token 不出现在日志。
-- enrollment token 只能使用一次。
-
-### 可靠性
-
-- CLI 超时可控。
-- 子进程失败能返回明确错误。
-- WebUI 重启不破坏 sb-manager 状态。
-- Agent 断线后能恢复心跳。
-- 单台远程服务器失败不影响其他服务器。
-
 ## 24. 关键设计决策总结
 
 1. Go 只负责 Web、Agent 和编排，不重写 Bash 管理逻辑。
@@ -1126,13 +1006,12 @@ sb-manager-web 0.1.0
 
 ## 25. 开发约定
 
-- 所有 Go 代码提交前运行 `gofmt`、`go vet` 和 `go test`。
+- Go 代码保持统一格式，沿用项目现有接口和错误处理约定。
 - 所有外部输入先校验，再转换为固定 CLI 参数。
-- 任何新增 Web API 都必须补 API 测试和审计事件。
+- 任何新增 Web API 都必须记录审计事件。
 - 任何新增 sb-manager CLI 依赖都必须更新兼容性矩阵。
 - 不在 WebUI 中复制协议字段默认值；默认值由 sb-manager 决定。
 - 不提交真实凭据、证书、Agent 私钥或生产数据库。
-- 变更涉及安装、服务和权限时，必须补 Debian/OpenRC 测试。
 - 发布前生成 SHA256 和 provenance 文件。
 
 ## 26. 当前下一步

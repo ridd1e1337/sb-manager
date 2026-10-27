@@ -377,7 +377,7 @@ tunnel_status() {
   if [[ "$json" == 1 ]]; then
     local state='off'
     if [[ $(jq -r '.tunnel.mode' "$SBM_STATE") != none ]]; then
-      if [[ "$SBM_SKIP_INIT" == 1 ]]; then state=test; elif service_active "$SBM_TUNNEL_SERVICE"; then state=running; else state=stopped; fi
+      if [[ "$SBM_SKIP_INIT" == 1 ]]; then state=unmanaged; elif service_active "$SBM_TUNNEL_SERVICE"; then state=running; else state=stopped; fi
     fi
     jq --arg state "$state" '.tunnel + {service_state:$state}' "$SBM_STATE"
     return

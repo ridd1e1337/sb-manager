@@ -15,7 +15,6 @@ CORE_VERSION=latest
 KEEP_CORE=0
 INSTALL_PROFILE=${SBM_INSTALL_PROFILE:-minimal}
 INSTALL_CLOUDFLARED=${SBM_INSTALL_CLOUDFLARED:-0}
-TEST_MODE=${SBM_TEST_MODE:-0}
 SETUP_MUTATED=0
 SETUP_ROLLBACK_DIR=''
 
@@ -54,13 +53,6 @@ setup_rollback_on_error() {
   exit "$rc"
 }
 
-setup_fail_if_requested() {
-  if [[ ${SBM_TEST_FAIL_STEP:-} == "$1" ]]; then
-    printf '测试注入：安装步骤 %s 失败。\n' "$1" >&2
-    return 97
-  fi
-}
-
 setup_acquire_lock() {
   local lock_file inherited_lock=''
   command_exists flock || return 0
@@ -90,12 +82,12 @@ setup_release_lock() {
 }
 
 prune_runtime_payload() {
-  # Documentation, tests and release-only assets are useful in the checkout
+  # Documentation and release-only assets are useful in the checkout
   # but never needed by the installed CLI.  Keeping them out of /usr/local is
   # noticeable on small disks and does not touch the source tree when setup is
   # run in-place.
   rm -rf \
-    "$TARGET_LIB/.git" "$TARGET_LIB/.github" "$TARGET_LIB/tests" \
+    "$TARGET_LIB/.git" "$TARGET_LIB/.github" \
     "$TARGET_LIB/docs" "$TARGET_LIB/sing-box-official-docs-cn" \
     "$TARGET_LIB"/sing-box-official-docs-cn-*.zip \
     "$TARGET_LIB/libexec/__pycache__"
@@ -149,12 +141,11 @@ case "$INSTALL_CLOUDFLARED" in
   *) echo 'SBM_INSTALL_CLOUDFLARED 只能是 0 或 1。' >&2; exit 1 ;;
 esac
 
-[[ "$TEST_MODE" == 1 || ${EUID:-$(id -u)} -eq 0 ]] || { echo '请使用 root/sudo 运行。' >&2; exit 1; }
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo '请使用 root/sudo 运行。' >&2; exit 1; }
 
 install_dependencies() { dependency_install_base "$INSTALL_PROFILE"; }
 
 create_service_account() {
-  [[ "$TEST_MODE" == 1 ]] && return 0
   if ! group_exists "$SBM_SERVICE_USER"; then
     if command_exists groupadd; then groupadd --system "$SBM_SERVICE_USER"
     elif command_exists addgroup; then addgroup -S "$SBM_SERVICE_USER"
@@ -394,7 +385,7 @@ EOF_LOGROTATE
 }
 
 scheduler_reconcile() {
-  [[ "$NO_START" == 0 && "$TEST_MODE" != 1 ]] || return 0
+  [[ "$NO_START" == 0 ]] || return 0
   case "$(init_system)" in
     systemd)
       systemctl enable --now sb-core-update.timer sb-acme-renew.timer sb-traffic-sync.timer sb-health-check.timer "$SBM_TRAFFIC_SERVICE"
@@ -413,7 +404,7 @@ scheduler_reconcile() {
 }
 
 printf '[1/7] 安装依赖…\n'
-[[ "$TEST_MODE" == 1 ]] || install_dependencies
+install_dependencies
 setup_acquire_lock
 
 printf '[2/7] 安装程序文件…\n'
@@ -441,7 +432,6 @@ if [[ "$src_real" != "$target_real" ]]; then
 else
   printf '      检测到从已安装目录执行，跳过自覆盖复制。\n'
 fi
-setup_fail_if_requested 2
 find "$TARGET_LIB/lib" "$TARGET_LIB/protocols" -type d -exec chmod 0755 {} +
 [[ ! -d "$TARGET_LIB/libexec" ]] || find "$TARGET_LIB/libexec" -type d -exec chmod 0755 {} +
 chmod 0755 "$TARGET_LIB" "$TARGET_LIB/sb" "$TARGET_LIB/setup.sh" "$TARGET_LIB/install.sh" "$TARGET_LIB/build-standalone.sh" "$TARGET_LIB/build-release.sh" "$TARGET_LIB/lib/"*.sh "$TARGET_LIB/protocols/"*.sh
@@ -488,9 +478,9 @@ source "$TARGET_LIB/lib/tcp_tuning.sh"
 source "$TARGET_LIB/lib/network.sh"
 source "$TARGET_LIB/lib/benchmark.sh"
 
-if [[ "$TEST_MODE" != 1 ]]; then require_init_system; fi
+require_init_system
 BACKEND=$(init_system 2>/dev/null || true)
-[[ "$BACKEND" != none && -n "$BACKEND" ]] || BACKEND=${SBM_TEST_INIT_BACKEND:-systemd}
+[[ "$BACKEND" != none && -n "$BACKEND" ]] || BACKEND=systemd
 
 printf '[3/7] 创建低权限服务用户和数据目录…\n'
 create_service_account
@@ -512,28 +502,17 @@ chmod 0700 "$SBM_SECRETS/nodes"
 
 printf '[4/7] 安装 sing-box 核心…\n'
 current_core_version=$(core_current_version || true)
-if [[ "$TEST_MODE" == 1 ]]; then
-  test_version_output=$(${SBM_TEST_SING_BOX:?} version)
-  test_version=$(extract_semver "$test_version_output") || die '无法识别测试 sing-box 核心版本。'
-  mkdir -p "$SBM_CORE_DIR/sing-box/$test_version"
-  install -m 0755 "$SBM_TEST_SING_BOX" "$SBM_CORE_DIR/sing-box/$test_version/sing-box"
-  if [[ -f "$(dirname "$SBM_TEST_SING_BOX")/libcronet.so" ]]; then
-    install -m 0755 "$(dirname "$SBM_TEST_SING_BOX")/libcronet.so" "$SBM_CORE_DIR/sing-box/$test_version/libcronet.so"
+if [[ "$KEEP_CORE" == 1 ]]; then
+  sb_binary=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
+  [[ -x "$sb_binary" ]] || die '--keep-core 需要已有 sing-box 核心；请重新运行普通安装。'
+elif [[ "$CORE_VERSION" == latest ]]; then
+  CORE_VERSION=$(core_latest_version) || die '无法查询 sing-box 最新官方版本。'
+  if [[ -n "$current_core_version" && "$current_core_version" != "$CORE_VERSION" ]] && version_ge "$current_core_version" "$CORE_VERSION"; then
+    log_warn "解析到的目标核心 $CORE_VERSION 不高于当前 $current_core_version，保留现有核心以避免意外降级。"
+    CORE_VERSION=$current_core_version
   fi
-  sb_binary="$SBM_CORE_DIR/sing-box/$test_version/sing-box"
-else
-  if [[ "$KEEP_CORE" == 1 ]]; then
-    sb_binary=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
-    [[ -x "$sb_binary" ]] || die '--keep-core 需要已有 sing-box 核心；请重新运行普通安装。'
-  elif [[ "$CORE_VERSION" == latest ]]; then
-    CORE_VERSION=$(core_latest_version) || die '无法查询 sing-box 最新官方版本。'
-    if [[ -n "$current_core_version" && "$current_core_version" != "$CORE_VERSION" ]] && version_ge "$current_core_version" "$CORE_VERSION"; then
-      log_warn "解析到的目标核心 $CORE_VERSION 不高于当前 $current_core_version，保留现有核心以避免意外降级。"
-      CORE_VERSION=$current_core_version
-    fi
-  fi
-  sb_binary=$(core_download_version "$CORE_VERSION")
 fi
+sb_binary=$(core_download_version "$CORE_VERSION")
 validate_runtime_binary_path sing-box "$sb_binary"
 ensure_program_permissions
 prepare_singbox_binary_for_backend "$sb_binary" "$BACKEND"
@@ -543,17 +522,7 @@ core_prune_cached_versions
 
 if [[ "$INSTALL_CLOUDFLARED" == 1 ]]; then
   printf '[5/7] 安装可选 cloudflared…\n'
-  if [[ "$TEST_MODE" == 1 ]]; then
-    mkdir -p "$SBM_CORE_DIR/cloudflared/test"
-    cat >"$SBM_CORE_DIR/cloudflared/test/cloudflared" <<'EOF_CF'
-#!/usr/bin/env bash
-echo 'cloudflared version 2026.1.0'
-EOF_CF
-    chmod +x "$SBM_CORE_DIR/cloudflared/test/cloudflared"
-    cf_binary="$SBM_CORE_DIR/cloudflared/test/cloudflared"
-  else
-    cf_binary=$(cloudflared_download_latest)
-  fi
+  cf_binary=$(cloudflared_download_latest)
   validate_runtime_binary_path cloudflared "$cf_binary"
   ensure_program_permissions
   ln -sfn "$cf_binary" "$SBM_CLOUDFLARED_BIN.new"; mv -Tf "$SBM_CLOUDFLARED_BIN.new" "$SBM_CLOUDFLARED_BIN"
@@ -567,56 +536,52 @@ fi
 
 printf '[6/7] 生成配置与 %s 服务…\n' "$BACKEND"
 render_current_config
-if [[ "$TEST_MODE" != 1 ]]; then
-  # Stop a stale restart loop before replacing the service definition. The
-  # final reconcile below restores the correct state based on enabled nodes.
-  if service_exists "$SBM_NGINX_STREAM_SERVICE"; then service_stop "$SBM_NGINX_STREAM_SERVICE"; fi
-  if service_exists "$SBM_TUNNEL_SERVICE"; then service_stop "$SBM_TUNNEL_SERVICE"; fi
-  if service_exists "$SBM_SERVICE"; then
-    service_stop "$SBM_SERVICE"
-    service_reset_failed "$SBM_SERVICE"
-  fi
+# Stop a stale restart loop before replacing the service definition. The
+# final reconcile below restores the correct state based on enabled nodes.
+if service_exists "$SBM_NGINX_STREAM_SERVICE"; then service_stop "$SBM_NGINX_STREAM_SERVICE"; fi
+if service_exists "$SBM_TUNNEL_SERVICE"; then service_stop "$SBM_TUNNEL_SERVICE"; fi
+if service_exists "$SBM_SERVICE"; then
+  service_stop "$SBM_SERVICE"
+  service_reset_failed "$SBM_SERVICE"
 fi
+
 case "$BACKEND" in
   systemd) write_systemd_runtime ;;
   openrc) write_openrc_runtime ;;
   *) die "无法生成未知服务后端：$BACKEND" ;;
 esac
-setup_fail_if_requested 6
 
-if [[ "$TEST_MODE" != 1 ]]; then
-  service_reload_manager
-  service_reset_failed "$SBM_SERVICE"
-  if ! service_user_can_execute_core; then
-    log_error "$SBM_SERVICE_USER 无法执行 sing-box 核心。"
-    runtime_exec_diagnostics "$SBM_SING_BOX_BIN"
-    exit 1
-  fi
-  if ! service_user_can_read_config; then
-    log_error "$SBM_SERVICE_USER 无法读取生成配置。"
-    command -v namei >/dev/null 2>&1 && namei -l "$SBM_CONFIG" >&2 || true
-    exit 1
-  fi
-  if [[ "$BACKEND" == systemd && "$NO_START" == 0 ]]; then
-    preflight_rc=0
-    systemd_exec_preflight "$SBM_SING_BOX_BIN" || preflight_rc=$?
-    case "$preflight_rc" in
-      0) ;;
-      2) log_warn 'systemd-run 不可用，跳过沙箱执行预检。' ;;
-      *) runtime_exec_diagnostics "$SBM_SING_BOX_BIN"; exit 1 ;;
-    esac
-    runtime_preflight_rc=0
-    systemd_runtime_preflight "$SBM_SING_BOX_BIN" "$SBM_CONFIG" || runtime_preflight_rc=$?
-    case "$runtime_preflight_rc" in
-      0) ;;
-      2) log_warn 'systemd-run 不可用，跳过实际启动预检。' ;;
-      *) runtime_exec_diagnostics "$SBM_SING_BOX_BIN"; exit 1 ;;
-    esac
-  fi
+service_reload_manager
+service_reset_failed "$SBM_SERVICE"
+if ! service_user_can_execute_core; then
+  log_error "$SBM_SERVICE_USER 无法执行 sing-box 核心。"
+  runtime_exec_diagnostics "$SBM_SING_BOX_BIN"
+  exit 1
+fi
+if ! service_user_can_read_config; then
+  log_error "$SBM_SERVICE_USER 无法读取生成配置。"
+  command -v namei >/dev/null 2>&1 && namei -l "$SBM_CONFIG" >&2 || true
+  exit 1
+fi
+if [[ "$BACKEND" == systemd && "$NO_START" == 0 ]]; then
+  preflight_rc=0
+  systemd_exec_preflight "$SBM_SING_BOX_BIN" || preflight_rc=$?
+  case "$preflight_rc" in
+    0) ;;
+    2) log_warn 'systemd-run 不可用，跳过沙箱执行预检。' ;;
+    *) runtime_exec_diagnostics "$SBM_SING_BOX_BIN"; exit 1 ;;
+  esac
+  runtime_preflight_rc=0
+  systemd_runtime_preflight "$SBM_SING_BOX_BIN" "$SBM_CONFIG" || runtime_preflight_rc=$?
+  case "$runtime_preflight_rc" in
+    0) ;;
+    2) log_warn 'systemd-run 不可用，跳过实际启动预检。' ;;
+    *) runtime_exec_diagnostics "$SBM_SING_BOX_BIN"; exit 1 ;;
+  esac
 fi
 
 printf '[7/7] 启动服务…\n'
-if [[ "$NO_START" == 0 && "$TEST_MODE" != 1 ]]; then
+if [[ "$NO_START" == 0 ]]; then
   scheduler_reconcile
   if ! singbox_service_reconcile; then
     runtime_exec_diagnostics "$SBM_SING_BOX_BIN"

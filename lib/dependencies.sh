@@ -63,10 +63,6 @@ dependency_install_packages() {
     "$SBM_DEPENDENCY_INSTALLER" "${packages[@]}"
     return $?
   fi
-  if [[ ${SBM_TEST_MODE:-0} == 1 ]]; then
-    log_error "测试模式禁止安装系统依赖：${packages[*]}"
-    return 1
-  fi
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then
     log_error "dry-run 模式不会安装系统依赖：${packages[*]}"
     return 1

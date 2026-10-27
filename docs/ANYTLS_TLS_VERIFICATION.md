@@ -47,26 +47,3 @@ Sub-Store 2.43.1 和 2.44.2 的 V2Ray URI 输出会省略 `skip-cert-verify=fals
 参考：[AnyTLS URI 规范](https://github.com/anytls/anytls-go/blob/main/docs/uri_scheme.md)、
 [Sub-Store URI 输出](https://github.com/sub-store-org/Sub-Store/blob/2.43.1/backend/src/core/proxy-utils/producers/uri.js)、
 [v2rayN 7.18.0 参数解析](https://github.com/2dust/v2rayN/blob/7.18.0/v2rayN/ServiceLib/Handler/Fmt/BaseFmt.cs)。
-
-## 验证记录
-
-`tests/anytls-tls-smoke.sh` 使用临时目录、临时 CA 和本机回环监听，验证缺少证书时事务回滚、
-可信证书完整 AnyTLS 转发成功、不可信 CA 被拒绝、域名不匹配被拒绝。
-`tests/anytls-substore-smoke.sh` 使用独立 Sub-Store 数据目录，验证 IPv4/IPv6 链接经过
-快捷设置覆盖、恢复默认以及 V2Ray 转换后，证书验证参数和 SNI 得到保留。
-
-2026-10-27，alpha.36 验证范围：
-
-| 环境 | 验证 |
-| --- | --- |
-| 本地 Ubuntu，官方 sing-box 1.13.19 | 协议/事务套件、AnyTLS 证书验证、动态订阅 |
-| 本地 sing-box 1.15.0-alpha.2 | AnyTLS 证书验证、含 Snell 的订阅快照 |
-| Sub-Store 2.43.1 / 2.44.2 官方 bundle | IPv4/IPv6、快捷设置覆盖及恢复、V2Ray URI 转换 |
-| Alpine 3.23 容器 | sing-box 1.13.19 证书验证、两版 Sub-Store 转换 |
-| 用户提供的 Debian 13 ARM64 主机 | 临时目录及回环端口，sing-box 1.14.4 证书验证、Sub-Store 2.43.1 转换 |
-
-本次下载的测试资产均核对 GitHub Release SHA-256 digest。远程使用的 Sub-Store bundle
-也与 2.43.1 官方 digest 一致。另检查实际订阅输出，并以系统信任库验证其 7 个不同
-AnyTLS 端点的证书链和域名；全部通过。未在用户客户端执行 GUI 导入操作。
-本次远程测试为专项隔离验证，未运行完整 `remote-debian13-suite.sh`，
-未执行安装、系统服务变更或主机防火墙变更。

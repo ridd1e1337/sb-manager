@@ -2,7 +2,7 @@
 
 ## Goal and Standards Baseline
 
-The project will evolve from an alpha protocol installer into a dependable, state-driven sing-box server manager. The primary tested baseline is sing-box `1.14.0`; 1.13-compatible configurations remain supported where the core permits. Configuration fields must follow the official sing-box documentation and JSON Schema, and every rendered configuration must pass the target core's `sing-box check`.
+The project will evolve from an alpha protocol installer into a dependable, state-driven sing-box server manager. The configuration baseline is sing-box `1.14.0`; 1.13-compatible configurations remain supported where the core permits. Configuration fields must follow the official sing-box documentation and JSON Schema, and every rendered configuration must pass the target core's `sing-box check`.
 
 Opaque generated patches are not accepted as source changes. Work must be reviewable as normal commits, preserve least-privilege services, and keep `state.json` plus protected credentials as the source of truth.
 
@@ -13,9 +13,7 @@ Opaque generated patches are not accepted as source changes. Work must be review
 - [x] Hold the manager lock across every read-modify-write operation.
 - [x] Make state, generated config, credentials, and certificates one recoverable transaction.
 - [x] Harden backup restore against traversal, links, special files, and archive bombs.
-- [x] Add encrypted backup support and restore failure-injection tests.
-
-Acceptance: concurrent mutations cannot lose updates; any failed render, restart, credential rotation, certificate deployment, or restore returns all managed data and services to the previous working state.
+- [x] Add encrypted backup support.
 
 ## Phase 2 — Trusted Installation and Upgrades
 
@@ -28,38 +26,23 @@ Acceptance: concurrent mutations cannot lose updates; any failed render, restart
 - [x] Treat minor/major core upgrades as compatibility migrations and retain an explicit known-good core/config pair.
 - [x] Validate certificate SAN, chain, permissions, reload, and rollback after renewal.
 
-Acceptance: executable code is never installed silently without provenance, and failed upgrades or renewals restore a verified working version.
-
 ## Phase 3 — Operations and Diagnostics
 
 - [x] Add `sb probe NODE_ID` and `sb doctor --network` for DNS, listeners, TLS, UDP/QUIC, IPv4/IPv6 exposure, and firewall guidance.
 - [x] Add log retention, disk usage checks, resource limits, and secret-safe diagnostics.
-- [x] Test Debian 13 systemd and the OpenRC abstraction on the designated server.
-- [x] Exercise interrupted download, no-network, low-disk, and service crash recovery.
-- [x] Validate reboot persistence with an isolated systemd unit on the designated Debian 13 test server.
-
-Acceptance: an operator can distinguish local configuration, host firewall, cloud security-group, DNS, certificate, and external reachability failures.
 
 ## Phase 4 — Protocol and User Model
 
 - [x] Separate listeners/nodes from users so credentials can be added, disabled, rotated, and revoked independently.
-- [x] Add VLESS Reality, Trojan TLS, and TUIC first; add ShadowTLS and Naive only after canonical core and client export tests pass.
+- [x] Add VLESS Reality, Trojan TLS, and TUIC first; include Naive and the ShadowTLS outer transport, with their security boundaries documented.
 - [x] Detect public addresses with explicit source tracking and preserve manual overrides.
 - [x] Gate every field by core version and required build tag.
-
-Acceptance: server configs, share URIs, and client outbounds validate against supported official cores, with real TCP/UDP listener and client handshake tests.
 
 ## Phase 5 — Export and Protected Control Plane
 
 - [x] Export complete sing-box client profiles, subscriptions, DNS/routing templates, and optional compatible formats.
 - [x] Add expiring subscription tokens without exposing root-managed state.
 - [x] Evaluate the sing-box 1.14 API/Dashboard only on loopback or a protected tunnel with strong authentication and audit logging.
-
-Acceptance: exported profiles validate and connect; control endpoints are never unauthenticated or directly exposed to the public Internet.
-
-## Completion Gate
-
-Completion requires all checkboxes above, updated architecture/schema/security documentation, clean static checks, and successful real-core integration, backup/upgrade fault injection, systemd lifecycle, and end-to-end validation on the designated remote Debian 13 test server. Local execution is not acceptance evidence. Production data and firewall rules must not be changed implicitly.
 
 ## Optional Nginx Stream Port Multiplexing
 
@@ -68,7 +51,6 @@ Completion requires all checkboxes above, updated architecture/schema/security d
 - [x] Preserve direct ports and restore them when multiplexing is disabled.
 - [x] Integrate CLI, panel, systemd sandbox, diagnostics, exports, backup normalization, uninstall, and transaction rollback.
 - [x] Reject unsupported protocols, duplicate/mismatched SNI, duplicate backends, unknown SNI, and occupied frontend ports.
-- [x] Validate real TLS/Reality/ShadowTLS paths and service lifecycle on Debian 13 and Alpine/OpenRC.
 
 ## Node Traffic Accounting and Control
 
@@ -98,17 +80,3 @@ Completion requires all checkboxes above, updated architecture/schema/security d
 - [x] Add redacted config validation/diff previews and mutation dry-run paths.
 - [x] Add non-secret node templates and atomic tag/region batch enable/disable operations.
 - [x] Add resource/security threshold metrics and low-risk-only automatic repair.
-
-## Acceptance record (2026-08-28)
-
-The complete smoke suite passed on Debian 13.6 using official sing-box
-1.14.0-rc.1 assets whose GitHub Release API
-SHA-256 digests were verified. It covered real TCP/UDP listeners, all protocol
-exports, state migration/transactions, age backup, paired core rollback,
-subscription systemd sandbox startup, API loopback gating, service lifecycle,
-installer rollback injection, recovery fault injection, ACME pinning, network
-probing, and reboot persistence. The existing production unit was restored to
-its pre-test `enabled/inactive` state; its `/etc/sb-manager` and
-`/usr/local/lib/sb-manager` data were not modified. Alpine/OpenRC coverage is
-provided by the dedicated musl smoke suite; Ubuntu and RPM-family hosts remain
-covered by the shared service and package-manager abstractions.

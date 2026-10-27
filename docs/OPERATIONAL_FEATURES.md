@@ -224,22 +224,3 @@ Tunnel/Nginx loopback 回源和其他网卡的流量继续使用 nftables 限速
 保留记录并中止卸载。默认安装不启用整形。
 
 面板：“流量统计、配额与限速 → tc 下行平滑限速”。
-
-## 验证范围
-
-隔离测试覆盖成功、校验失败、回滚、权限、备份恢复、账期、到期续期及
-systemd/OpenRC 服务定义。Alpine 3.21–3.24 容器覆盖新增功能。真实测试覆盖
-sing-box 认证与转发、Sub-Store 前端和同步、Cloudflared ingress、iperf3 双向
-测速，以及独立网络命名空间内的 tc/nftables 安装与恢复。
-
-alpha.33 增加 `tests/ui-flow-smoke.sh` 与 Python PTY 测试，验证操作失败后
-不继续执行、取消无副作用、菜单逐级返回、节点编辑、脚本更新重载、卸载退出
-及全局选项保留。终端交互测试依赖 Python；订阅服务与 Sub-Store 的 Python
-依赖按需安装。
-
-alpha.34 使用 `tests/subscription-live-smoke.sh` 验证动态更新、快照兼容、撤销、
-过期、权限和发布失败回滚；`tests/substore-sources-smoke.sh` 使用经过摘要校验的
-官方 Sub-Store 前后端验证两个 HTTP 来源的实际合并、缓存刷新和接入失败恢复。
-
-当前没有远程测试机，未做远程 Debian/VPS 验收、真实公网 Tunnel、实机重启
-或实际业务线路的吞吐提升验收。

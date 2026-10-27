@@ -14,9 +14,8 @@ bash -n "$OUTPUT_DIR/sb-manager-install.sh"
 )
 jq -n --arg version "$VERSION" --arg built_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --arg source_commit "$SOURCE_COMMIT" \
-  --arg core "$(tr -d '[:space:]' <"$SOURCE_DIR/TESTED_CORE_VERSION")" \
   --arg acme_version 3.1.4 --arg acme_commit 3661fd86b6304115e42f43910e6dd452ab9866d6 \
-  '{schema_version:1,manager_version:$version,built_at:$built_at,source_commit:$source_commit,tested_sing_box:$core,
+  '{schema_version:1,manager_version:$version,built_at:$built_at,source_commit:$source_commit,
     acme:{version:$acme_version,commit:$acme_commit}}' >"$OUTPUT_DIR/RELEASE-MANIFEST.json"
 (
   cd "$OUTPUT_DIR"

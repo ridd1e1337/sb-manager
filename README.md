@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.36`。请先在测试 VPS 验证，不要直接覆盖仍在使用的生产节点。
+> 当前版本：`0.1.0-alpha.37`。
 
 ## 功能
 
@@ -28,10 +28,10 @@
 - 可选 Sub-Store 前后端安装、升级、节点同步、备份与恢复
 - 分享 URI 与 sing-box outbound JSON 导出
 - 客户端导出支持 IPv4 优先、IPv6 优先或仅 IPv4 的出站解析策略
-- Naive 分享链接使用与服务端一致的用户账号；ShadowTLS 需使用支持该协议的 sing-box/NekoBox 客户端
+- Naive 分享链接使用与服务端一致的用户账号；ShadowTLS 当前只提供外层传输配置，尚未自动配套内层加密代理
 - 原子配置写入、`sing-box check`、快照和失败回滚
 - 备份、恢复、日志、`sb doctor` 诊断与 `sb repair` 自动修复
-- 低权限 systemd/OpenRC 服务；不会关闭或清空系统防火墙
+- systemd 使用低权限服务用户；OpenRC 的 sing-box 为兼容受限 VPS 以 root 运行；不会关闭或清空系统防火墙
 - 防火墙面板可查看启用协议端口、显式执行 UFW allow，并在备份后清理 INPUT 链全局拦截
 - 统一状态面板与 `sb status --json`，可供监控脚本直接读取
 - 流量配额阈值通知（Telegram、企业微信和通用 Webhook）与可选定时健康检查
@@ -42,6 +42,13 @@
 - sing-box 1.14 特性覆盖矩阵见 [`docs/SINGBOX_1.14_FEATURE_MATRIX.md`](docs/SINGBOX_1.14_FEATURE_MATRIX.md)
 - sing-box 1.15 适配记录见 [`docs/SINGBOX_1.15_ADAPTATION.md`](docs/SINGBOX_1.15_ADAPTATION.md)
 - Go WebUI 独立项目已开始：[`sb-manager-web`](https://github.com/ridd1e1337/sb-manager-web)；开发基线见 [`docs/SB_MANAGER_WEB_DEVELOPMENT.md`](docs/SB_MANAGER_WEB_DEVELOPMENT.md)
+
+### 协议安全边界
+
+TLS/QUIC 类节点默认验证证书，VLESS Reality 使用公钥认证，Shadowsocks 2022 使用预共享密钥加密。
+普通 SOCKS5、HTTP、mixed 只有认证，没有传输加密，默认监听本机；ShadowTLS 当前缺少内层加密代理组合。
+Snell 单用户凭据轮换及多用户减少到单用户时的 PSK 行为存在限制，不能依赖现有用户轮换命令撤销旧 PSK。
+各协议的配置依据和已知问题见[协议安全边界](docs/PROTOCOL_SECURITY.md)。
 
 ### 节点流量控制
 
@@ -653,46 +660,7 @@ findmnt -T "$(readlink -f /usr/local/bin/sing-box)" -o TARGET,SOURCE,FSTYPE,OPTI
 systemctl show sb-sing-box.service -p Result -p ExecMainStatus
 ```
 
-## 开发与测试
-
-语法检查：
-
-```bash
-find . -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-```
-
-使用真实 sing-box 核心运行测试：
-
-```bash
-SBM_TEST_SING_BOX=/path/to/sing-box bash tests/run.sh
-SBM_TEST_SING_BOX=/path/to/sing-box bash tests/anytls-tls-smoke.sh
-SBM_TEST_SUBSTORE_BUNDLE=/path/to/verified/sub-store.bundle.js bash tests/anytls-substore-smoke.sh
-SBM_TEST_SING_BOX=/path/to/sing-box bash tests/install-smoke.sh
-bash tests/systemd-exec-smoke.sh
-bash tests/openrc-lifecycle.sh
-bash tests/openrc-nginx-stream-smoke.sh
-bash tests/ui-menu-smoke.sh
-bash tests/ui-flow-smoke.sh  # 隔离终端交互测试，需要 Python 3
-bash tests/subscription-live-smoke.sh
-# 已下载并校验的官方 Sub-Store 文件放在仓库外：
-SBM_TEST_COMPONENT_ASSETS=/path/to/assets bash tests/substore-sources-smoke.sh
-SBM_TEST_SING_BOX=/path/to/sing-box bash tests/minimal-install-smoke.sh
-SBM_TEST_SING_BOX=/path/to/sing-box bash tests/core-latest-fallback-smoke.sh
-# 在 Alpine 3.21-3.24 的一次性 VM/容器中以 root 运行：
-bash tests/alpine-nginx-stream-smoke.sh
-bash tests/alpine-network-smoke.sh
-```
-
-在指定 Debian 13 测试机上运行完整验收（官方核心目录放在仓库外）：
-
-alpha.36 已在用户提供的 Debian 13 ARM64 主机上执行 AnyTLS 专项隔离验证，详见
-[验证记录](docs/ANYTLS_TLS_VERIFICATION.md#验证记录)。本版本未运行下面的完整远程验收套件。
-
-```bash
-SBM_TEST_SING_BOX_STABLE=/opt/sing-box-1.13.19/sing-box \
-SBM_TEST_SING_BOX_PREVIEW=/opt/sing-box-1.14.0-rc.4/sing-box \
-bash tests/remote-debian13-suite.sh
-```
+## 离线安装包与架构文档
 
 生成离线单文件安装器：
 
@@ -705,7 +673,6 @@ sha256sum /tmp/sb-manager-install.sh
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/STATE_SCHEMA.md`](docs/STATE_SCHEMA.md)
-- [`docs/REMOTE_ACCEPTANCE_2026-08-28.md`](docs/REMOTE_ACCEPTANCE_2026-08-28.md)
 
 ## 重要说明
 

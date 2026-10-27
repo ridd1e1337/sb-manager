@@ -55,37 +55,8 @@ Alpine OpenRC 会在该目录之后加载 `/etc/sysctl.conf` 和 `/run/sysctl.d/
 其他文件也可能设置相同键，因此预览列出冲突文件，启动后可用 `sb tcp status`
 核对。预览不会编辑这些文件。
 
-## 兼容与验证
+## 兼容性
 
-网络诊断兼容 iputils 与 BusyBox，不使用 BusyBox 不支持的 `ping -n`。
-以 `LC_ALL=C` 解析摘要，普通用户可运行；JSON 包含发送/接收数量、丢包率、
-RTT、相邻收到的响应 RTT 差值绝对值的平均数和原始 ping 退出码。无响应时
-输出结构化结果并返回非零；DNS/权限/命令错误也返回非零。测试只向回环地址
-发送真实 ICMP。
-
-```bash
-bash tests/tcp-tuning-smoke.sh
-SBM_TEST_NETWORK_LOOPBACK=1 bash tests/network-smoke.sh
-bash tests/bbr-smoke.sh
-bash tests/hy2-udp-buffer-smoke.sh
-bash tests/service-lifecycle.sh
-bash tests/openrc-lifecycle.sh
-bash tests/ui-menu-smoke.sh
-
-# 仅在一次性 Alpine 容器内安装测试依赖；源码只读挂载。
-docker run --rm --memory 128m -v "$PWD:/project:ro" alpine:3.24 \
-  sh -c 'apk add --no-cache bash >/dev/null && bash /project/tests/alpine-network-smoke.sh'
-```
-
-测试覆盖：参数校验、内存/cgroup 限制、只读预览、配置冲突、权限、重复调整、
-部分应用失败、读回不一致、回滚失败后重试、损坏/丢失备份、符号链接拒绝、
-卸载恢复、iputils/BusyBox 输出、IPv4/IPv6 回环以及 OpenRC 生命周期。
-sysctl 写入使用隔离模拟器；Alpine 容器的真实 sysctl 只用于只读检查。
-
-`0.1.0-alpha.31` 已通过本地隔离回归和 Alpine **3.21.7、3.22.5、3.23.5、
-3.24.1** 的上述容器测试（内存限额 128 MiB）。本地最小安装测试使用
-sing-box `1.14.0`，验证新模块随安装器正常加载；Bash 语法、ShellCheck
-error 级检查和离线安装包语法也纳入发布检查。
-
-本次无可用远程测试机，未执行远程 Debian 验收、真实 VPS sysctl 写入或重启
-持久化测试，也未做实际线路吞吐对比。容器测试不能替代这些验收。
+网络诊断兼容 iputils 与 BusyBox，以 `LC_ALL=C` 解析摘要，普通用户可运行。
+JSON 包含发送/接收数量、丢包率、RTT、相邻响应 RTT 差值绝对值的平均数和原始
+ping 退出码。无响应时输出结构化结果并返回非零；DNS、权限或命令错误也返回非零。

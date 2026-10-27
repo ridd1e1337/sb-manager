@@ -2,7 +2,7 @@
 
 ## Reference Set
 
-Development uses the supplied `sing-box-official-docs-cn-2026-08-27.zip`. Its complete `sing-box-official-docs-cn/` extraction contains 89 files; all 88 files listed by `MANIFEST.md` pass SHA-256 verification. The primary tested runtime baseline is `1.14.0`; 1.13-compatible output remains covered by the compatibility suite. sing-box 1.15.0-alpha.2 compatibility is recorded separately in `docs/SINGBOX_1.15_ADAPTATION.md`.
+Development uses the supplied `sing-box-official-docs-cn-2026-08-27.zip`. Its complete `sing-box-official-docs-cn/` extraction contains 89 files; all 88 files listed by `MANIFEST.md` pass SHA-256 verification. The configuration baseline is `1.14.0`; 1.13-compatible output is retained where the core permits. sing-box 1.15.0-alpha.2 compatibility is recorded separately in `docs/SINGBOX_1.15_ADAPTATION.md`.
 
 Every generated server configuration includes the official `$schema` URL and must pass `sing-box check` using the target binary. A documented type is enabled only when its required version, build tag, companion library, operating system, and permissions are present.
 
@@ -18,9 +18,13 @@ Every generated server configuration includes the official `$schema` URL and mus
 | TUIC | `05/06-*/Hysteria-Hysteria2-TUIC.md` | `with_quic`, UDP, supported congestion control, 0-RTT disabled |
 | VLESS TLS/Reality | VLESS chapters and `02-配置基础/TLS-ECH-Reality-uTLS.md` | UUID, Vision flow, Reality keypair/Short ID, `with_utls` |
 | Naive | Naive chapters and build-tag matrix | TLS/QUIC mode; client requires `with_naive_outbound` and `libcronet.so` |
-| ShadowTLS v3 | ShadowTLS chapters | v3 users, handshake target, strict/wildcard SNI values |
+| ShadowTLS v3 | ShadowTLS chapters | outer transport only; encrypted inner proxy and detour composition are not implemented |
 | Snell v5 | `05/06-*/Naive-ShadowTLS-AnyTLS-Snell.md` | 1.14+ only; server v5, client v4, PSK/userkey, optional HTTP obfs |
 | Nginx Stream passthrough | Official rule that duplicate listeners require an explicit reuse layer; Nginx `ssl_preread` semantics | unique exact SNI, loopback backends, no TLS termination, unknown-SNI rejection, transactional rollback |
+
+Protocol field mappings do not imply a complete security audit. Snell credential
+rotation and ShadowTLS composition limitations are recorded in
+[`PROTOCOL_SECURITY.md`](PROTOCOL_SECURITY.md).
 
 ## Configuration and Security Rules
 
@@ -37,8 +41,4 @@ Every generated server configuration includes the official `$schema` URL and mus
 
 ## Version Gates
 
-The following supplied-document features are marked `1.14+` and must not appear in stable 1.13 output: top-level `certificate_providers`, `http_clients`, `network_namespaces`, the new API/Dashboard service, OpenConnect/OpenVPN endpoints, Hysteria Realm, Bridge outbound, and 1.14 DNS/TUN fields. They may be added only behind an explicit core-version gate and a separate 1.14 compatibility suite.
-
-## Remote Acceptance
-
-Acceptance runs only on the designated Debian 13 server. It includes schema validation, server and client config checks, real TCP/UDP listeners, systemd sandbox startup, user lifecycle, credential rotation, backup/migration fault injection, core upgrade/rollback, and external reachability where a real domain and cloud security-group rule are available.
+The following supplied-document features are marked `1.14+` and must not appear in stable 1.13 output: top-level `certificate_providers`, `http_clients`, `network_namespaces`, the new API/Dashboard service, OpenConnect/OpenVPN endpoints, Hysteria Realm, Bridge outbound, and 1.14 DNS/TUN fields. They may be added only behind an explicit core-version gate.

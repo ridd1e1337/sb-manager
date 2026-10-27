@@ -23,7 +23,7 @@ status_summary() {
   nodes=$(jq '.nodes|length' "$SBM_STATE"); enabled=$(state_enabled_count); certs=$(jq '.certificates|length' "$SBM_STATE")
   mode=$(jq -r '.tunnel.mode' "$SBM_STATE"); mux_state=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE"); mux_port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE"); backend=$(init_system_label)
-  if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state='测试模式'
+  if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state='不接管服务'
   elif (( enabled == 0 )) && [[ $(jq -r '.api.enabled // false' "$SBM_STATE") != true ]]; then service_state='待机（无启用节点）'
   elif service_active "$SBM_SERVICE"; then service_state='运行中'; else service_state='未运行'; fi
   printf '%sSB Manager %s%s\n' "$C_BOLD" "$SBM_VERSION" "$C_RESET"
@@ -340,7 +340,7 @@ doctor_run() {
   printf '%s\n' '---- sb doctor ----'
   backend=$(init_system 2>/dev/null || true)
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then
-    check_line PASS '服务管理器检查已跳过（测试模式）'
+    check_line PASS '未接管服务管理器，跳过服务状态检查'
   elif [[ "$backend" == systemd || "$backend" == openrc ]]; then
     check_line PASS "服务管理器：$(init_system_label)"
   else
@@ -603,7 +603,7 @@ doctor_repair() { doctor_run 1; }
 
 show_logs() {
   local target=${1:-all} lines=${2:-100}
-  [[ "$SBM_SKIP_INIT" != 1 ]] || { log_warn '测试模式下没有服务日志。'; return; }
+  [[ "$SBM_SKIP_INIT" != 1 ]] || { log_warn '未接管服务管理器，无法读取服务日志。'; return; }
   case "$target" in
     singbox|core) service_logs "$SBM_SERVICE" "$lines" 0 ;;
     tunnel|cloudflared) service_logs "$SBM_TUNNEL_SERVICE" "$lines" 0 ;;

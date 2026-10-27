@@ -38,11 +38,6 @@ yes/dry-run/quiet/no-color options survive worker launches and reloads.
 Selectors return IDs through caller variables, and edits load defaults from
 state. No persistent UI state or new runtime dependency is required.
 
-`tests/ui-flow-smoke.sh` creates a private program copy and isolated runtime
-paths; `tests/ui-pty.py` drives real terminal input with injected backend
-failures and update/uninstall outcomes. The same interaction suite runs on
-Alpine 3.21–3.24. These checks do not replace remote VPS acceptance.
-
 ## Traffic control plane
 
 ```text

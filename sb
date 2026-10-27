@@ -181,7 +181,7 @@ main() {
     network) shift; require_command jq; network_cli "$@"; return $?;;
     update) shift; manager_update "$@"; return $? ;;
     uninstall)
-      [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+      require_root
       local purge=0 assume_yes=${SBM_ASSUME_YES:-0} arg
       shift
       for arg in "$@"; do
@@ -192,7 +192,7 @@ main() {
       ;;
   esac
 
-  [[ ${SBM_TEST_MODE:-0} == 1 ]] || require_root
+  require_root
   require_command jq; require_command openssl; require_command flock
   if [[ ${SBM_SKIP_STATE_INIT:-0} != 1 || "$cmd" != cert || ${2:-} != hook ]]; then
     state_init

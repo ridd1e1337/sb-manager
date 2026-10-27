@@ -202,7 +202,7 @@ firewall_setup_fail2ban() {
       service_start "$SBM_FAIL2BAN_SERVICE"
     fi
   fi
-  service_state='未启动（测试/跳过服务管理器）'
+  service_state='未启动（未接管服务管理器）'
   [[ "$SBM_SKIP_INIT" != 1 ]] && service_state=$(service_status_text "$SBM_FAIL2BAN_SERVICE" 2>/dev/null || printf '已请求启动')
   log_ok "Fail2ban 已配置：SSH ${ssh_ports//,/、}/TCP，3 分钟内失败 5 次永久封禁（$SBM_FAIL2BAN_CONFIG）"
   printf '服务状态：%s\n' "$service_state"

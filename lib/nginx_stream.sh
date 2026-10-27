@@ -182,7 +182,6 @@ nginx_stream_runtime_ready() {
 nginx_stream_install_dependencies() {
   local nginx_preexisting=0 mask_created=0 install_rc=0
   nginx_stream_runtime_ready && return 0
-  [[ ${SBM_TEST_MODE:-0} == 1 ]] && { log_error '测试模式缺少 Nginx Stream 测试二进制或模块。'; return 1; }
   case "$(init_system 2>/dev/null || true)" in
     systemd|openrc) ;;
     *) log_error 'Nginx Stream 复用需要 systemd 或 OpenRC。'; return 1 ;;

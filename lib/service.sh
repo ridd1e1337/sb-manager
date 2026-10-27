@@ -33,7 +33,7 @@ init_system() {
 effective_init_system() {
   local backend
   backend=$(init_system 2>/dev/null || true)
-  if [[ -z "$backend" || "$backend" == none ]]; then backend=${SBM_TEST_INIT_BACKEND:-systemd}; fi
+  if [[ -z "$backend" || "$backend" == none ]]; then backend=systemd; fi
   printf '%s\n' "$backend"
 }
 
@@ -41,7 +41,7 @@ init_system_label() {
   case "$(init_system 2>/dev/null || true)" in
     systemd) printf 'systemd\n' ;;
     openrc) printf 'OpenRC\n' ;;
-    none) printf '测试/跳过\n' ;;
+    none) printf '不接管服务\n' ;;
     *) printf '未知\n' ;;
   esac
 }

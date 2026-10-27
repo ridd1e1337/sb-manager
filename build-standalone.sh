@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 ROOT="sb-manager-$VERSION"
 mkdir -p "$TMP/$ROOT"
 cp -a "$SOURCE_DIR"/. "$TMP/$ROOT"/
-rm -rf "$TMP/$ROOT/.git" "$TMP/$ROOT/.github" "$TMP/$ROOT/dist" "$TMP/$ROOT/tests"
+rm -rf "$TMP/$ROOT/.git" "$TMP/$ROOT/.github" "$TMP/$ROOT/dist"
 rm -rf "$TMP/$ROOT/sing-box-official-docs-cn" "$TMP/$ROOT/sing-box-official-docs-cn-"*.zip
 rm -rf "$TMP/$ROOT/docs"
 rm -f "$TMP/$ROOT/AGENTS.md" "$TMP/$ROOT/README.md" "$TMP/$ROOT/CHANGELOG.md"
