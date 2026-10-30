@@ -1038,14 +1038,37 @@ ui_backup_menu() {
   case "$c" in 1) backup_create;; 2) prompt_value path '备份文件路径' ''; confirm '恢复会覆盖当前配置，继续？' N && backup_restore "$path" 1;; esac
 }
 
+ui_mux_auto_menu() {
+  local ids port backend items count
+  items=$(jq '[.nodes[]? | select(.enabled==true) | select(
+    (.protocol|IN("anytls","trojan","shadowtls"))
+    or (.protocol=="vless" and (.security|IN("tls","reality")))
+    or (.protocol=="naive" and (.network // "tcp")=="tcp")
+  ) | {id,name,protocol,domain}]' "$SBM_STATE") || return 1
+  count=$(jq 'length' <<<"$items")
+  if (( count == 0 )); then
+    log_warn '没有可加入 TCP/443 复用的启用节点。支持 AnyTLS、Trojan、VLESS TLS/Reality、Naive TCP 和 ShadowTLS。'
+    return
+  fi
+  printf '可复用节点（必须使用不同 SNI；已有路由会自动跳过）：\n'
+  jq -r '.[] | "- \(.id) | \(.protocol) | \(.domain // "-")"' <<<"$items"
+  prompt_value ids '节点 ID（逗号分隔，输入 all 选择全部）' 'all'
+  port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
+  prompt_value port '公网 TCP 端口' "$port"
+  backend=$(mux_backend)
+  printf '当前复用方式：%s（不会修改系统 Caddy/Nginx 网站配置）\n' "$(mux_backend_label)"
+  mux_auto_configure "$ids" "$port" "$backend"
+}
+
 ui_nginx_stream_menu() {
   local c id sni backend port node engine_choice
   nginx_stream_status
   printf '不同节点需使用不同 SNI；证书验证保持开启，UDP 节点仍使用独立监听。\n'
-  printf '\n1. 添加 SNI 路由\n2. 删除 SNI 路由\n3. 启用 TCP 端口复用（默认 443）\n4. 停用复用，恢复独立端口\n5. 查看路由\n6. 切换复用方式\n0. 返回\n'
-  ui_menu_choice c '选择操作' 6
+  printf '\n1. 一键配置多个节点并启用 TCP/443 复用\n2. 添加单条 SNI 路由\n3. 删除 SNI 路由\n4. 启用 TCP 端口复用\n5. 停用复用，恢复独立端口\n6. 查看路由\n7. 切换复用方式\n0. 返回\n'
+  ui_menu_choice c '选择操作' 7
   case "$c" in
-    1)
+    1) ui_mux_auto_menu;;
+    2)
       ui_select_node id || { ui_cancel; return; }
       node=$(state_get_node "$id")
       sni=$(nginx_stream_node_sni "$node" 2>/dev/null || true)
@@ -1053,18 +1076,18 @@ ui_nginx_stream_menu() {
       prompt_value backend '后端端口（留空自动分配）' ''
       nginx_stream_route_add "$id" "$sni" "$backend"
       ;;
-    2)
+    3)
       prompt_value id '节点 ID' ''
       nginx_stream_route_remove "$id"
       ;;
-    3)
+    4)
       port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
       prompt_value port '公网 TCP 端口' "$port"
       nginx_stream_enable "$port"
       ;;
-    4) nginx_stream_disable;;
-    5) nginx_stream_route_list;;
-    6)
+    5) nginx_stream_disable;;
+    6) nginx_stream_route_list;;
+    7)
       printf '1. sing-box 内置（推荐小内存服务器，无新增进程或软件包）\n2. Nginx Stream（按需安装并启动独立服务）\n0. 返回\n'
       ui_menu_choice engine_choice '选择复用方式' 2
       case "$engine_choice" in 1) mux_set_backend sing-box;; 2) mux_set_backend nginx;; esac;;

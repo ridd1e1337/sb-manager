@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.45
+
+- Add one-step multi-node TCP/443 setup from the panel and `sb mux auto`, with
+  automatic SNI route/backend allocation and one transactional enable.
+- Refuse a frontend bind when Caddy, Nginx, or another non-manager service owns
+  the public port; existing websites are never stopped, reloaded or rewritten.
+- Document the batch workflow and safe external L4 forwarding path. Static
+  checks only; no test scripts or procedures were added.
+
 ## 0.1.0-alpha.44
 
 - Expand the quick node wizard with an explicit protocol advanced-settings

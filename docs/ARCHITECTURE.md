@@ -162,6 +162,12 @@ backends, nodes and enabled API/Realm/Sub-Store listeners plus subscriptions.
 UDP stays independent. Sniffing and connection buffers still consume resources;
 no fixed memory ceiling is promised.
 
+The panel and `sb mux auto all --port 443` batch eligible TLS/SNI nodes in one
+candidate transaction, allocating loopback ports and enabling the saved backend.
+Before a new frontend bind, the manager checks the actual TCP listener. A Caddy,
+Nginx, or other non-manager listener causes a clean refusal; the manager never
+stops, reloads, rewrites or replaces an existing website configuration.
+
 Candidate core validation occurs before stopping the old Nginx frontend.
 Installation then restarts sing-box and reconciles the selected backend. The
 built-in backend stops/disables only the manager's Nginx service; Nginx mode

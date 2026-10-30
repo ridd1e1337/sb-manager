@@ -105,7 +105,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb network speed HOST [--port N] [--seconds 1-30] [--streams 1-16] [--direction up|down] [--json]
   sb network history [--json]|compare BEFORE AFTER [--json]
   sb hy2 buffer enable|disable|status [--json]
-  sb mux status [--json]|enable [PORT] [--backend sing-box|nginx]|disable|backend sing-box|nginx
+  sb mux status [--json]|enable [PORT] [--backend sing-box|nginx]|disable|backend sing-box|nginx|auto [NODE_IDS]
   sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID
   sb traffic group set ID --nodes NODE1,NODE2 --quota 500G [--reset-day 1] [--quota-mode total|download]
   sb traffic group status [--json]|remove ID|reset ID

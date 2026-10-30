@@ -119,19 +119,25 @@ alpha.43 起，首次配置默认选择 **sing-box 内置**方式；复用功能
 Shadowsocks、VMess Tunnel、Hysteria2、TUIC 和 Naive QUIC 不属于此复用范围；UDP 仍各自监听。
 
 面板入口：`14. 全局设置 → 3. TCP/443 多协议复用（内置 / Nginx）`。
-先创建使用不同独立端口和 SNI 的节点，再添加路由并启用；以下节点 ID 和域名替换为实际值：
+先创建使用不同 SNI 的节点，然后选择“一键配置多个节点并启用 TCP/443 复用”；它会自动分配后端端口、
+生成路由并启用。命令行也可一次完成：
 
 ```bash
-sb mux route add trojan-main trojan.example.com
-sb mux route add vless-main vless.example.com
-sb mux enable 443 --backend sing-box
+sb mux auto all --port 443 --backend sing-box
 sb mux status
 sb logs mux 100
 ```
 
+需要精确控制节点时，仍可使用 `sb mux route add NODE_ID SNI` 后再执行
+`sb mux enable 443 --backend sing-box`。
+
 脚本自动分配 `127.0.0.1:<后端端口>`，分享链接、客户端配置和动态订阅使用公网复用端口。
 启用后刷新客户端订阅或重新导入链接。`sb mux disable` 恢复原来的独立监听端口，保留路由和方式选择。
 启用、切换及停用可能短暂重启连接；端口冲突或应用失败沿用事务回滚。脚本不会自动开放防火墙端口。
+
+如果 443 已由 Caddy、Nginx 或其他网站服务监听，一键配置会直接拒绝并保持原状，
+不会停止、重载、改写或覆盖网站配置。此时请让现有 Caddy L4/Nginx Stream 配置把不同 SNI
+转发到脚本显示的后端端口，或选择其他公网端口；脚本不会自动接管网站的 443。
 
 已经启用 Nginx 或保存了旧路由的服务器，升级后继续使用 Nginx。可在面板“切换复用方式”中选择
 内置方式，或执行 `sb mux backend sing-box`；当前启用状态和路由保持不变。切换成功会停止项目独立的
