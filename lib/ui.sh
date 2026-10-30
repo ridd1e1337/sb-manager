@@ -269,10 +269,10 @@ ui_select_node() {
   done < <(state_list_nodes)
   ((${#ids[@]} > 0)) || { log_warn '当前没有节点。'; return 1; }
   [[ "$allow_all" == 1 ]] && printf 'a. 全部节点\n'
-  printf 'm. 手动输入节点 ID\n0. 返回（直接按 Enter）\n'
+  printf 'm. 输入 ID\n0. 返回（直接按 Enter）\n'
   # Returning from a node page redraws this list. An empty selection must not
   # reopen the first node or repeat its share/export action.
-  prompt_value choice '选择节点（编号或 ID，Enter 返回）' '0' || return 1
+  prompt_value choice '选节点（编号或 ID）' '0' || return 1
   case "$choice" in
     0) return 1;;
     a|A)
@@ -342,10 +342,10 @@ ui_select_certificate_domain() {
 
   while true; do
     if ((${#domains[@]} == 0)); then
-      printf '还没有证书。输入域名即可在这里申请，无需返回其他菜单。\n'
-      prompt_value selected_domain '证书域名（如 edge.example.com；留空返回）' '' || return 1
+      printf '没有证书：输入域名即可申请。\n'
+      prompt_value selected_domain '域名（留空返回）' '' || return 1
     else
-      printf '选择证书（可复用；过期证书会进入续签）：\n'
+      printf '选择证书，或输入 n 使用新域名：\n'
       for ((i=0; i<${#domains[@]}; i++)); do
         selected_domain=${domains[$i]}
         if ui_certificate_usable "$selected_domain"; then
@@ -356,7 +356,7 @@ ui_select_certificate_domain() {
       printf 'n. 使用其他域名（自动复用或申请）\n0. 返回（直接按 Enter）\n'
       prompt_value choice '证书域名' '0' || return 1
       case "$choice" in
-        n|N|m|M) prompt_value selected_domain '证书域名（留空返回）' '' || return 1;;
+        n|N|m|M) prompt_value selected_domain '新域名（留空返回）' '' || return 1;;
         0) return 1;;
         *)
           if [[ "$choice" =~ ^[1-9][0-9]{0,5}$ ]] && (( choice <= ${#domains[@]} )); then
@@ -429,7 +429,7 @@ ui_node_finish_menu() {
   printf '\n%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
   printf '1. 再次显示链接和二维码\n2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址（所有启用节点）\n4. 管理这个节点\n5. 查看防火墙与协议端口\n'
   if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
-  printf '0. 完成，返回主菜单\n'
+  printf '0. 返回主菜单\n'
   ui_menu_choice choice '下一步' "$max_choice"
   case "$choice" in
     1) node_share "$id" 1;;
@@ -570,7 +570,7 @@ ui_quick_add_node() {
   local vless_security=reality vless_handshake=www.apple.com vless_handshake_port=443 security_choice
   local congestion_control=cubic snell_choice=1 snell_version=5 snell_mode=default snell_obfs=none snell_obfs_host=bing.com
   local -a args=() ports=(443 8443 9443 10443)
-  printf '\n快速创建：选择协议，确认推荐配置，立即获取客户端导入内容。\n'
+  printf '\n快速建节点：选协议 → 填地址 → 立即导入。\n'
   printf '1. AnyTLS（输入域名后可复用或申请证书）\n2. Hysteria2（输入域名后可复用或申请证书）\n3. Shadowsocks 2022（无需域名和证书）\n4. VLESS（默认 Reality，可切换 TLS 证书）\n5. Snell（默认 v5，可切换 v6/混淆）\n6. Trojan（输入域名后可复用或申请证书）\n7. TUIC（输入域名后可复用或申请证书）\na. 完整协议向导（全部高级参数）\n0. 返回\n'
   while true; do
     ui_menu_choice choice '选择协议'
@@ -1050,13 +1050,13 @@ ui_mux_auto_menu() {
     log_warn '没有可加入 TCP/443 复用的启用节点。支持 AnyTLS、Trojan、VLESS TLS/Reality、Naive TCP 和 ShadowTLS。'
     return
   fi
-  printf '可复用节点（必须使用不同 SNI；已有路由会自动跳过）：\n'
+  printf '可复用节点（已有路由会跳过）：\n'
   jq -r '.[] | "- \(.id) | \(.protocol) | \(.domain // "-")"' <<<"$items"
-  prompt_value ids '节点 ID（逗号分隔，输入 all 选择全部）' 'all'
+  prompt_value ids '节点 ID（逗号分隔，all=全部）' 'all'
   port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
-  prompt_value port '公网 TCP 端口' "$port"
+  prompt_value port '公网端口' "$port"
   backend=$(mux_backend)
-  printf '当前复用方式：%s（不会修改系统 Caddy/Nginx 网站配置）\n' "$(mux_backend_label)"
+  printf '方式：%s；不会修改现有网站。\n' "$(mux_backend_label)"
   mux_auto_configure "$ids" "$port" "$backend"
 }
 
@@ -1082,7 +1082,7 @@ ui_nginx_stream_menu() {
       ;;
     4)
       port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
-      prompt_value port '公网 TCP 端口' "$port"
+      prompt_value port '公网端口' "$port"
       nginx_stream_enable "$port"
       ;;
     5) nginx_stream_disable;;
@@ -1423,16 +1423,16 @@ ui_main() {
   SBM_UI_RESULT=0
   while true; do
     ui_header
-    printf '菜单中 Enter / 0 返回上级；结果页 Enter 返回主菜单，r 继续操作。\n'
-    printf '填写配置时 Enter 保留当前值，q 取消；主菜单 Enter 留在此处，0 / q / Ctrl-D 退出。\n'
+    printf 'Enter 返回；输入 r 留在当前页。\n'
+    printf '填写时 Enter 保留当前值；q 取消；主菜单 0 / q 退出。\n'
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
-      printf '还没有节点：输入 2 快速创建；没有域名可选 Shadowsocks 2022。\n'
+      printf '还没有节点：输入 2 开始创建。\n'
     fi
-    printf '1. 查看统一运行状态\n2. 快速创建节点（含证书与客户端导入）\n3. 管理现有节点\n4. 分享链接与客户端导出\n5. 完整客户端配置导出\n6. 域名与证书管理\n7. Cloudflare Tunnel 管理\n8. 核心与组件更新\n9. sing-box API/Dashboard\n10. Hysteria Realm\n11. 日志\n12. 诊断与修复\n13. 备份与恢复\n14. 全局设置\n15. 防火墙与协议端口\n16. 流量统计、配额与限速\n17. 通知与定时健康检查\n18. 节点模板与批量操作\n19. 卸载与彻底清理\n20. Sub-Store 组件与订阅同步\n0. 退出\n\n'
+    printf '1. 状态\n2. 快速建节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n0. 退出\n\n'
     # Stay at the root on empty input without reopening a page or redrawing
     # the entire menu for every buffered Enter key.
     while true; do
-      prompt_value choice '请选择（Enter 留在主菜单）' '' || return 0
+      prompt_value choice '选功能（Enter 留在主菜单）' '' || return 0
       [[ -z "$choice" ]] || break
     done
     page=''

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.46
+
+- Shorten the common panel wording for the main menu, node selection,
+  certificate flow, quick creation, updates and TCP/443 sharing. Keep advanced
+  settings available only when requested.
+- Preserve all existing commands and behavior; this release only simplifies
+  operator-facing text. Static checks only; no test scripts or procedures were
+  added.
+
 ## 0.1.0-alpha.45
 
 - Add one-step multi-node TCP/443 setup from the panel and `sb mux auto`, with

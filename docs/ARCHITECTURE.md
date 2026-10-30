@@ -54,6 +54,10 @@ Snell versions are not silently discarded. Certificate selection can invoke a de
 or renew a certificate without nesting state locks or suppressing backend errors.
 Node creation commits before import rendering. A separate completion page keeps
 the node ID across export failures, so retries cannot create duplicate nodes.
+
+The panel keeps common labels short and puts explanations next to the action
+that needs them. Technical protocol options remain under the explicit advanced
+settings step instead of lengthening the first screen.
 Full per-user client profiles include every required outbound and are validated
 before an atomic file replacement; the existing full-subscription export remains
 available. Advanced protocol parameters use the original creation wizard.
