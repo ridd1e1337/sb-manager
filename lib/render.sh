@@ -105,7 +105,7 @@ validate_state_semantics() {
       if [[ "$protocol" == hysteria2 || "$protocol" == snell || "$protocol" == shadowtls || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
         [[ -r "$(state_secret_path "$id")" ]] || die "节点 $id 缺少协议级密钥文件。"
       fi
-      if [[ "$protocol" == shadowtls ]]; then
+      if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
         [[ $(jq -r '.credential_revision // 0' <<<"$node") == 1 ]] || die "节点 $id 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"
       fi
     fi

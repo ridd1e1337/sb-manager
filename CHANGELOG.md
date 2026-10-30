@@ -2,15 +2,14 @@
 
 ## Unreleased
 
-## 0.1.0-alpha.48
+## 0.1.0-alpha.49
 
-- Preserve legacy Snell PSKs/userkeys during routine state migration so a
-  manager script update does not invalidate existing clients.
-- Add `sb node recover-credentials NODE_ID` to restore a Snell node from the
-  latest `pre-protocol-credentials` snapshot when an earlier migration already
-  rotated its credentials. Explicit rotate commands remain available.
-- Keep the change scoped to Snell compatibility and document the recovery path.
-  Static checks only; no test scripts or procedures were added.
+- Remove the legacy Snell credential-recovery compatibility path at the
+  operator's request; old nodes can be rebuilt manually.
+- Keep the current migration rule explicit: newly created Snell nodes carry
+  revision 1 credentials, and routine manager updates do not rotate them.
+- Document that only an explicit credential rotation invalidates a current
+  Snell client. Static checks only; no test scripts or procedures were added.
 
 ## 0.1.0-alpha.47
 

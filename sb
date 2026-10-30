@@ -73,7 +73,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]
   sb node expiry ID [--days N|--at UTC_TIMESTAMP|--clear]
   sb node show <ID>
-  sb node enable|disable|delete|rotate|recover-credentials <ID>
+  sb node enable|disable|delete|rotate <ID>
   sb node enable-all|disable-all --tag TAG|--region REGION
   sb node template list|save NAME NODE_ID|delete NAME|add NAME ID [参数]
   sb node set <ID> --port N|--address HOST|--domain DOMAIN|--name NAME|--path PATH
@@ -243,7 +243,6 @@ main() {
         disable) node_disable "${1:?缺少节点 ID}" ;;
         delete) node_delete "${1:?缺少节点 ID}" ;;
         rotate) node_rotate "${1:?缺少节点 ID}" ;;
-        recover-credentials) node_recover_legacy_credentials "${1:?缺少节点 ID}" ;;
         set)
           local id=${1:?缺少节点 ID}; shift; local -a set_args=() set_arg
           while (($#)); do if [[ "$1" == --dry-run ]]; then export SBM_DRY_RUN=1; shift; else set_args+=("$1"); shift; fi; done
