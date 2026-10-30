@@ -129,9 +129,24 @@ node_show() {
   printf '用户：%s 个，启用 %s 个\n' "$(jq '.users|length' <<<"$node")" "$(jq '[.users[]|select(.enabled)]|length' <<<"$node")"
 }
 
+node_json_argument() {
+  local value=${1:?}
+  if [[ "$value" == @* ]]; then
+    [[ -r "${value#@}" ]] || die "JSON 文件不可读：${value#@}"
+    cat -- "${value#@}"
+  else
+    printf '%s\n' "$value"
+  fi
+}
+
+node_validate_json_object() {
+  local label=$1 value=$2
+  jq -e 'type == "object" and ((.by_tag // {}) | type == "object") and all(.by_tag[]?; type == "object")' <<<"$value" >/dev/null 2>&1 || die "$label 必须是 JSON 对象，by_tag 的每项也必须是对象；支持直接传 JSON 或 @FILE。"
+}
+
 _node_add() {
   local type=$1; shift
-  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false
+  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}'
   local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0
   while (($#)); do
     case "$1" in
@@ -146,6 +161,8 @@ _node_add() {
       --strict-mode) strict_mode=${2:?}; shift 2;; --wildcard-sni) wildcard_sni=${2:?}; shift 2;; --quic) network=udp; shift;;
       --snell-version) snell_version=${2:?}; shift 2;; --snell-mode) snell_mode=${2:?}; shift 2;;
       --realm-id) realm_id=${2:?}; shift 2;; --realm-ip-version) realm_ip_version=${2:?}; shift 2;; --realm-port-mapping) realm_port_mapping=true; shift;;
+      --sing-box-inbound-json|--inbound-json) inbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$inbound_json"; shift 2;;
+      --sing-box-outbound-json|--outbound-json) outbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$outbound_json"; shift 2;;
       --remark) [[ $# -ge 2 ]] || die '缺少备注'; remark=$2; shift 2;; --region) [[ $# -ge 2 ]] || die '缺少地区'; region=$2; shift 2;; --purpose) [[ $# -ge 2 ]] || die '缺少用途'; purpose=$2; shift 2;; --line) [[ $# -ge 2 ]] || die '缺少线路'; line=$2; shift 2;; --tags) [[ $# -ge 2 ]] || die '缺少标签'; tags=$2; shift 2;;
       *) die "未知参数：$1";;
     esac
@@ -326,6 +343,7 @@ _node_add() {
     .traffic={configured:false,enabled:false,quota_bytes:null,quota_mode:"total",reset_day:1,upload_rate_bps:null,download_rate_bps:null}
     | .metadata={remark:$remark,region:$region,purpose:$purpose,line:$line,tags:($tags | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)}
   ' <<<"$node")
+  node=$(jq --argjson inbound "$inbound_json" --argjson outbound "$outbound_json" ".singbox={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
   if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
     node=$(jq '.credential_revision=1 | if .protocol=="snell" then .credential_mode="single" else . end' <<<"$node")
   fi
@@ -442,6 +460,8 @@ _node_set() {
       --disable-chrome-parrot|--brutal-debug|--realm-port-mapping) value=true; shift;;
       --enable-chrome-parrot|--no-brutal-debug|--no-realm-port-mapping) value=false; shift;;
       --clear-realm) value=''; shift;;
+      --sing-box-inbound-json|--inbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$value"; shift 2;;
+      --sing-box-outbound-json|--outbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$value"; shift 2;;
       *) value=${2-}; shift 2;;
     esac
     case "$key" in
@@ -472,6 +492,8 @@ _node_set() {
       --realm-ip-version) [[ "$value" == 0 || "$value" == 4 || "$value" == 6 ]] || { rm -f "$candidate"; die "Realm IP 版本必须是 0、4 或 6"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.realm_ip_version)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --realm-port-mapping|--no-realm-port-mapping) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.realm_port_mapping)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --clear-realm) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" '(.nodes[]|select(.id==$id)) |= (.realm_enabled=false | .realm_id="")' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
+      --sing-box-inbound-json|--inbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
+      --sing-box-outbound-json|--outbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.outbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --remark|--region|--purpose|--line)
         local field=${key#--}
         [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *$'\t'* ]] || die "节点元数据不能包含控制字符。"

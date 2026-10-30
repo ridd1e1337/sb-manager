@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.49",
+  "manager_version": "0.1.0-alpha.51",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -80,7 +80,11 @@ Simplified example:
       },
       "users": [
         {"id": "default", "name": "AnyTLS", "enabled": true}
-      ]
+      ],
+      "singbox": {
+        "inbound": {"tcp_fast_open": true},
+        "outbound": {"tcp_multi_path": true}
+      }
     }
   ]
 }
@@ -143,6 +147,15 @@ Existing v1 installations migrate once, before rendering, with a pre-migration s
 `nodes[].metadata` contains operator-only `remark`, `region`, `purpose`, `line`, and unique `tags`. These values are for filtering and dashboards and are deliberately excluded from protocol renderers and client exports.
 
 `node_templates` stores non-secret protocol defaults captured from existing nodes. Templates never include user or node credentials; creating a node from a template generates fresh credentials through the normal node-add transaction.
+
+`nodes[].singbox.inbound` and `nodes[].singbox.outbound` are optional JSON
+objects for fields introduced by newer sing-box releases. They are accepted by
+`sb node add` and `sb node set` through `--sing-box-inbound-json` and
+`--sing-box-outbound-json` (or `@FILE`), merged into generated server and client
+objects, and checked by the installed core. The manager keeps `type`, `tag`,
+addresses, ports, users, and credentials authoritative. Compound protocol
+exports can use an optional `by_tag` object to target a generated member by its
+tag; otherwise an array extension applies to the primary member.
 
 Mutations hold the manager lock through candidate validation, rendering,
 installation, and service reconciliation. A failed operation restores the

@@ -1,7 +1,10 @@
 # sing-box 1.15 适配记录
 
-当前仓库的配置生成只使用 1.13/1.14 已验证的协议字段，版本门控通过
+管理器的内置字段继续使用 1.13/1.14 已验证的协议字段，版本门控通过
 `version_ge` 比较完整版本号，因此 sing-box 1.15 不需要额外的状态迁移。
+需要立即使用新核心字段时，可在添加或编辑任意节点时传入
+`--sing-box-inbound-json` / `--sing-box-outbound-json`；这些扩展会原样保留，
+并在安装前交给当前核心的 `sing-box check` 校验。
 
 将 1.14.0-rc.4 与 1.15.0-alpha.2 的核心 schema 做递归比较后，当前版本只有
 `CacheFileOptions` 从 `rdrc_timeout` 调整为 `buffer_size`、`flush_interval`。
@@ -10,7 +13,8 @@ sb-manager 生成配置没有使用 cache-file 字段，因此现有 state、ren
 
 适配策略：
 
-1. 稳定安装默认仍跟随 GitHub 最新非 prerelease Release；1.15 alpha 只通过
+1. 稳定安装默认仍跟随 GitHub 最新非 prerelease Release；当前离线 fallback 为
+   已校验的 1.14.4。1.15 alpha 只通过
    `sb core channel preview` 选择，不会自动替换稳定核心。
 2. 每次切换核心都继续执行配置 `check`、build tag 检查和配对回滚；失败时恢复
    原核心、配置和状态。

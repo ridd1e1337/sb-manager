@@ -4,6 +4,10 @@
 
 ## 已在面板和 CLI 中支持
 
+所有受支持协议都可通过 `sb node add` / `sb node set` 的
+`--sing-box-inbound-json` 和 `--sing-box-outbound-json` 传入当前核心认可的
+新增字段；管理器保留协议凭据、地址、端口和标签的权威性，并在应用前运行核心校验。
+
 | 特性 | 面板入口 | CLI | 兼容性 |
 | --- | --- | --- | --- |
 | Snell v5/v6（v5 HTTP obfs、v6 traffic shaping） | 添加节点 → Snell v5/v6 | `sb node add snell --snell-version 5|6` | v5 需要 1.14+，v6 需要 rc.2+ |

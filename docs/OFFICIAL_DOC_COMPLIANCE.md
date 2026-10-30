@@ -2,7 +2,7 @@
 
 ## Reference Set
 
-Development uses the supplied `sing-box-official-docs-cn-2026-08-27.zip`. Its complete `sing-box-official-docs-cn/` extraction contains 89 files; all 88 files listed by `MANIFEST.md` pass SHA-256 verification. The configuration baseline is `1.14.0`; 1.13-compatible output is retained where the core permits. sing-box 1.15.0-alpha.2 compatibility is recorded separately in `docs/SINGBOX_1.15_ADAPTATION.md`.
+Development uses the supplied `sing-box-official-docs-cn-2026-08-27.zip`. Its complete `sing-box-official-docs-cn/` extraction contains 89 files; all 88 files listed by `MANIFEST.md` pass SHA-256 verification. The stable fallback configuration baseline is `1.14.4`; 1.13-compatible output is retained where the core permits. Newer protocol fields are accepted through per-node inbound/outbound extension JSON and validated by the installed core. sing-box 1.15.0-alpha.2 compatibility is recorded separately in `docs/SINGBOX_1.15_ADAPTATION.md`.
 
 Every generated server configuration includes the official `$schema` URL and must pass `sing-box check` using the target binary. A documented type is enabled only when its required version, build tag, companion library, operating system, and permissions are present.
 

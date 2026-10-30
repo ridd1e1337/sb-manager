@@ -16,6 +16,48 @@ node_transport_kinds() {
   esac
 }
 
+# Return the user-supplied sing-box extension for a node.  The extension is
+# intentionally kept as JSON so new sing-box fields can be used before the
+# manager has a dedicated flag for them.
+singbox_node_override() {
+  local node=$1 direction=$2
+  jq -c --arg direction "$direction" '
+    if ((.singbox // {}) | type) == "object"
+       and ((.singbox[$direction] // {}) | type) == "object"
+    then (.singbox[$direction] // {})
+    else {}
+    end
+  ' <<<"$node"
+}
+
+# Apply an extension to a generated sing-box object.  ShadowTLS and other
+# compound protocols render an array; by default the extension targets the
+# primary object.  An optional `by_tag` map targets individual array members,
+# which makes nested protocols fully extensible as well.
+singbox_apply_override() {
+  local rendered=$1 override=$2
+  jq --argjson override "$override" '
+    def safe_extension:
+      del(.type, .tag, .listen, .listen_port, .server, .server_port,
+          .users, .password, .uuid, .psk);
+    if ($override | type) != "object" or ($override | length) == 0 then .
+    elif type == "array" then
+      . as $items
+      | ($override.by_tag // {}) as $by_tag
+      | ($override | del(.by_tag) | safe_extension) as $default
+      | [ range(0; ($items | length)) as $i
+          | $items[$i] as $item
+          | if (($by_tag | type) == "object" and (($by_tag[$item.tag // ""] // null) | type == "object"))
+            then $item * ($by_tag[$item.tag] | safe_extension)
+            elif $i == 0 then $item * $default
+            else $item
+            end
+        ]
+    else . * ($override | del(.by_tag) | safe_extension)
+    end
+  ' <<<"$rendered"
+}
+
 validate_state_semantics() {
   local state=$1 ids count node id protocol port domain cert_dir kind key user_ids user_id enabled_users realm_url realm_domain realm_port realm_id
   state_validate "$state" || return 1
@@ -128,22 +170,24 @@ node_enabled_credentials() {
 }
 
 render_inbound_for_node() {
-  local node=$1 credentials=$2 node_secret=${3:-'{}'} protocol
+  local node=$1 credentials=$2 node_secret=${3:-'{}'} protocol rendered override
   protocol=$(jq -r '.protocol' <<<"$node")
   case "$protocol" in
-    vmess-ws-cf) protocol_vmess_render "$node" "$credentials" "$node_secret" ;;
-    shadowsocks) protocol_ss_render "$node" "$credentials" "$node_secret" ;;
-    anytls) protocol_anytls_render "$node" "$credentials" "$node_secret" ;;
-    hysteria2) protocol_hy2_render "$node" "$credentials" "$node_secret" ;;
-    trojan) protocol_trojan_render "$node" "$credentials" ;;
-    tuic) protocol_tuic_render "$node" "$credentials" ;;
-    vless) protocol_vless_render "$node" "$credentials" "$node_secret" ;;
-    socks|http|mixed) protocol_proxy_render "$node" "$credentials" ;;
-    naive) protocol_naive_render "$node" "$credentials" ;;
-    shadowtls) protocol_shadowtls_render "$node" "$credentials" "$node_secret" ;;
-    snell) protocol_snell_render "$node" "$credentials" "$node_secret" ;;
+    vmess-ws-cf) rendered=$(protocol_vmess_render "$node" "$credentials" "$node_secret") ;;
+    shadowsocks) rendered=$(protocol_ss_render "$node" "$credentials" "$node_secret") ;;
+    anytls) rendered=$(protocol_anytls_render "$node" "$credentials" "$node_secret") ;;
+    hysteria2) rendered=$(protocol_hy2_render "$node" "$credentials" "$node_secret") ;;
+    trojan) rendered=$(protocol_trojan_render "$node" "$credentials") ;;
+    tuic) rendered=$(protocol_tuic_render "$node" "$credentials") ;;
+    vless) rendered=$(protocol_vless_render "$node" "$credentials" "$node_secret") ;;
+    socks|http|mixed) rendered=$(protocol_proxy_render "$node" "$credentials") ;;
+    naive) rendered=$(protocol_naive_render "$node" "$credentials") ;;
+    shadowtls) rendered=$(protocol_shadowtls_render "$node" "$credentials" "$node_secret") ;;
+    snell) rendered=$(protocol_snell_render "$node" "$credentials" "$node_secret") ;;
     *) die "未知协议：$protocol" ;;
   esac
+  override=$(singbox_node_override "$node" inbound)
+  singbox_apply_override "$rendered" "$override"
 }
 
 render_config_from_state() {

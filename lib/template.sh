@@ -10,7 +10,8 @@ node_template_safe_defaults() {
       obfs:(.obfs.type // ""),obfs_min_packet_size:(.obfs.min_packet_size // 512),obfs_max_packet_size:(.obfs.max_packet_size // 1200),disable_chrome_parrot:(.disable_chrome_parrot // false),bbr_profile:(.bbr_profile // ""),brutal_debug:(.brutal_debug // false),obfs_host:(.obfs_host // ""),masquerade:(.masquerade // ""),security:(.security // ""),flow:(.flow // ""),
       handshake_server:(.handshake_server // ""),handshake_port:(.handshake_port // 443),congestion_control:(.congestion_control // .quic_congestion_control // "cubic"),
       strict_mode:(.strict_mode // true),wildcard_sni:(.wildcard_sni // "off"),obfs_mode:(.obfs_mode // "none"),snell_version:(.snell_version // 5),snell_mode:(.snell_mode // "default"),
-      metadata:(.metadata // {remark:"",region:"",purpose:"",line:"",tags:[]})}' <<<"$node"
+      metadata:(.metadata // {remark:"",region:"",purpose:"",line:"",tags:[]}),
+      singbox:(.singbox // {inbound:{},outbound:{}})}' <<<"$node"
 }
 
 _node_template_save() {
@@ -52,15 +53,17 @@ node_template_delete() { with_state_transaction template-delete _node_template_d
 node_template_get() { jq -c --arg name "$1" '.node_templates[]? | select(.name==$name)' "$SBM_STATE"; }
 
 node_template_add() {
-  local name=$1 id=$2 template defaults protocol value address domain port node_name disabled=0
+  local name=$1 id=$2 template defaults protocol value address domain port node_name disabled=0 inbound_json outbound_json
   shift 2
   template=$(node_template_get "$name"); [[ -n "$template" ]] || die "模板不存在：$name"
   defaults=$(jq -c '.defaults' <<<"$template"); protocol=$(jq -r '.protocol' <<<"$template")
+  inbound_json=$(jq -c '.singbox.inbound // {}' <<<"$defaults")
+  outbound_json=$(jq -c '.singbox.outbound // {}' <<<"$defaults")
   node_name=$(jq -r '.name // ""' <<<"$defaults"); node_name=${node_name:-$id}
   address=$(jq -r '(.server_address // .client_address // "")' <<<"$defaults"); domain=$(jq -r '.domain // ""' <<<"$defaults"); port=$(jq -r '.port' <<<"$defaults")
   local remark region purpose line tags
   remark=$(jq -r '.metadata.remark // ""' <<<"$defaults"); region=$(jq -r '.metadata.region // ""' <<<"$defaults"); purpose=$(jq -r '.metadata.purpose // ""' <<<"$defaults"); line=$(jq -r '.metadata.line // ""' <<<"$defaults"); tags=$(jq -r '.metadata.tags|join(",")' <<<"$defaults")
-  local -a args=("$protocol" --id "$id" --name "$node_name" --port "$port")
+  local -a args=("$protocol" --id "$id" --name "$node_name" --port "$port" --sing-box-inbound-json "$inbound_json" --sing-box-outbound-json "$outbound_json")
   [[ -n "$address" ]] && args+=(--address "$address")
   [[ -n "$domain" ]] && args+=(--domain "$domain")
   case "$protocol" in
@@ -76,13 +79,20 @@ node_template_add() {
   esac
   while (($#)); do
     case "$1" in
-      --name|--port|--address|--domain|--remark|--region|--purpose|--line|--tags)
-        value=${2:?缺少参数值}; case "$1" in --name) node_name=$value;; --port) port=$value;; --address) address=$value;; --domain) domain=$value;; --remark) remark=$value;; --region) region=$value;; --purpose) purpose=$value;; --line) line=$value;; --tags) tags=$value;; esac; shift 2;;
+      --name|--port|--address|--domain|--remark|--region|--purpose|--line|--tags|--sing-box-inbound-json|--inbound-json|--sing-box-outbound-json|--outbound-json)
+        value=${2:?缺少参数值}
+        case "$1" in
+          --name) node_name=$value;; --port) port=$value;; --address) address=$value;; --domain) domain=$value;;
+          --remark) remark=$value;; --region) region=$value;; --purpose) purpose=$value;; --line) line=$value;; --tags) tags=$value;;
+          --sing-box-inbound-json|--inbound-json) inbound_json=$(node_json_argument "$value"); node_validate_json_object 'sing-box inbound JSON' "$inbound_json";;
+          --sing-box-outbound-json|--outbound-json) outbound_json=$(node_json_argument "$value"); node_validate_json_object 'sing-box outbound JSON' "$outbound_json";;
+        esac
+        shift 2;;
       --disabled) disabled=1; shift;; *) die "模板创建不支持参数：$1";;
     esac
   done
   # Rebuild common overrides after parsing so no user value is silently lost.
-  args=("$protocol" --id "$id" --name "$node_name" --port "$port")
+  args=("$protocol" --id "$id" --name "$node_name" --port "$port" --sing-box-inbound-json "$inbound_json" --sing-box-outbound-json "$outbound_json")
   [[ -n "$address" ]] && args+=(--address "$address"); [[ -n "$domain" ]] && args+=(--domain "$domain")
   case "$protocol" in
     socks|http|mixed) args+=(--listen "$(jq -r '.listen' <<<"$defaults")");;

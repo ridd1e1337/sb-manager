@@ -85,6 +85,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
                  [--security tls|reality] [--flow FLOW] [--handshake-server DOMAIN] [--handshake-port N]
                  [--congestion-control cubic|new_reno|bbr] [--strict-mode true|false]
                  [--wildcard-sni off|authed|all] [--snell-version 5|6] [--snell-mode MODE]
+                 [--sing-box-inbound-json JSON|@FILE] [--sing-box-outbound-json JSON|@FILE]
                  [--realm-id ID] [--realm-ip-version 0|4|6] [--realm-port-mapping|--no-realm-port-mapping]
   sb user list <NODE_ID>
   sb user add <NODE_ID> <USER_ID> [NAME]
@@ -164,6 +165,8 @@ sb-manager：状态驱动的 sing-box 多协议管理器
          v5 可用 --obfs none|http [--obfs-host DOMAIN]；v6 需要 sing-box 1.14 rc.2+
   Hysteria2 Realm: --realm-id ID [--realm-ip-version 0|4|6] [--realm-port-mapping]
   SOCKS5/HTTP/mixed: --listen 127.0.0.1|::1|0.0.0.0|::（默认本机，自动生成认证）
+  sing-box 扩展：--sing-box-inbound-json JSON|@FILE --sing-box-outbound-json JSON|@FILE
+                 可传入当前核心支持的任意扩展字段；type、tag、地址、端口、用户和凭据由管理器保护。
   通用:  --disabled --remark TEXT --region REGION --purpose PURPOSE --line LINE --tags a,b
 EOF_HELP
 }

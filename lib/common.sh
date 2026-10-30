@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.49}
+SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.51}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -68,7 +68,7 @@ SBM_CLOUDFLARED_RETENTION="${SBM_CLOUDFLARED_RETENTION:-1}"
 SBM_PROGRAM_BACKUP_RETENTION="${SBM_PROGRAM_BACKUP_RETENTION:-2}"
 # Used only when GitHub's Release API cannot be queried.  Normal installs and
 # updates still resolve the newest non-draft Release dynamically.
-SBM_CORE_FALLBACK_VERSION="${SBM_CORE_FALLBACK_VERSION:-1.14.0}"
+SBM_CORE_FALLBACK_VERSION="${SBM_CORE_FALLBACK_VERSION:-1.14.4}"
 
 if [[ -t 1 && "${NO_COLOR:-}" == "" ]]; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_BLUE=$'\033[34m'; C_CYAN=$'\033[36m'

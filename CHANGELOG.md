@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.51
+
+- Allow every supported protocol to carry validated sing-box inbound and
+  outbound extension JSON, including fields added by newer core releases.
+- Preserve those extensions in node templates and apply them to generated
+  server and client configurations while keeping manager-owned credentials and
+  listener identity authoritative.
+- Raise the verified offline fallback core to sing-box 1.14.4.
+
+## 0.1.0-alpha.50
+
+- Reduce the README to a two-step guide: install first, then use `sb`.
+- Use one installation entry point for supported systemd/OpenRC systems and
+  keep Alpine's bootstrap dependency note concise.
+- Move detailed protocol and operational guidance to the existing `docs/`
+  pages. Static checks only; no test scripts or procedures were added.
+
 ## 0.1.0-alpha.49
 
 - Remove the legacy Snell credential-recovery compatibility path at the

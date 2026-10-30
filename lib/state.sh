@@ -229,6 +229,9 @@ state_normalize_v2_file() {
         | .metadata.purpose //= ""
         | .metadata.line //= ""
         | .metadata.tags //= []
+        | .singbox //= {inbound:{},outbound:{}}
+        | .singbox.inbound //= {}
+        | .singbox.outbound //= {}
         | .traffic //= {}
         | .traffic.configured //= false
         | .traffic.enabled //= false
@@ -347,6 +350,10 @@ state_validate() {
       and (.reset_day | type == "number" and floor == . and . >= 1 and . <= 28)
       and (.upload_rate_bps | traffic_value)
       and (.download_rate_bps | traffic_value);
+    def node_extension:
+      type == "object"
+      and ((.by_tag // {}) | type == "object")
+      and all((.by_tag // {})[]; type == "object");
     def node_common:
       type == "object"
       and (.id | string and test("^[a-z0-9][a-z0-9._-]{0,47}$"))
@@ -355,7 +362,10 @@ state_validate() {
       and (.enabled | type == "boolean")
       and (.listen | nonempty)
       and (.port | port)
-      and (.created_at | timestamp);
+      and (.created_at | timestamp)
+      and ((.singbox // {}) | type == "object")
+      and (((.singbox // {}).inbound // {}) | node_extension)
+      and (((.singbox // {}).outbound // {}) | node_extension);
     def node_metadata:
       type == "object"
       and (.remark | string and length <= 512 and (explode | all(.[]; . >= 32 and . != 127)))

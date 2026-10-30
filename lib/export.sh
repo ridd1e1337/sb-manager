@@ -26,7 +26,7 @@ node_share_uri() {
 }
 
 node_client_outbound() {
-  local id=$1 user_id=${2:-} node user secret node_secret='{}' protocol outbound tag
+  local id=$1 user_id=${2:-} node user secret node_secret='{}' protocol outbound tag override
   node=$(state_get_node "$id"); [[ -n "$node" ]] || die "节点不存在：$id"
   if declare -F nginx_stream_public_node >/dev/null 2>&1; then node=$(nginx_stream_public_node "$node"); fi
   [[ -n "$user_id" ]] || user_id=$(jq -r 'first(.users[] | select(.enabled==true) | .id) // empty' <<<"$node")
@@ -49,7 +49,9 @@ node_client_outbound() {
     snell) outbound=$(protocol_snell_client_outbound "$node" "$secret" "$node_secret") ;;
     *) die "不支持导出的协议：$protocol" ;;
   esac
-  jq --arg tag "$tag" 'if type=="array" then . else .tag=$tag end' <<<"$outbound"
+  outbound=$(jq --arg tag "$tag" 'if type=="array" then . else .tag=$tag end' <<<"$outbound")
+  override=$(singbox_node_override "$node" outbound)
+  singbox_apply_override "$outbound" "$override"
 }
 
 node_substore_line() {
