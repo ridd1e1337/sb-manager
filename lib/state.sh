@@ -134,12 +134,14 @@ state_prepare_protocol_credentials() {
       done < <(jq -r '.users[].id' <<<"$node")
       log_warn "ShadowTLS 节点 $id 已补齐 Shadowsocks 2022 内层；请重新导入完整客户端配置。"
     else
+      # Compatibility migration: keep the existing PSK/userkeys so a routine
+      # manager upgrade does not invalidate every Snell client. Operators can
+      # explicitly rotate credentials with `sb node rotate` or `sb user rotate`.
       secret=$(state_get_secret "$id") || return 1
-      # A legacy single-user node may have deleted former users, so the old
-      # PSK cannot be assumed private even when the current user count is one.
-      secret=$(jq --arg psk "$(random_password 24)" '.psk=$psk' <<<"$secret") || return 1
-      state_write_secret "$id" "$secret" || return 1
-      log_warn "Snell 节点 $id 已更换旧 PSK 并固定认证模式；全部用户需要重新导入配置。"
+      jq -e '.psk | type == "string" and length > 0' <<<"$secret" >/dev/null || {
+        log_error "Snell 节点 $id 缺少旧 PSK，无法无缝迁移。"; return 1;
+      }
+      log_warn "Snell 节点 $id 保留现有 PSK；如需更换凭据，请手动执行 sb node rotate $id。"
     fi
     mode=$(jq -r '.credential_mode // (if (.users|length)>1 then "multi" else "single" end)' <<<"$node")
     tmp=$(mktemp "$SBM_RUN/credential-state.XXXXXX") || return 1

@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.47",
+  "manager_version": "0.1.0-alpha.48",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -104,9 +104,12 @@ to `multi` permanently; disabling or deleting users never changes it back.
 Single-user rotation replaces both the node PSK and userkey; multi-user rotation
 replaces only the selected userkey. A `single` node must have exactly one user.
 
-Snell and ShadowTLS nodes carry `credential_revision:1`. Missing/zero revision
-identifies legacy credentials. Under the manager lock, migration snapshots state,
-secrets, config and subscriptions, prepares new credentials, validates the candidate
+Snell and ShadowTLS nodes carry `credential_revision:1`. Legacy Snell migration
+preserves the existing PSK/userkeys so routine script upgrades do not invalidate
+clients; use the explicit rotate commands when a credential change is intended.
+Missing/zero revision identifies legacy credentials. Under the manager lock,
+migration snapshots state, secrets, config and subscriptions, preserves compatible
+Snell credentials, validates the candidate
 with the real installed core, installs it and publishes live feeds; failure restores
 the snapshot. Legacy Snell PSKs rotate once, including nodes with deleted former
 users. Existing total user count determines the initial mode. Migration is deferred

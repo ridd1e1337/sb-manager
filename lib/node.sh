@@ -431,6 +431,42 @@ _node_rotate() {
 }
 node_rotate() { with_state_transaction node-rotate _node_rotate "$@"; }
 
+_node_recover_legacy_credentials() {
+  local id=$1 snapshot old_node current_node mode candidate path user_id old_path
+  local -a snapshots=()
+  current_node=$(state_get_node "$id")
+  [[ -n "$current_node" ]] || die "节点不存在：$id"
+  [[ $(jq -r '.protocol' <<<"$current_node") == snell ]] || die '此恢复命令只适用于 Snell 节点。'
+  [[ -d "$SBM_BACKUPS/snapshots" ]] || die '没有找到升级前快照。'
+  while IFS= read -r snapshot; do [[ -n "$snapshot" ]] && snapshots+=("$snapshot"); done < <(
+    find "$SBM_BACKUPS/snapshots" -mindepth 1 -maxdepth 1 -type d -name '*pre-protocol-credentials*' -printf '%T@ %p\n' 2>/dev/null |
+      sort -nr | awk '{sub(/^[^ ]+ /, ""); print}'
+  )
+  ((${#snapshots[@]} > 0)) || die '没有找到 Snell 凭据迁移前快照。'
+  snapshot=${snapshots[0]}
+  [[ -f "$snapshot/state.json" && -f "$snapshot/secrets/nodes/$id.json" ]] || die "快照中没有节点 $id 的旧凭据：$snapshot"
+  old_node=$(jq -c --arg id "$id" '.nodes[]? | select(.id==$id)' "$snapshot/state.json")
+  [[ -n "$old_node" ]] || die "快照中没有节点 $id 的旧状态：$snapshot"
+  mode=$(jq -r '.credential_mode // (if (.users|length)>1 then "multi" else "single" end)' <<<"$current_node")
+  [[ "$mode" == single || "$mode" == multi ]] || die "节点 $id 的 credential_mode 无效。"
+  if [[ "$mode" == single && $(jq '.users|length' <<<"$current_node") != 1 ]]; then
+    die "节点 $id 当前已有多个用户，不能直接恢复单用户凭据；请先检查用户列表。"
+  fi
+  cp -f "$snapshot/secrets/nodes/$id.json" "$(state_secret_path "$id")"
+  while IFS= read -r user_id; do
+    old_path="$snapshot/secrets/users/$id/$user_id.json"
+    [[ -f "$old_path" ]] || die "快照中缺少用户 $id/$user_id 的旧 userkey。"
+    cp -f "$old_path" "$(state_user_secret_path "$id" "$user_id")"
+  done < <(jq -r '.users[].id' <<<"$current_node")
+  candidate=$(state_candidate) || return 1
+  jq --arg id "$id" --arg mode "$mode" '(.nodes[]|select(.id==$id)) |= (.credential_revision=1 | .credential_mode=$mode)' "$SBM_STATE" >"$candidate"
+  if ! apply_candidate_state "$candidate" legacy-snell-recover; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  log_ok "已从升级前快照恢复 Snell 节点 $id 的旧凭据；请重新导入原客户端配置。"
+}
+
+node_recover_legacy_credentials() { with_state_transaction node-recover-credentials _node_recover_legacy_credentials "$@"; }
+
 _node_set() {
   local id=$1; shift
   local candidate tmp key value node protocol

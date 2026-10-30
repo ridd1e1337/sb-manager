@@ -628,7 +628,7 @@ ui_add_node() {
 }
 
 ui_manage_nodes() {
-  local id=${1:-} action value remark region purpose line tags node
+  local id=${1:-} action value remark region purpose line tags node max_action=11
   if [[ -z "$id" ]]; then
     ui_select_node id || { ui_page_back; return; }
     if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then ui_open_submenu ui_manage_nodes "$id"; return; fi
@@ -636,8 +636,10 @@ ui_manage_nodes() {
   state_node_exists "$id" || { ui_page_back; return; }
   node=$(state_get_node "$id")
   node_show "$id"
-  printf '\n1. 显示分享链接\n2. 启用\n3. 停用\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n0. 返回\n'
-  ui_menu_choice action '选择操作' 11
+  printf '\n1. 分享链接\n2. 启用\n3. 停用\n4. 改端口\n5. 改地址\n6. 改名称\n7. 备注/标签\n8. 换密码\n9. 删除\n10. 设置到期\n11. 清除到期\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == snell ]]; then printf '12. 恢复升级前凭据\n'; max_action=12; fi
+  printf '0. 返回\n'
+  ui_menu_choice action '选择操作' "$max_action"
   case "$action" in
     1) node_share "$id" 1;; 2) node_enable "$id";; 3) node_disable "$id";;
     4) prompt_value value '新端口' "$(jq -r '.port' <<<"$node")"; node_set "$id" --port "$value";;
@@ -655,6 +657,7 @@ ui_manage_nodes() {
     9) confirm "确认删除 $id？" N && node_delete "$id";;
     10) prompt_value value '续期天数（从当前到期日或今天起算）' '30'; node_expiry_cli "$id" --days "$value";;
     11) node_expiry_cli "$id" --clear;;
+    12) node_recover_legacy_credentials "$id";;
   esac
 }
 
