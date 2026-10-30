@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.44
+
+- Expand the quick node wizard with an explicit protocol advanced-settings
+  step. Hysteria2 now exposes Salamander/Gecko, packet sizes, BBR profile,
+  Chrome QUIC fingerprint, Brutal debug and Realm; other quick protocols expose
+  their supported encryption, security, congestion and Snell version options.
+- Make certificate protocols clearly accept a new domain for reuse or issuance
+  inside the same flow; keep the full protocol wizard available with `a`.
+- Synchronize quick-start documentation. Static checks only; no test scripts or
+  procedures were added.
+
 ## 0.1.0-alpha.43
 
 - Add a sing-box-native TCP/SNI frontend using scoped TLS sniffing, fixed

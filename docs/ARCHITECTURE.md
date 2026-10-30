@@ -47,7 +47,10 @@ explicit `0`, `q`, or EOF. Configuration fields retain their displayed defaults,
 and invalid edits do not replace valid defaults in retrying prompts.
 
 `sb quick` and the main node-creation entry use protocol presets and a final
-editable summary. Certificate selection can invoke a dedicated worker to issue
+editable summary. Quick creation exposes a protocol-specific advanced-settings
+step before commit and uses the same node CLI flags as the full wizard, so
+Hysteria2 obfuscation/BBR/Realm, VLESS security, TUIC congestion control and
+Snell versions are not silently discarded. Certificate selection can invoke a dedicated worker to issue
 or renew a certificate without nesting state locks or suppressing backend errors.
 Node creation commits before import rendering. A separate completion page keeps
 the node ID across export failures, so retries cannot create duplicate nodes.

@@ -21,7 +21,7 @@
 - Hysteria2 官方 UDP 缓冲区优化的一键开启、状态查看和恢复
 - Cloudflare Tunnel 按需安装与独立更新（默认不下载 cloudflared）
 - 节点添加、编辑、启停、删除和凭据轮换
-- `sb quick` 串联推荐配置、证书申请、节点创建和客户端导入；高级参数按需展开
+- `sb quick` 串联推荐配置、证书申请、节点创建和客户端导入；确认页可展开协议高级参数
 - 节点级双向流量统计、月配额与独立上/下行速率控制
 - SOCKS5、HTTP 和 mixed 认证代理入口，默认仅监听本机
 - 节点到期停用与续期、多节点共享流量配额、可选 tc 下行平滑限速
@@ -292,9 +292,11 @@ sb quick
 ```
 
 也可在 `sb` 主菜单输入 `2` 进入“快速创建节点”；即使还没有节点，主菜单回车也只会等待选择。
-选择 AnyTLS、Hysteria2、Shadowsocks 2022、VLESS Reality、Snell v5、Trojan 或 TUIC，
-确认推荐配置即可创建。地址和空闲端口会自动建议，名称、地址和端口都可在创建前修改；
-其他协议、混淆和高级参数放在 `a. 全部协议 / 自定义高级参数` 中。
+选择 AnyTLS、Hysteria2、Shadowsocks 2022、VLESS、Snell、Trojan 或 TUIC，
+确认页输入 `4` 可打开协议高级设置。Hysteria2 可设置 Salamander/Gecko、Gecko 包长、
+BBR profile、Chrome QUIC 指纹、Brutal 调试和 Realm；Shadowsocks 可选加密方法，
+VLESS 可切换 TLS/Reality，TUIC 可选拥塞控制，Snell 可选 v5/v6 和混淆。
+输入 `a` 可进入完整协议向导。地址和空闲端口会自动建议，名称、地址和端口都可在创建前修改。
 
 需要证书的协议会直接让你选择已有证书，或输入新域名进行申请。首次办证在当前流程内配置
 Cloudflare API Token 和邮箱；后续复用已保存的凭据。过期或不匹配的证书不会直接使用。
