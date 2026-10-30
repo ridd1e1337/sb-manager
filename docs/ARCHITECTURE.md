@@ -46,18 +46,17 @@ empty input stays at the prompt even when no nodes exist; exit requires an
 explicit `0`, `q`, or EOF. Configuration fields retain their displayed defaults,
 and invalid edits do not replace valid defaults in retrying prompts.
 
-`sb quick` and the main node-creation entry use protocol presets and a final
-editable summary. Quick creation exposes a protocol-specific advanced-settings
-step before commit and uses the same node CLI flags as the full wizard, so
+The main node-creation entry uses the complete protocol wizard and a final
+editable summary. It uses the same node CLI flags as the command line, so
 Hysteria2 obfuscation/BBR/Realm, VLESS security, TUIC congestion control and
 Snell versions are not silently discarded. Certificate selection can invoke a dedicated worker to issue
 or renew a certificate without nesting state locks or suppressing backend errors.
 Node creation commits before import rendering. A separate completion page keeps
 the node ID across export failures, so retries cannot create duplicate nodes.
 
-The panel keeps common labels short and puts explanations next to the action
-that needs them. Technical protocol options remain under the explicit advanced
-settings step instead of lengthening the first screen.
+The panel keeps common labels short while the single node wizard retains the
+complete protocol options. `sb quick` is only a compatibility alias for that
+wizard.
 Full per-user client profiles include every required outbound and are validated
 before an atomic file replacement; the existing full-subscription export remains
 available. Advanced protocol parameters use the original creation wizard.

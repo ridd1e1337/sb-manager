@@ -2,7 +2,7 @@
 
 `sb-manager` 是一个面向 systemd/OpenRC Linux 的、状态驱动的 sing-box 多协议管理脚本。安装后输入 `sb` 即可打开中文交互面板，也可以使用完整的非交互 CLI。
 
-> 当前版本：`0.1.0-alpha.46`。
+> 当前版本：`0.1.0-alpha.47`。
 
 ## 功能
 
@@ -21,7 +21,7 @@
 - Hysteria2 官方 UDP 缓冲区优化的一键开启、状态查看和恢复
 - Cloudflare Tunnel 按需安装与独立更新（默认不下载 cloudflared）
 - 节点添加、编辑、启停、删除和凭据轮换
-- `sb quick` 串联推荐配置、证书申请、节点创建和客户端导入；确认页可展开协议高级参数
+- `sb` 的添加节点向导包含全部协议参数、证书申请和客户端导入
 - 节点级双向流量统计、月配额与独立上/下行速率控制
 - SOCKS5、HTTP 和 mixed 认证代理入口，默认仅监听本机
 - 节点到期停用与续期、多节点共享流量配额、可选 tc 下行平滑限速
@@ -289,20 +289,17 @@ cd sb-manager
 sudo ./setup.sh
 ```
 
-## 快速开始
+## 创建节点
 
 ### 创建节点并导入客户端
 
 ```bash
-sb quick
+sb
 ```
 
-也可在 `sb` 主菜单输入 `2` 进入“快速创建节点”；即使还没有节点，主菜单回车也只会等待选择。
-选择 AnyTLS、Hysteria2、Shadowsocks 2022、VLESS、Snell、Trojan 或 TUIC，
-确认页输入 `4` 可打开协议高级设置。Hysteria2 可设置 Salamander/Gecko、Gecko 包长、
-BBR profile、Chrome QUIC 指纹、Brutal 调试和 Realm；Shadowsocks 可选加密方法，
-VLESS 可切换 TLS/Reality，TUIC 可选拥塞控制，Snell 可选 v5/v6 和混淆。
-输入 `a` 可进入完整协议向导。地址和空闲端口会自动建议，名称、地址和端口都可在创建前修改。
+主菜单输入 `2` 进入“添加节点”。`sb quick` 仍可使用，但只是这个完整向导的兼容别名。
+它包含所有协议参数：Hysteria2 混淆、BBR、Realm，VLESS TLS/Reality，TUIC 拥塞控制，
+Snell v5/v6 等。地址和空闲端口会自动建议，名称、地址和端口都可在创建前修改。
 
 需要证书的协议会直接让你选择已有证书，或输入新域名进行申请。首次办证在当前流程内配置
 Cloudflare API Token 和邮箱；后续复用已保存的凭据。过期或不匹配的证书不会直接使用。

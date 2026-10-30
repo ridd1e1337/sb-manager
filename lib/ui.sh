@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_quick_add_node|ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -475,210 +475,6 @@ ui_add_node_and_deliver() {
   fi
   ui_menu_loop ui_node_finish_menu "$id"
   ui_page_back
-}
-
-ui_quick_protocol_advanced() {
-  local protocol=${1:-}
-  case "$protocol" in
-    ss)
-      printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm\n3. 2022-blake3-chacha20-poly1305\n'
-      ui_menu_choice method 'Shadowsocks 加密方法' 3
-      case "$method" in
-        1) method=2022-blake3-aes-128-gcm;;
-        2) method=2022-blake3-aes-256-gcm;;
-        3) method=2022-blake3-chacha20-poly1305;;
-      esac
-      ;;
-    hy2)
-      printf '1. 不启用混淆\n2. Salamander\n3. Gecko（1.14+，可调包长）\n'
-      ui_menu_choice hy2_obfs 'Hysteria2 混淆' 3
-      case "$hy2_obfs" in
-        1) hy2_obfs='';;
-        2) hy2_obfs=salamander;;
-        3)
-          hy2_obfs=gecko
-          prompt_value hy2_min 'Gecko 最小包长' "$hy2_min"
-          prompt_value hy2_max 'Gecko 最大包长' "$hy2_max"
-          ;;
-      esac
-      prompt_value hy2_no_chrome '关闭 Chrome QUIC 指纹伪装？(y/N)' "$hy2_no_chrome"
-      printf '1. standard\n2. conservative\n3. aggressive\n4. 不显式设置\n'
-      ui_menu_choice hy2_bbr 'Hysteria2 BBR profile' 4
-      case "$hy2_bbr" in
-        1) hy2_bbr=standard;;
-        2) hy2_bbr=conservative;;
-        3) hy2_bbr=aggressive;;
-        4) hy2_bbr='';;
-      esac
-      prompt_value hy2_brutal '启用 Hysteria Brutal 调试日志？(y/N)' "$hy2_brutal"
-      if [[ $(jq -r '.realm.enabled // false' "$SBM_STATE") == true ]]; then
-        prompt_value hy2_realm '启用 Hysteria Realm NAT 穿透？(y/N)' "$hy2_realm"
-        if [[ "$hy2_realm" =~ ^[Yy]$ ]]; then
-          prompt_value hy2_realm_id 'Realm slot ID' "$hy2_realm_id"
-          prompt_value hy2_realm_ip 'Realm IP 版本（0/4/6）' "$hy2_realm_ip"
-          prompt_value hy2_realm_map '启用 UPnP/NAT-PMP 端口映射？(y/N)' "$hy2_realm_map"
-        else hy2_realm_id=''; fi
-      fi
-      ;;
-    vless)
-      printf '1. TLS（需要域名证书）\n2. Reality（无需自有域名证书）\n'
-      [[ "$vless_security" == tls ]] && security_choice=1 || security_choice=2
-      ui_menu_choice security_choice 'VLESS 安全层' 2
-      if [[ "$security_choice" == 1 ]]; then
-        vless_security=tls; reality=0
-        ui_select_certificate_domain domain || return 1
-        address=$domain
-      else
-        vless_security=reality; reality=1
-        prompt_value domain 'Reality SNI' "$domain"
-        prompt_value vless_handshake 'Reality 握手域名' "$vless_handshake"
-        prompt_value vless_handshake_port 'Reality 握手端口' "$vless_handshake_port"
-      fi
-      ;;
-    tuic)
-      printf '1. cubic\n2. new_reno\n3. bbr\n'
-      ui_menu_choice congestion_control 'TUIC 拥塞控制' 3
-      case "$congestion_control" in
-        1) congestion_control=cubic;; 2) congestion_control=new_reno;; 3) congestion_control=bbr;;
-      esac
-      ;;
-    snell)
-      printf '1. Snell v5（Surge/mihomo 兼容）\n2. Snell v6（1.14.0-rc.2+）\n'
-      ui_menu_choice snell_choice 'Snell 版本' 2
-      if [[ "$snell_choice" == 1 ]]; then
-        snell_version=5
-        printf '1. 不启用 HTTP 混淆\n2. HTTP 混淆\n'
-        ui_menu_choice snell_obfs_choice 'Snell v5 混淆' 2
-        if [[ "$snell_obfs_choice" == 2 ]]; then snell_obfs=http; prompt_value snell_obfs_host 'HTTP 混淆 Host' "$snell_obfs_host"; else snell_obfs=none; fi
-      else
-        snell_version=6
-        printf '1. default\n2. unshaped\n3. unsafe-raw\n'
-        ui_menu_choice snell_mode_choice 'Snell v6 traffic shaping mode' 3
-        case "$snell_mode_choice" in 1) snell_mode=default;; 2) snell_mode=unshaped;; 3) snell_mode=unsafe-raw;; esac
-        snell_obfs=none
-      fi
-      ;;
-    *) log_info '当前协议没有额外的服务端高级参数。';;
-  esac
-}
-
-ui_quick_add_node() {
-  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '快速创建不支持 --dry-run；创建前会显示配置供确认。'
-  local choice protocol label kind=tcp domain='' certificate=0 reality=0 address port name action value
-  local method=2022-blake3-aes-256-gcm hy2_obfs='' hy2_min=512 hy2_max=1200 hy2_no_chrome=N hy2_bbr='' hy2_brutal=N
-  local hy2_realm=N hy2_realm_id='' hy2_realm_ip=0 hy2_realm_map=N
-  local vless_security=reality vless_handshake=www.apple.com vless_handshake_port=443 security_choice
-  local congestion_control=cubic snell_choice=1 snell_version=5 snell_mode=default snell_obfs=none snell_obfs_host=bing.com
-  local -a args=() ports=(443 8443 9443 10443)
-  printf '\n快速建节点：选协议 → 填地址 → 立即导入。\n'
-  printf '1. AnyTLS（输入域名后可复用或申请证书）\n2. Hysteria2（输入域名后可复用或申请证书）\n3. Shadowsocks 2022（无需域名和证书）\n4. VLESS（默认 Reality，可切换 TLS 证书）\n5. Snell（默认 v5，可切换 v6/混淆）\n6. Trojan（输入域名后可复用或申请证书）\n7. TUIC（输入域名后可复用或申请证书）\na. 完整协议向导（全部高级参数）\n0. 返回\n'
-  while true; do
-    ui_menu_choice choice '选择协议'
-    case "$choice" in
-      1) protocol=anytls; label=AnyTLS; certificate=1; break;;
-      2) protocol=hy2; label=Hysteria2; kind=udp; certificate=1; break;;
-      3) protocol=ss; label='Shadowsocks 2022'; ports=(8388 8389 8390 8443); break;;
-      4) protocol=vless; label=VLESS; reality=1; domain=www.apple.com; break;;
-      5) protocol=snell; label=Snell; ports=(6160 6161 443 8443); break;;
-      6) protocol=trojan; label=Trojan; certificate=1; break;;
-      7) protocol=tuic; label=TUIC; kind=udp; certificate=1; break;;
-      a|A) ui_menu_loop ui_add_node; ui_page_back; return;;
-      0) return;;
-      *) log_error '请选择 1–7，或输入 a 使用完整协议向导。';;
-    esac
-  done
-  if [[ "$protocol" == snell ]] && ! version_ge "$(core_current_version)" 1.14.0-rc.1; then
-    die 'Snell 需要 sing-box 1.14+；可先选择 Shadowsocks 2022，或在核心更新菜单升级。'
-  fi
-  if (( certificate )); then
-    ui_select_certificate_domain domain || { ui_cancel; return; }
-    address=$domain
-  else
-    address=$(ui_client_address_default '')
-    if ! { validate_ipv4 "$address" || validate_ipv6 "$address" || validate_domain "$address"; }; then
-      ui_prompt_server_address address "$address"
-    fi
-  fi
-  port=$(ui_port_default "$kind" "${ports[@]}")
-  name="$label $port"
-  while true; do
-    printf '\n名称：%s\n协议：%s\n连接地址：%s\n端口：%s/%s\n' "$name" "$label" "$address" "$port" "${kind^^}"
-    if (( certificate )); then printf '证书域名：%s（验证开启）\n' "$domain"; fi
-    if [[ "$protocol" == vless ]]; then
-      printf '安全层：%s\n' "$vless_security"
-      [[ "$vless_security" != reality ]] || printf 'Reality 握手：%s:%s\n' "$vless_handshake" "$vless_handshake_port"
-    fi
-    if [[ "$protocol" == hy2 ]]; then
-      printf '混淆：%s；BBR：%s；Chrome QUIC：%s；Brutal 调试：%s\n' "${hy2_obfs:-off}" "${hy2_bbr:-default}" "$([[ "$hy2_no_chrome" =~ ^[Yy]$ ]] && echo off || echo on)" "$([[ "$hy2_brutal" =~ ^[Yy]$ ]] && echo on || echo off)"
-    fi
-    printf '1. 创建并显示导入内容\n2. 修改名称、地址或端口\n4. 协议高级设置\n'
-    if (( certificate )); then printf '3. 更换证书域名\n'; fi
-    if [[ "$protocol" == vless ]]; then printf '3. 修改证书/Reality 域名\n'; fi
-    printf '0. 取消\n'
-    ui_menu_choice action '确认配置' 4
-    case "$action" in
-      1) break;;
-      2)
-        prompt_value name '节点名称' "$name"
-        ui_prompt_server_address address "$address"
-        while true; do
-          prompt_value value '端口' "$port"
-          if validate_port "$value"; then port=$((10#$value)); break; fi
-          log_error '端口必须是 1–65535 的整数。'
-        done;;
-      3)
-        if (( certificate )); then
-          ui_select_certificate_domain domain || { ui_cancel; return; }
-          address=$domain
-        elif [[ "$protocol" == vless ]]; then
-          if [[ "$vless_security" == tls ]]; then
-            ui_select_certificate_domain domain || { ui_cancel; return; }
-            address=$domain
-          else
-            prompt_value value 'Reality SNI' "$domain"
-            domain=$value
-            prompt_value vless_handshake 'Reality 握手域名' "$vless_handshake"
-          fi
-        else log_error '这个协议不需要域名证书。'; fi;;
-      4)
-        ui_quick_protocol_advanced "$protocol" || { ui_cancel; return; };;
-      0) return;;
-    esac
-  done
-  args=(--name "$name" --address "$address" --port "$port")
-  case "$protocol" in
-    ss) args+=(--method "$method");;
-    hy2)
-      [[ -z "$hy2_obfs" ]] || args+=(--obfs "$hy2_obfs")
-      [[ "$hy2_obfs" != gecko ]] || args+=(--obfs-min-packet-size "$hy2_min" --obfs-max-packet-size "$hy2_max")
-      [[ "$hy2_no_chrome" =~ ^[Yy]$ ]] && args+=(--disable-chrome-parrot)
-      [[ -z "$hy2_bbr" ]] || args+=(--bbr-profile "$hy2_bbr")
-      [[ "$hy2_brutal" =~ ^[Yy]$ ]] && args+=(--brutal-debug)
-      if [[ -n "$hy2_realm_id" ]]; then
-        args+=(--realm-id "$hy2_realm_id" --realm-ip-version "$hy2_realm_ip")
-        [[ "$hy2_realm_map" =~ ^[Yy]$ ]] && args+=(--realm-port-mapping)
-      fi
-      ;;
-    vless)
-      args+=(--security "$vless_security" --domain "$domain")
-      [[ "$vless_security" != reality ]] || args+=(--handshake-server "$vless_handshake" --handshake-port "$vless_handshake_port")
-      ;;
-    tuic) args+=(--domain "$domain" --congestion-control "$congestion_control");;
-    snell)
-      args+=(--snell-version "$snell_version")
-      if [[ "$snell_version" == 6 ]]; then
-        args+=(--snell-mode "$snell_mode")
-      elif [[ "$snell_obfs" == http ]]; then
-        args+=(--obfs http --obfs-host "$snell_obfs_host")
-      else
-        args+=(--obfs none)
-      fi
-      ;;
-    *)
-      [[ "$certificate" != 1 ]] || args+=(--domain "$domain")
-      ;;
-  esac
-  ui_add_node_and_deliver "$protocol" "${args[@]}"
 }
 
 ui_add_node() {
@@ -1428,7 +1224,7 @@ ui_main() {
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
       printf '还没有节点：输入 2 开始创建。\n'
     fi
-    printf '1. 状态\n2. 快速建节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n0. 退出\n\n'
+    printf '1. 状态\n2. 添加节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n0. 退出\n\n'
     # Stay at the root on empty input without reopening a page or redrawing
     # the entire menu for every buffered Enter key.
     while true; do
@@ -1440,7 +1236,7 @@ ui_main() {
     SBM_UI_RESULT=0
     case "$choice" in
       1) page=status_summary;;
-      2) page=ui_quick_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
+      2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
       11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;

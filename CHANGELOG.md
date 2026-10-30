@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.47
+
+- Make the original complete node wizard the default main-menu entry again;
+  `sb quick` now opens the same wizard as a compatibility alias.
+- Remove the separate quick-creation implementation and its duplicate option
+  flow, reducing the number of ways to add a node without removing protocol,
+  certificate or import features.
+- Synchronize the user guide and architecture notes. Static checks only; no
+  test scripts or procedures were added.
+
 ## 0.1.0-alpha.46
 
 - Shorten the common panel wording for the main menu, node selection,
