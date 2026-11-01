@@ -157,6 +157,8 @@ sb-manager：状态驱动的 sing-box 多协议管理器
 
 节点添加常用参数：
   --id ID --name NAME --port PORT --domain DOMAIN --address HOST
+  TLS:   没有可用证书时自动创建 Cloudflare DNS only 记录并签发证书。
+         CLI 请先执行 sb cert setup-cloudflare；已有冲突 DNS 会被拒绝，--disabled 不申请证书。
   VMess: --path PATH
   SS:    --method 2022-blake3-aes-128-gcm|... --network tcp
   HY2:   --obfs salamander|gecko --obfs-min-packet-size N --obfs-max-packet-size N

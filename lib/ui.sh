@@ -306,11 +306,7 @@ ui_client_address_default() {
 }
 
 ui_certificate_usable() {
-  local domain=$1
-  validate_domain "$domain" || return 1
-  [[ -s "$SBM_CERTS/$domain/fullchain.pem" && -s "$SBM_CERTS/$domain/key.pem" ]] || return 1
-  openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkend 0 >/dev/null 2>&1 \
-    && openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkhost "$domain" >/dev/null 2>&1
+  cert_usable "$1"
 }
 
 ui_require_certificate() {
@@ -318,17 +314,25 @@ ui_require_certificate() {
 }
 
 ui_issue_certificate() {
-  local domain=$1 reset_credentials=${2:-0}
+  local domain=$1 reset_credentials=${2:-0} prepare_dns=${3:-0}
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '证书申请不支持 --dry-run；请退出预览模式后再操作。'
   validate_domain "$domain" || die "无效域名：$domain"
   if ui_certificate_usable "$domain"; then log_info "复用现有证书：$domain"; return; fi
   printf '\n正在为 %s 准备证书。域名需由 Cloudflare 托管 DNS。\n' "$domain"
-  printf '用于连接节点的 DNS 记录应指向本机公网 IP，并关闭橙云代理。\n'
+  if [[ "$prepare_dns" == 1 ]]; then
+    printf '将自动探测本机公网 IP，添加 DNS only 的 A/AAAA 记录，再申请证书。\n'
+  else
+    printf '此入口只申请证书；用于连接节点的 DNS 记录需自行指向服务器并关闭橙云。\n'
+  fi
   if [[ "$reset_credentials" == 1 || ! -s "$SBM_CF_DNS_ENV" || -z $(jq -r '.settings.acme_email // ""' "$SBM_STATE") ]]; then
     printf '首次需要 Cloudflare API Token（区域读取、DNS 编辑权限）和邮箱；保存后后续复用。\n'
-    cert_setup_cloudflare
+    cert_setup_cloudflare || return 1
   fi
-  cert_issue "$domain"
+  if [[ "$prepare_dns" == 1 ]]; then
+    cert_prepare_node_domain "$domain" || return 1
+  else
+    cert_issue "$domain" || return 1
+  fi
   ui_require_certificate "$domain"
 }
 
@@ -342,7 +346,7 @@ ui_select_certificate_domain() {
 
   while true; do
     if ((${#domains[@]} == 0)); then
-      printf '没有证书：输入域名即可申请。\n'
+      printf '没有证书：输入 Cloudflare 托管的域名，自动添加 DNS 并申请证书。\n'
       prompt_value selected_domain '域名（留空返回）' '' || return 1
     else
       printf '选择证书，或输入 n 使用新域名：\n'
@@ -368,11 +372,11 @@ ui_select_certificate_domain() {
     if validate_domain "$selected_domain"; then break; fi
     log_error '请输入有效域名，不要带 https://、端口或路径。'
   done
-  selected_domain=${selected_domain%.}
+  selected_domain=${selected_domain%.}; selected_domain=${selected_domain,,}
   while ! ui_certificate_usable "$selected_domain"; do
     # Certificate mutations run in a fresh worker: the selector's caller may
     # be using ||, which would otherwise suppress errexit in the ACME steps.
-    ui_run ui_issue_certificate "$selected_domain" "$reset_credentials"
+    ui_run ui_issue_certificate "$selected_domain" "$reset_credentials" 1
     case "$SBM_UI_LAST_STATUS" in
       0) break;;
       201|202|203|206) ui_end_session "$SBM_UI_LAST_STATUS"; return 1;;

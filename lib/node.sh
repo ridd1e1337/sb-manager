@@ -167,6 +167,7 @@ _node_add() {
       *) die "未知参数：$1";;
     esac
   done
+  domain=${domain%.}; domain=${domain,,}
   if [[ "$SBM_SKIP_INIT" != 1 ]] && ! command_exists ss && declare -F dependency_require_feature >/dev/null 2>&1; then
     dependency_require_feature probe || die '节点端口探测需要 iproute2/ss；请运行 sb deps install probe。'
   fi
@@ -295,6 +296,9 @@ _node_add() {
   [[ -n "$id" ]] || id=$(state_unique_id "$base")
   validate_node_id "$id" || die "节点 ID 只能包含小写字母、数字、点、下划线和连字符。"
   state_node_exists "$id" && die "节点已存在：$id"
+  if [[ "$enabled" == true ]] && node_port_in_state "$transport" "$port"; then
+    die "已启用节点或复用入口占用 ${port}/${transport^^}；请换端口。"
+  fi
   if [[ "$enabled" == true ]] && host_port_in_use "$transport" "$port"; then
     die "系统已有程序监听 ${port}/${transport^^}；请换端口或先停用冲突服务。"
   fi
@@ -350,6 +354,12 @@ _node_add() {
   if [[ "$protocol" != vmess-ws-cf ]]; then
     node=$(jq --arg source "$address_source" '.server_address_source=$source' <<<"$node")
   fi
+  if [[ "$enabled" == true ]]; then
+    case "$protocol" in
+      anytls|hysteria2|trojan|tuic|naive) _cert_prepare_node_domain "$domain" || return 1;;
+      vless) [[ "$security" != tls ]] || { _cert_prepare_node_domain "$domain" || return 1; };;
+    esac
+  fi
   user_secret_path=$(state_user_secret_path "$id" default)
   state_write_user_secret "$id" default "$secret" || return 1
   [[ -z "$node_secret" ]] || state_write_secret "$id" "$node_secret" || return 1
@@ -360,7 +370,10 @@ _node_add() {
   log_ok "已添加节点：$id ($(node_protocol_label "$protocol"))"
   [[ "$enabled" == true ]] || log_warn "节点当前为停用状态。"
 }
-node_add() { with_state_transaction node-add _node_add "$@"; }
+node_add() {
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
+  with_state_transaction node-add _node_add "$@"
+}
 
 _node_set_enabled() {
   local id=$1 value=$2 candidate

@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.51",
+  "manager_version": "0.1.0-alpha.52",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -91,6 +91,17 @@ Simplified example:
 ```
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
+
+Cloudflare API credentials remain in `secrets/dns-cloudflare.env` (0600).
+Adding an enabled TLS node without a usable certificate prepares DNS-only
+A/AAAA records for the detected public addresses before DNS-01 issuance.
+The operation snapshot contains a `cloudflare-dns.json` journal (0600), written
+before each create request. Rollback attempts to delete only records bearing
+that operation's random comment and unchanged connection fields. Existing
+records are reused only when they already match; conflicts are never replaced.
+Remote cleanup failures are reported with the journal path for recovery.
+Successful DNS records live in Cloudflare; restoring local state or deleting
+a node does not remove them. The state schema version remains 2.
 
 `settings.manager_auto_update` defaults to `true` only when missing/null;
 explicit `false` survives normalization and upgrades. `manager_update_minute`

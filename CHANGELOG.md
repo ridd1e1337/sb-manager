@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.52
+
+- Prepare Cloudflare DNS-only A/AAAA records and DNS-01 certificates when
+  adding an enabled TLS node without a usable certificate, in both the wizard
+  and CLI. Reuse the saved API Token, email, matching records and certificates.
+- Resolve the domain's active zone, compare normalized IPv6 addresses, and
+  refuse conflicting addresses, proxied records and CNAME/NS delegations.
+- Journal DNS creations before API writes and clean up only unchanged records
+  created by the failed transaction; report remote cleanup failures separately
+  while preserving local rollback. Keep certificate-only issuance available.
+- Retain Debian/systemd and Alpine/BusyBox/OpenRC support without new runtime
+  dependencies. No schema migration or test assets/procedures are added.
+
 ## 0.1.0-alpha.51
 
 - Allow every supported protocol to carry validated sing-box inbound and

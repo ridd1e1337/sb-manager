@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
+source "$SBM_LIB/lib/cloudflare_dns.sh"
+
 SBM_ACME_HOME="${SBM_ACME_HOME:-$SBM_VAR/acme/home}"
 SBM_ACME_CONFIG="${SBM_ACME_CONFIG:-$SBM_VAR/acme/config}"
 SBM_ACME_CERT_HOME="${SBM_ACME_CERT_HOME:-$SBM_VAR/acme/internal-certs}"
@@ -92,7 +94,7 @@ acme_install() {
 _cert_setup_cloudflare() {
   local token=${1:-} zone_id=${2:-} email=${3:-} candidate tmp
   [[ -n "$token" ]] || prompt_secret token 'Cloudflare API Token'
-  [[ -n "$zone_id" ]] || { [[ -t 0 ]] && prompt_value zone_id 'Cloudflare Zone ID（可留空，由 acme.sh 自动查询）' ''; }
+  [[ -n "$zone_id" ]] || { [[ -t 0 ]] && prompt_value zone_id 'Cloudflare Zone ID（可留空，自动查询）' ''; }
   [[ -n "$email" ]] || { [[ -t 0 ]] && prompt_value email 'ACME 账户邮箱' "$(jq -r '.settings.acme_email // ""' "$SBM_STATE")"; }
   [[ -n "$token" ]] || die "API Token 不能为空。"
   [[ -n "$email" ]] || die "邮箱不能为空。"
@@ -113,11 +115,40 @@ cert_setup_cloudflare() { with_state_transaction cert-provider _cert_setup_cloud
 
 cert_load_cloudflare_env() {
   [[ -s "$SBM_CF_DNS_ENV" ]] || die "尚未配置 Cloudflare DNS API Token。运行：sb cert setup-cloudflare"
+  unset CF_Token CF_Zone_ID CF_Account_ID CF_Key CF_Email
   set -a
   # shellcheck disable=SC1090
   source "$SBM_CF_DNS_ENV"
   set +a
 }
+
+cert_usable() {
+  local domain=$1 cert_pub key_pub
+  validate_domain "$domain" || return 1
+  [[ -s "$SBM_CERTS/$domain/fullchain.pem" && -s "$SBM_CERTS/$domain/key.pem" ]] || return 1
+  openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkend 0 >/dev/null 2>&1 || return 1
+  openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -noout -checkhost "$domain" >/dev/null 2>&1 || return 1
+  cert_pub=$(openssl x509 -in "$SBM_CERTS/$domain/fullchain.pem" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum) || return 1
+  key_pub=$(openssl pkey -in "$SBM_CERTS/$domain/key.pem" -pubout -outform DER | sha256sum) || return 1
+  [[ "$cert_pub" == "$key_pub" ]]
+}
+
+# Reuse from the node-add transaction without taking the manager lock again.
+_cert_prepare_node_domain() {
+  local domain=$1 zone email
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'DNS 和证书申请不支持 --dry-run。'
+  validate_domain "$domain" || { log_error "无效域名：$domain"; return 1; }
+  if cert_usable "$domain"; then log_info "复用现有证书：$domain"; return 0; fi
+  cert_load_cloudflare_env || return 1
+  email=$(jq -r '.settings.acme_email // ""' "$SBM_STATE") || return 1
+  [[ -n "$email" ]] || { log_error '请先用 sb cert setup-cloudflare 配置 ACME 邮箱。'; return 1; }
+  acme_install "$email" || return 1
+  zone=$(cloudflare_dns_zone "$domain") || return 1
+  cloudflare_dns_prepare "$domain" "$zone" || return 1
+  _cert_issue "$domain" "$email" "$zone" || return 1
+  cert_usable "$domain"
+}
+cert_prepare_node_domain() { with_state_transaction cert-node-domain _cert_prepare_node_domain "$@"; }
 
 cert_hook() {
   local domain=$1 dir cert_pub key_pub
@@ -155,12 +186,13 @@ _cert_record_state() {
 }
 
 _cert_issue() {
-  local domain=$1 email=${2:-} dir reloadcmd
+  local domain=$1 email=${2:-} zone=${3:-} dir reloadcmd
   validate_domain "$domain" || die "无效域名：$domain"
   [[ -n "$email" ]] || email=$(jq -r '.settings.acme_email // ""' "$SBM_STATE")
-  acme_install "$email"
-  cert_load_cloudflare_env
-  acme_migrate_legacy_home
+  acme_install "$email" || return 1
+  cert_load_cloudflare_env || return 1
+  [[ -z "$zone" ]] || export CF_Zone_ID="$zone"
+  acme_migrate_legacy_home || return 1
   dir="$SBM_CERTS/$domain"; mkdir -p "$dir"; chmod 0750 "$dir"
   log_info "使用 Cloudflare DNS-01 为 $domain 签发 ECDSA 证书…"
   acme_run_timed "为 $domain 签发证书" "$SBM_ACME_ISSUE_TIMEOUT" '0 2' \

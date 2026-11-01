@@ -739,6 +739,9 @@ _state_transaction_run() {
     rc=$?
   fi
   log_error "操作 $reason 失败，正在恢复完整状态。"
+  if [[ -s "$backup/cloudflare-dns.json" ]] && declare -F cloudflare_dns_rollback >/dev/null 2>&1; then
+    cloudflare_dns_rollback "$backup" || log_error 'Cloudflare DNS 清理失败；本地状态仍会回滚，请核对上方记录日志。'
+  fi
   snapshot_restore "$backup" || log_error "自动恢复未完成，请检查快照：$backup"
   if declare -F tunnel_reconcile_after_rollback >/dev/null 2>&1; then
     tunnel_reconcile_after_rollback || log_error "Tunnel 回滚后协调失败，请运行 sb doctor。"

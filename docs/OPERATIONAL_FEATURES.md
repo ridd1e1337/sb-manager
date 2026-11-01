@@ -14,6 +14,41 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 认证代理向导按监听地址建议客户端地址：本机监听保留 loopback，公网监听
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
 
+## 节点域名与证书自动准备（alpha.52）
+
+添加 AnyTLS、Hysteria2、Trojan、TUIC、Naive 或 VLESS TLS 节点时，输入
+Cloudflare 托管的域名即可。已有有效且私钥匹配的证书会直接复用；缺少可用
+证书时，管理器查询域名所属的有效区域，探测本机公网 IPv4/IPv6，为探测到
+的地址创建 A/AAAA 记录（`proxied:false`、自动 TTL），然后用 acme.sh 的
+Cloudflare DNS-01 签发并部署证书。DNS-01 通过 TXT 记录验证域名，不要求
+开放 80 端口，也不依赖新 A/AAAA 记录的缓存刷新；客户端连接仍需等待 DNS 生效。
+
+首次在向导填写 Cloudflare API Token 和 ACME 邮箱，之后复用保存的凭据。
+Token 需包含目标区域的 `Zone:Read` 和 `DNS:Edit`；Zone ID 可留空自动查询。
+已配置 Zone ID 时，域名必须属于该区域。命令行可先保存凭据，再创建节点：
+
+```bash
+sb cert setup-cloudflare
+sb node add anytls --id edge --domain edge.example.com
+```
+
+同域名的已有 A/AAAA 只有在指向探测到的本机 IP 且关闭橙云时才复用。
+遇到其他地址、橙云、CNAME 或 NS 记录时停止操作，请为节点使用独立子域名，
+或在 Cloudflare 控制台先修正记录。不会自动覆盖网站或 Tunnel 的 DNS。
+已有证书复用时不改 DNS；`--disabled` 创建停用节点时不准备 DNS/证书；
+Reality、ShadowTLS 的握手域名和 VMess Tunnel 域名不走此流程。
+
+探测不到公网地址时可通过 `SBM_PUBLIC_IPV4` / `SBM_PUBLIC_IPV6` 显式提供地址；
+`SBM_DISABLE_IPV6_DETECTION=1` 可只准备 IPv4，但若已有无法核对的 AAAA 则仍会
+拒绝继续。独立的 `sb cert issue DOMAIN` 和证书菜单只签发证书，保留手工
+DNS、转发入口和其他部署方式。
+
+DNS 请求与证书申请由管理器锁保护。本次新建记录带独立标记，先写事务日志，
+再调用 API；签发或后续本地事务失败时只尝试删除本次创建且未被改动的记录。
+清理失败会显示日志路径，需在 Cloudflare 控制台核对。向导先完成域名与证书
+准备，再继续填写节点参数；准备成功后取消创建节点会保留 DNS 和证书供复用。
+普通节点删除和本地备份恢复不会删除已成功创建的 Cloudflare 记录。
+
 ## 吞吐测速与对比
 
 目标需要运行自己的 iperf3 服务。管理器只启动客户端，默认测试 10 秒、单连接，
