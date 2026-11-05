@@ -20,6 +20,40 @@ vps_ufw_active() {
   command_exists ufw && LC_ALL=C ufw status 2>/dev/null | grep -Fx 'Status: active' >/dev/null
 }
 
+vps_init_supported() {
+  case "$1:$2" in debian:systemd|alpine:openrc) return 0;; *) return 1;; esac
+}
+
+vps_system_support() {
+  local distro backend
+  distro=$(dependency_distro)
+  backend=$(init_system 2>/dev/null || true)
+  printf '当前环境：%s / %s；包管理器分支：%s；服务管理：%s\n\n' \
+    "$(uname -s)" "$(uname -m)" "$distro" "${backend:-未检测到}"
+  cat <<'EOF_SYSTEMS'
+sing-box 安装与节点管理：
+  Debian / Ubuntu       apt      systemd
+  Alpine                apk      OpenRC
+  Fedora / Rocky / Alma  dnf/yum  systemd
+  Arch                  pacman   systemd
+  openSUSE              zypper   systemd
+
+新 VPS 一键初始化（Caddy + UFW + Fail2ban）：
+  Debian / Ubuntu + systemd、Alpine + OpenRC。
+  需要已配置的软件源提供三个组件；Alpine 需要 community 源。
+  其他发行版可使用节点管理，但此初始化入口暂不执行。
+
+Nginx / Caddy 网站共用 443：需要兼容的网站配置和 systemd/OpenRC 服务。
+Nginx stream 模块仅在 Debian/Ubuntu、Alpine 自动补装；其他系统需先安装匹配模块。
+BBR、流量计数等功能还取决于内核支持和主机权限；普通容器不等同于完整 VPS。
+EOF_SYSTEMS
+  if vps_init_supported "$distro" "$backend"; then
+    printf '\n当前环境符合新 VPS 初始化的系统范围；执行时仍会检查端口、组件和防火墙。\n'
+  else
+    printf '\n当前环境不在新 VPS 初始化范围内；查看此说明不会安装软件或修改系统。\n'
+  fi
+}
+
 vps_init_plan() {
   printf '新 VPS 初始化：安装并启用 Caddy、UFW、Fail2ban。\n'
   printf '  入站放行：22/TCP、80/TCP、443/TCP、443/UDP。\n'
@@ -214,7 +248,7 @@ _vps_init() (
   require_init_system || return 1
   backend=$(init_system) || return 1
   distro=$(dependency_distro) || return 1
-  case "$distro:$backend" in debian:systemd|alpine:openrc) ;; *) log_error '新 VPS 初始化目前支持 Debian/Ubuntu systemd 与 Alpine OpenRC。'; return 1;; esac
+  vps_init_supported "$distro" "$backend" || { log_error '新 VPS 初始化目前支持 Debian/Ubuntu systemd 与 Alpine OpenRC；sb vps systems 可查看各功能的系统范围。'; return 1; }
   if service_active firewalld.service; then log_error 'firewalld 正在运行，不能同时启用 UFW。'; return 1; fi
   dependency_require_feature probe || return 1
   ports=$(vps_ssh_ports) || return 1
@@ -275,13 +309,18 @@ vps_cli() {
   local action=${1:-status} dry_run=${SBM_DRY_RUN:-0} json=${SBM_OUTPUT_JSON:-0}
   (($# == 0)) || shift
   while (($#)); do
-    case "$1" in --dry-run) dry_run=1;; --json) json=1;; --yes|-y) ;; *) usage_die '用法：sb vps init [--dry-run] | status [--json]';; esac
+    case "$1" in --dry-run) dry_run=1;; --json) json=1;; --yes|-y) ;; *) usage_die '用法：sb vps init [--dry-run] | status [--json] | systems';; esac
     shift
   done
+  if [[ "$action" == systems ]]; then
+    [[ "$json" == 0 ]] || usage_die '系统支持说明不接受 --json。'
+    vps_system_support
+    return
+  fi
   require_root; require_command jq
   case "$action" in
     init) [[ "$json" == 0 ]] || usage_die '初始化不接受 --json。'; vps_init "$dry_run";;
     status) vps_init_status "$json";;
-    *) usage_die '用法：sb vps init [--dry-run] | status [--json]';;
+    *) usage_die '用法：sb vps init [--dry-run] | status [--json] | systems';;
   esac
 }

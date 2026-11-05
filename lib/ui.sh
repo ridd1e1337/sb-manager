@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -230,7 +230,7 @@ ui_proxy_address_default() {
   esac
 }
 ui_header() {
-  local service_state enabled mux_state traffic_count notify_state health_state
+  local service_state enabled mux_state traffic_count notify_state health_state tunnel_state
   ui_clear
   enabled=$(state_enabled_count)
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then
@@ -245,13 +245,14 @@ ui_header() {
   printf '%s╭──────────────────── sb-manager ────────────────────╮%s\n' "$C_CYAN" "$C_RESET"
   printf '  版本 %-18s sing-box %-16s\n' "$SBM_VERSION" "$(core_current_version || echo '-')"
   printf '  服务管理 %-16s\n' "$(init_system_label)"
-  printf '  服务 %-18s Tunnel %-18s\n' "$service_state" "$(jq -r '.tunnel.mode' "$SBM_STATE")"
-  mux_state=$(jq -r 'if .nginx_stream.enabled then ((.nginx_stream.port|tostring) + "/TCP") else "off" end' "$SBM_STATE")
-  printf '  TCP/SNI 复用 %-36s\n' "$mux_state"
+  tunnel_state=$(jq -r '.tunnel.mode | if .=="none" then "未启用" elif .=="quick" then "临时域名" elif .=="fixed" then "固定域名" else "多域名路由" end' "$SBM_STATE")
+  printf '  sing-box %-14s CF Tunnel %-18s\n' "$service_state" "$tunnel_state"
+  mux_state=$(jq -r 'if .nginx_stream.enabled then ((.nginx_stream.port|tostring) + "/TCP") else "未启用" end' "$SBM_STATE")
+  printf '  TCP 端口共用 %-36s\n' "$mux_state"
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
   printf '  流量控制 %-36s\n' "${traffic_count} 个节点"
-  notify_state=$(jq -r 'if .notifications.enabled then .notifications.provider else "off" end' "$SBM_STATE")
-  health_state=$(jq -r 'if .health.enabled then "on" else "off" end' "$SBM_STATE")
+  notify_state=$(jq -r 'if .notifications.enabled then .notifications.provider else "未启用" end' "$SBM_STATE")
+  health_state=$(jq -r 'if .health.enabled then "已启用" else "未启用" end' "$SBM_STATE")
   printf '  通知 %-18s 健康检查 %-16s\n' "$notify_state" "$health_state"
   printf '%s╰─────────────────────────────────────────────────────╯%s\n\n' "$C_CYAN" "$C_RESET"
 }
@@ -431,7 +432,9 @@ ui_node_finish_menu() {
   node=$(state_get_node "$id")
   [[ -n "$node" ]] || { ui_page_back; return; }
   printf '\n%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
-  printf '1. 再次显示链接和二维码\n2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址（所有启用节点）\n4. 管理这个节点\n5. 查看防火墙与协议端口\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == snell ]]; then printf '1. 再次显示 Surge 原生配置（多用户则使用 sing-box）\n'
+  else printf '1. 再次显示节点分享链接和二维码\n'; fi
+  printf '2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址（所有启用节点）\n4. 管理这个节点\n5. VPS 运维：查看防火墙与协议端口\n'
   if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
   printf '0. 返回主菜单\n'
   ui_menu_choice choice '下一步' "$max_choice"
@@ -455,7 +458,7 @@ ui_node_finish_menu() {
 }
 
 ui_add_node_and_deliver() {
-  local type=$1 id node kind
+  local type=$1 id node kind public_node
   shift
   id="${type}-$(random_hex 4)"
   node_add "$type" --id "$id" "$@"
@@ -464,14 +467,17 @@ ui_add_node_and_deliver() {
   if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then
     printf '下一步请在 Cloudflare Tunnel 菜单关联这个节点，再获取公网分享链接。\n'
   else
+    public_node=$(nginx_stream_public_node "$node")
     if [[ $(jq -r '.listen' <<<"$node") == 127.0.0.1 || $(jq -r '.listen' <<<"$node") == ::1 ]]; then
       printf '该入口只监听本机；远程使用需要 SSH/VPN 等受保护通道。\n'
     else
       while IFS= read -r kind; do
-        printf '公网连接需要放行 %s/%s（云安全组和主机防火墙）。\n' "$(jq -r '.port' <<<"$node")" "${kind^^}"
+        printf '公网连接需要放行 %s/%s（云安全组和主机防火墙）。\n' "$(jq -r '.port' <<<"$public_node")" "${kind^^}"
       done < <(node_transport_kinds "$node")
     fi
-    printf '客户端可从剪贴板导入下面的分享链接，或扫描二维码。\n'
+    if [[ $(jq -r '.protocol' <<<"$node") == snell ]]; then
+      printf '下面优先显示可复制的 Surge 原生 Snell 配置。\n'
+    else printf '客户端可从剪贴板导入下面的分享链接，或扫描二维码。\n'; fi
     ui_run node_share "$id" 1
     if [[ "$SBM_UI_LAST_STATUS" != 0 ]]; then
       log_warn "节点 $id 已保留；导出未完成，可在下面重试或管理节点，无需重复创建。"
@@ -640,7 +646,7 @@ ui_manage_nodes() {
   state_node_exists "$id" || { ui_page_back; return; }
   node=$(state_get_node "$id")
   node_show "$id"
-  printf '\n1. 显示分享链接\n2. 启用\n3. 停用\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n0. 返回\n'
+  printf '\n1. 显示导入内容（Snell 优先 Surge 原生配置）\n2. 启用节点\n3. 停用节点\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据（使旧凭据失效）\n9. 删除节点\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n0. 返回\n'
   ui_menu_choice action '选择操作' 11
   case "$action" in
     1) node_share "$id" 1;; 2) node_enable "$id";; 3) node_disable "$id";;
@@ -664,6 +670,7 @@ ui_manage_nodes() {
 
 ui_share_export_menu() {
   local id
+  printf '选择单个节点或全部节点。Snell 会优先显示 Surge 原生配置，其他协议显示分享链接。\n'
   ui_select_node id 1 || { ui_page_back; return; }
   if [[ "$id" == all ]]; then
     node_share_all
@@ -675,7 +682,8 @@ ui_share_export_menu() {
 
 ui_client_export_menu() {
   local mode_choice mode output dns_mode dns_address
-  printf '1. 导出 mixed 客户端配置\n2. 导出 TUN 客户端配置\n0. 返回\n'
+  printf '生成导入 sing-box 客户端的完整配置文件，包含节点、DNS 和入口设置。\n'
+  printf '1. 本机代理模式（mixed：浏览器/应用连接本地 SOCKS/HTTP 端口）\n2. 虚拟网卡模式（TUN：接管客户端设备流量，通常需要管理员权限）\n0. 返回\n'
   ui_menu_choice mode_choice '选择客户端配置模式' 2
   case "$mode_choice" in
     1) mode=mixed; output="$SBM_EXPORTS/client-mixed.json";;
@@ -696,7 +704,8 @@ ui_client_export_menu() {
 
 ui_cert_menu() {
   local c token zone email domain
-  printf '1. 查看证书\n2. 配置 Cloudflare DNS API\n3. 签发/续发域名证书\n4. 立即执行全部续签检查\n5. 查看证书详情\n0. 返回\n'
+  printf 'TLS 证书用于节点加密和身份验证；域名由 Cloudflare 托管时可自动申请。\n'
+  printf '1. 查看域名证书与到期时间\n2. 配置 Cloudflare DNS API Token（申请证书所需凭据）\n3. 签发/续发域名证书\n4. 立即执行全部续签检查\n5. 查看证书详情\n0. 返回\n'
   ui_menu_choice c '选择操作' 5
   case "$c" in
     1) cert_list;;
@@ -709,14 +718,16 @@ ui_cert_menu() {
 
 ui_tunnel_menu() {
   local c id=${1:-} domain address
-  printf '1. 查看 Tunnel 状态\n2. 安装/更新 cloudflared\n3. 配置固定 Tunnel\n4. 启动 Quick Tunnel\n5. 刷新 Quick Tunnel 域名\n6. 更换固定 Tunnel Token\n7. 停止 Tunnel\n8. 多域名/路径路由管理\n0. 返回\n'
+  printf 'CF Tunnel（Cloudflare 隧道）：通过 Cloudflare 域名访问本机 VMess-WebSocket 或 HTTP 服务。\n'
+  printf '固定隧道需要 Cloudflare 账号和域名；Quick Tunnel 使用临时域名，重启后可能变化。\n'
+  printf '1. 查看 CF Tunnel 连接状态\n2. 安装/更新隧道程序 cloudflared\n3. 绑定固定隧道（自己的域名 + Tunnel Token）\n4. 创建临时隧道（Quick Tunnel，无需自己的域名）\n5. 更新临时隧道域名\n6. 更换 Cloudflare 隧道令牌\n7. 停止 CF Tunnel 服务\n8. 配置多域名/路径转发到本机 HTTP 服务\n0. 返回\n'
   ui_menu_choice c '选择操作' 8
   case "$c" in
     1) tunnel_status;;
     2) cloudflared_install;;
-    3) [[ -n "$id" ]] || ui_select_node id || { ui_cancel; return; }; prompt_value domain 'Tunnel 公网域名' ''; prompt_value address '客户端 add 地址' "$domain"; tunnel_setup_fixed "$id" "$domain" '' "$address";;
+    3) [[ -n "$id" ]] || ui_select_node id || { ui_cancel; return; }; prompt_value domain 'Cloudflare 隧道公网域名' ''; prompt_value address '客户端连接地址（域名或 IP）' "$domain"; tunnel_setup_fixed "$id" "$domain" '' "$address";;
     4) [[ -n "$id" ]] || ui_select_node id || { ui_cancel; return; }; tunnel_setup_quick "$id";;
-    5) tunnel_refresh_quick;; 6) tunnel_set_token;; 7) confirm '停止 Tunnel？' N && tunnel_stop;;
+    5) tunnel_refresh_quick;; 6) tunnel_set_token;; 7) confirm '停止 CF Tunnel？' N && tunnel_stop;;
     8) ui_open_submenu ui_tunnel_routes_menu;;
   esac
 }
@@ -756,6 +767,8 @@ ui_manager_auto_menu() {
 
 ui_api_menu() {
   local c port dashboard path command
+  printf 'sing-box API 是本机控制接口，Dashboard 是网页仪表盘；一般使用节点无需开启。\n'
+  printf '仅监听本机，远程访问通过 SSH 转发；API 令牌具有控制权限。\n'
   api_status
   printf '\n1. 启用 API\n2. 启用 API + Dashboard\n3. 停用 API/Dashboard\n4. 显示 API 令牌\n5. 查看 API 服务状态\n6. 查看 API outbounds\n7. 导出 sing-box JSON Schema\n0. 返回\n'
   ui_menu_choice c '选择操作' 7
@@ -775,6 +788,7 @@ ui_api_menu() {
 
 ui_realm_menu() {
   local c port url listen domain max token
+  printf 'Hysteria Realm 为 Hysteria2 提供 UDP 打洞协调；普通公网 VPS 直连节点通常无需开启。\n'
   realm_status
   printf '\n1. 启用/配置 Hysteria Realm\n2. 停用 Hysteria Realm\n3. 显示 Realm token\n4. 查看 Realm 配置 JSON\n0. 返回\n'
   ui_menu_choice c '选择操作' 4
@@ -856,14 +870,16 @@ ui_mux_auto_menu() {
   port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
   prompt_value port '公网端口' "$port"
   backend=$(mux_backend)
-  printf '方式：%s；不会修改现有网站。\n' "$(mux_backend_label)"
+  printf '当前方式：%s；已接入的网站会同步更新分流规则。\n' "$(mux_backend_label)"
   mux_auto_configure "$ids" "$port" "$backend"
 }
 
 ui_nginx_stream_menu() {
   local c id sni backend port node engine_choice
   nginx_stream_status
-  printf '不同节点需使用不同 SNI；证书验证保持开启，UDP 节点仍使用独立监听。\n'
+  printf '多个 TCP/TLS 节点按域名（SNI）共用一个公网端口；不同节点需使用不同域名。\n'
+  printf '443 已有 Nginx/Caddy 网站：选择 8 自动接入；没有网站：选择 1 配置节点共用端口。\n'
+  printf 'UDP/QUIC 不使用这套 TCP 分流；网站的 HTTP/3 也可能占用 UDP/443。\n'
   printf '\n1. 一键配置多个节点并启用 TCP/443 复用\n2. 添加单条 SNI 路由\n3. 删除 SNI 路由\n4. 启用 TCP 端口复用\n5. 停用复用，恢复独立端口\n6. 查看路由\n7. 切换复用方式\n8. 一键接入现有 Nginx/Caddy 网站并自动同步\n9. 恢复接入前的网站配置\n0. 返回\n'
   ui_menu_choice c '选择操作' 9
   case "$c" in
@@ -898,17 +914,15 @@ ui_nginx_stream_menu() {
 
 ui_settings_menu() {
   local c v
-  printf '1. 设置默认服务器地址\n2. 修改日志级别\n3. TCP/443 多协议复用（内置 / Nginx）\n4. 出站 IP 优先级\n5. 配置校验与差异预览\n6. sing-box 1.14 DNS 优化\n7. 一键开启/恢复 BBR\n8. Hysteria2 UDP 缓冲区优化\n9. 按带宽/延迟优化 TCP\n0. 返回\n'; ui_menu_choice c '选择操作' 9
+  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 15。\n'
+  printf '1. 默认客户端连接地址（域名或 IP）\n2. 日志详细程度（排查连接问题）\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n0. 返回\n'
+  ui_menu_choice c '选择设置' 5
   case "$c" in
     1) prompt_value v '域名或 IP' "$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")"; settings_set_default_address "$v";;
     2) prompt_value v '日志级别 (trace/debug/info/warn/error/fatal/panic)' "$(jq -r '.settings.log_level' "$SBM_STATE")"; settings_set_log_level "$v";;
-    3) ui_open_submenu ui_nginx_stream_menu;;
-    4) ui_open_submenu ui_outbound_menu;;
-    5) ui_open_submenu ui_config_menu;;
-    6) ui_open_submenu ui_dns_menu;;
-    7) ui_open_submenu ui_bbr_menu;;
-    8) ui_open_submenu ui_hy2_buffer_menu;;
-    9) ui_open_submenu ui_tcp_tuning_menu;;
+    3) ui_open_submenu ui_outbound_menu;;
+    4) ui_open_submenu ui_config_menu;;
+    5) ui_open_submenu ui_dns_menu;;
   esac
 }
 
@@ -928,7 +942,8 @@ ui_config_menu() {
 
 ui_dns_menu() {
   local c value
-  printf '1. 查看 DNS 1.14 设置\n2. 开启 optimistic DNS\n3. 关闭 optimistic DNS\n4. 设置 optimistic 缓存窗口\n5. 设置 DNS 查询超时\n0. 返回\n'
+  printf '乐观 DNS 缓存会先复用过期结果并后台刷新，可减少等待；需要 sing-box 1.14+。\n'
+  printf '1. 查看 DNS 缓存与超时设置\n2. 开启乐观 DNS 缓存（optimistic DNS）\n3. 关闭乐观 DNS 缓存\n4. 设置过期结果可复用时长\n5. 设置 DNS 查询超时\n0. 返回\n'
   ui_menu_choice c '选择操作' 5
   case "$c" in
     1) settings_show_addresses 1 | jq '{dns_optimistic,dns_optimistic_timeout,dns_timeout}';;
@@ -987,7 +1002,8 @@ ui_template_menu() {
 
 ui_firewall_menu() {
   local c
-  printf '1. 查看防火墙组件状态\n2. 查看所有协议端口\n3. 备份并清理 iptables 入站全局禁止\n4. 按所有启用协议端口执行 UFW allow\n5. 安装并启用 Fail2ban（自动探测 SSH，3分钟/5次/永久封禁）\n6. 安装并启用 UFW（安全向导：实际 SSH、22/80/443 及协议端口）\n7. 仅预览 UFW 变更\n0. 返回\n'
+  printf 'UFW 管理端口放行；Fail2ban 根据 SSH 登录失败日志封禁来源 IP。\n'
+  printf '1. 查看 UFW/Fail2ban 状态\n2. 查看所有协议端口\n3. 备份并清理 iptables 入站全局禁止\n4. 按所有启用协议端口执行 UFW allow\n5. 安装并启用 Fail2ban（自动探测 SSH，3分钟/5次/永久封禁）\n6. 安装并启用 UFW（安全向导：实际 SSH、22/80/443 及协议端口）\n7. 仅预览 UFW 变更\n0. 返回\n'
   ui_menu_choice c '选择操作' 7
   case "$c" in
     1) firewall_status ;;
@@ -1005,6 +1021,34 @@ ui_firewall_menu() {
 }
 
 ui_vps_menu() {
+  local choice
+  printf 'VPS 与网站运维：集中管理主机基础环境、防火墙、SSH 防护、网站入口和网络调优。\n'
+  printf '1. 新 VPS 一键初始化（安装 Caddy、UFW、Fail2ban）\n2. 查看基础环境状态（Caddy / UFW / SSH 防护）\n3. 防火墙与 SSH 防护（UFW 放行端口 / Fail2ban）\n4. 网站与节点共用 443（Nginx / Caddy / 多节点分流）\n5. 网络性能与调优（BBR / TCP / QUIC 缓冲 / 测速）\n6. 支持的 Linux 系统与当前环境\n0. 返回\n'
+  ui_menu_choice choice '选择服务器功能' 6
+  case "$choice" in
+    1) ui_open_submenu ui_vps_init_menu;;
+    2) vps_init_status;;
+    3) ui_open_submenu ui_firewall_menu;;
+    4) ui_open_submenu ui_nginx_stream_menu;;
+    5) ui_open_submenu ui_vps_network_menu;;
+    6) vps_system_support;;
+  esac
+}
+
+ui_vps_network_menu() {
+  local choice
+  printf '网络调优会修改主机参数，请按线路与内存选择；效果取决于内核、网络和对端。\n'
+  printf '1. BBR 拥塞控制（TCP 发送策略，可恢复）\n2. 按带宽和延迟调整 TCP 缓冲区（可恢复）\n3. Hysteria2 / QUIC 的 UDP 缓冲区（可恢复）\n4. iperf3 吞吐测速与记录对比（需要对端测速服务）\n0. 返回\n'
+  ui_menu_choice choice '选择网络功能' 4
+  case "$choice" in
+    1) ui_open_submenu ui_bbr_menu;;
+    2) ui_open_submenu ui_tcp_tuning_menu;;
+    3) ui_open_submenu ui_hy2_buffer_menu;;
+    4) ui_open_submenu ui_network_benchmark_menu;;
+  esac
+}
+
+ui_vps_init_menu() {
   local choice
   printf '为新 VPS 准备 Caddy、UFW 和 Fail2ban；执行后自动启用基础防护。\n'
   printf '1. 一键初始化\n2. 查看组件状态\n3. 预览初始化内容\n0. 返回\n'
@@ -1167,10 +1211,66 @@ ui_tunnel_routes_menu() {
   esac
 }
 
+ui_substore_guide() {
+  cat <<'EOF_GUIDE'
+Sub-Store 是订阅整理工具：把本机、其他 VPS 或已有订阅里的节点合并成一份，
+再按 Surge、mihomo/Clash 或 sing-box 等客户端格式导出。还可以在网页里改名、
+筛选和分组。它不会创建代理线路，也不会让客户端支持原本不支持的协议。
+只想用一个节点时，直接用主菜单 4 的分享内容即可；管理多份订阅时再用这里。
+
+第一次使用（菜单 11 可自动完成前两步）：
+  1. 安装并启用 Sub-Store。它默认只监听本机，通常使用 3001 端口。
+  2. 接入本机节点。会创建 sb-manager 来源，并加入 sb-manager-all 组合。
+  3. 选择“打开网页”，在自己的电脑上建立 SSH 转发，再打开浏览器地址。
+     服务器只需要现有 SSH 端口，无需为 3001 开放 UFW。
+  4. 在网页中打开 sb-manager-all 组合，选择你的客户端格式并导出/复制内容，
+     然后导入客户端。Snell 单用户选择 Surge；多用户 Snell 请用主菜单 5 直接导出。
+  5. 要合并其他 VPS，选择“其他服务器来源”，填入那台服务器的动态订阅地址。
+     来源机不必安装 Sub-Store，只需提供中心机可访问的订阅 URL。
+
+“来源”是一份输入订阅；“组合”把多份来源放在一起；“动态订阅”在客户端刷新
+时获取最新节点。节点修改不会主动推送到客户端，仍需刷新订阅。
+SSH 转发只在连接保持期间可用。手机长期刷新订阅时，需要已有的 HTTPS 或
+CF Tunnel 入口；localhost 地址不能直接当作公网订阅使用。
+访问地址和订阅 URL 含凭据，请妥善保存，分享前不要泄露后端访问路径。
+EOF_GUIDE
+}
+
+ui_substore_access() {
+  local port ssh_port=''
+  [[ -f "$SBM_SUBSTORE_SECRET" ]] || { log_warn '请先选择“首次设置”安装 Sub-Store。'; return; }
+  port=$(jq -r '.substore.port // 3001' "$SBM_STATE")
+  [[ -z ${SSH_CONNECTION:-} ]] || ssh_port=$(awk '{print $4}' <<<"$SSH_CONNECTION")
+  if ! validate_port "$ssh_port"; then ssh_port=$(firewall_ssh_ports_or_default | sed -n '1p'); fi
+  printf '在你自己的电脑上运行下面的命令，填写用户名、服务器 IP 和实际 SSH 端口；保持该连接：\n'
+  printf 'ssh -N -L %s:127.0.0.1:%s -p %s USER@YOUR_VPS_IP\n\n' "$port" "$port" "$ssh_port"
+  printf '随后在电脑浏览器中打开前端地址；网页需要后端地址时填写下方后端地址。\n'
+  substore_cli access
+  printf '\n当前仅提供本机访问地址。需要公网订阅时，请为 Sub-Store 单独配置 HTTPS/CF Tunnel 入口。\n'
+}
+
+ui_substore_onboard() {
+  local port
+  [[ ${SBM_DRY_RUN:-0} == 0 ]] || usage_die 'Sub-Store 首次设置不接受 --dry-run。'
+  if [[ ! -f "$SBM_SUBSTORE_DIR/app/manifest.json" ]]; then
+    port=$(jq -r '.substore.port // 3001' "$SBM_STATE")
+    prompt_value port 'Sub-Store 本机端口（无需在 UFW 放行）' "$port"
+    substore_cli install --port "$port"
+  elif [[ $(jq -r '.substore.enabled // false' "$SBM_STATE") != true ]]; then
+    substore_cli enable
+  fi
+  substore_cli sync sb-manager
+  printf '\n本机节点已加入 sb-manager-all 组合；以后节点变化会随订阅刷新生效。\n'
+  ui_substore_access
+  printf '进入网页后：打开 sb-manager-all 组合 → 选择客户端格式 → 导出并导入客户端。\n'
+}
+
 ui_substore_menu() {
   local c port version frontend file name current current_frontend
-  printf '1. 查看状态\n2. 安装/升级 Sub-Store\n3. 启用\n4. 停用\n5. 查看本机访问地址\n6. 接入本机节点（自动更新）\n7. 备份 Sub-Store\n8. 恢复 Sub-Store\n9. 其他服务器来源与自动合并\n10. 本机动态订阅地址管理\n0. 返回\n'
-  ui_menu_choice c '选择操作' 10
+  printf 'Sub-Store 用来合并订阅、整理节点和转换客户端格式；不使用它也能直接导入节点。\n'
+  printf '新手先选 12 看说明，或选 11 完成安装和本机节点接入。\n'
+  printf '1. 查看 Sub-Store 安装与运行状态\n2. 安装/升级 Sub-Store 网页和后端\n3. 启动订阅管理服务\n4. 停止订阅管理服务（保留数据）\n5. 打开管理网页（SSH 转发方法与访问地址）\n6. 将本机节点接入订阅组合（持续更新）\n7. 备份订阅来源和处理规则\n8. 恢复 Sub-Store 数据\n9. 接入其他 VPS/订阅并合并来源\n10. 管理本机动态订阅 URL（生成、查看、撤销）\n11. 首次设置：安装 + 接入本机节点 + 显示访问方法\n12. 使用指南：用途、来源、组合和客户端导入\n0. 返回\n'
+  ui_menu_choice c '选择订阅管理操作' 12
   case "$c" in
     1) jq -r '(.substore // {enabled:false,port:3001,version:"",frontend_version:""})|"Sub-Store：\(if .version=="" then "未安装" elif .enabled then "已启用" else "已停用" end)；本机端口：\(.port)","后端版本：\(.version)；前端版本：\(.frontend_version)"' "$SBM_STATE";;
     2)
@@ -1179,18 +1279,21 @@ ui_substore_menu() {
       prompt_value port '本机端口' "$port"
       prompt_value version "后端版本（当前 $current）" 'latest'; prompt_value frontend "前端版本（当前 $current_frontend）" 'latest'
       substore_cli install --port "$port" --version "$version" --frontend-version "$frontend";;
-    3) substore_cli enable;; 4) substore_cli disable;; 5) substore_cli access;;
+    3) substore_cli enable;; 4) substore_cli disable;; 5) ui_substore_access;;
     6) prompt_value name 'Sub-Store 来源名称' 'sb-manager'; substore_cli sync "$name";;
     7) prompt_value file '备份文件路径' "$SBM_BACKUPS/substore-$(now_stamp).tar.gz"; substore_cli backup "$file";;
     8) prompt_value file '备份文件路径' ''; confirm '恢复会覆盖 Sub-Store 当前数据，继续？' N && substore_cli restore "$file";;
     9) ui_open_submenu ui_substore_sources_menu;;
     10) ui_open_submenu ui_subscription_menu;;
+    11) ui_substore_onboard;;
+    12) ui_open_submenu ui_substore_guide;;
   esac
 }
 
 ui_substore_sources_menu() {
   local c name url collection items
-  printf '1. 查看来源与组合\n2. 添加/更新服务器来源（自动加入组合）\n3. 测试来源拉取\n4. 移除来源\n0. 返回\n'
+  printf '把其他 VPS 的订阅 URL 作为“来源”加入本机“组合”，即可在客户端用一份订阅管理。\n'
+  printf '1. 查看已接入来源及所属组合\n2. 添加/更新远程订阅来源（自动加入组合）\n3. 检查来源是否可访问并解析节点\n4. 移除来源（不删除远程节点）\n0. 返回\n'
   ui_menu_choice c '选择操作' 4
   case "$c" in
     1) substore_cli source list;;
@@ -1230,6 +1333,34 @@ ui_subscription_menu() {
   esac
 }
 
+ui_main_options() {
+  cat <<'EOF_MENU'
+节点与客户端
+ 1. 运行状态（服务、节点与用量）
+ 2. 添加代理节点（选择协议、准备证书）
+ 3. 管理节点（修改、启停、删除、轮换凭据）
+ 4. 节点分享与导出（链接 / Snell Surge 原生格式）
+ 5. 完整 sing-box 客户端配置（本机代理 / TUN 虚拟网卡）
+ 6. TLS 域名证书（Cloudflare DNS 申请、续签）
+ 7. CF Tunnel（Cloudflare 隧道与域名转发）
+维护与扩展
+ 8. 更新管理器与核心（sing-box / cloudflared / acme.sh）
+ 9. sing-box API 与网页仪表盘（本机控制接口）
+10. Hysteria Realm（Hysteria2 UDP 打洞协调）
+11. 运行日志（sing-box 与 CF Tunnel）
+12. 故障诊断与修复（服务、配置、网络）
+13. 备份与恢复（节点、凭据和证书）
+14. sing-box 设置（连接地址、日志、DNS）
+15. VPS 与网站运维（初始化 / UFW / Fail2ban / Nginx / Caddy）
+16. 节点流量与限速（月配额、速率、共享额度）
+17. 通知与健康监控（流量提醒、资源告警）
+18. 节点模板与批量操作（按地区、标签管理）
+19. 卸载管理器（可选保留或清除数据）
+20. Sub-Store 订阅管理（合并节点、转换客户端格式、使用指南）
+ 0. 退出面板
+EOF_MENU
+}
+
 ui_main() {
   [[ -t 0 ]] || { sb_help; return; }
   local choice page
@@ -1242,7 +1373,7 @@ ui_main() {
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
       printf '还没有节点：输入 2 开始创建。\n'
     fi
-    printf '1. 状态\n2. 添加节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n21. 新 VPS 初始化\n0. 退出\n\n'
+    ui_main_options
     # Stay at the root on empty input without reopening a page or redrawing
     # the entire menu for every buffered Enter key.
     while true; do
@@ -1258,10 +1389,10 @@ ui_main() {
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
       11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;
-      14) page=ui_settings_menu;; 15) page=ui_firewall_menu;; 16) page=ui_traffic_menu;;
+      14) page=ui_settings_menu;; 15) page=ui_vps_menu;; 16) page=ui_traffic_menu;;
       17) page=ui_notification_health_menu;; 18) page=ui_template_menu;;
       19) page=ui_uninstall_menu;; 20) page=ui_substore_menu;;
-      21) page=ui_vps_menu;;
+      21) page=ui_vps_menu;; # compatibility with the previous VPS shortcut
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

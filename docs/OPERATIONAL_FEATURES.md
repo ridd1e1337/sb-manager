@@ -9,10 +9,39 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 或空输入时按 `Ctrl-D` 退出；普通配置输入中 `q` 取消。编辑字段时 Enter 保留
 显示值；组成员支持逗号分隔的编号或 ID，重复成员自动去重，输入 `k` 保留已有
 成员。网卡会标出已配置网卡或默认路由网卡供选择。测速对比第二次仅列出同条件
-记录。Tunnel 路由路径可输入 `-` 清空，Sub-Store 升级保留现有端口并显示当前组件版本。
+记录。CF Tunnel 路由路径可输入 `-` 清空，Sub-Store 升级保留现有端口并显示当前组件版本。
 
 认证代理向导按监听地址建议客户端地址：本机监听保留 loopback，公网监听
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
+
+从 alpha.57 起，主菜单按“功能名＋用途”展示；7 为 CF Tunnel（Cloudflare
+隧道），14 为 sing-box 设置，15 为 VPS 与网站运维，20 为 Sub-Store 订阅管理。
+VPS 分类集中提供初始化、基础环境状态、UFW/Fail2ban、Nginx/Caddy 共用 443、
+BBR/TCP/QUIC 网络调优、测速和系统支持说明。旧主菜单 21 仍可进入该分类。
+
+## 系统支持说明
+
+`sb vps systems` 显示当前内核架构、包管理器分支、服务管理器和功能范围，
+也可在“15. VPS 与网站运维 → 支持的 Linux 系统与当前环境”查看。
+此命令只显示信息，不需要 root，也不会创建状态、安装软件或更改服务。
+
+| 发行版 | 包管理器 | 常用服务管理器 | sing-box 安装与节点管理 | 新 VPS 整体初始化 |
+| --- | --- | --- | --- | --- |
+| Debian / Ubuntu | apt | systemd | 支持 | 支持 |
+| Alpine | apk | OpenRC | 支持 | 支持，需 community 源 |
+| Fedora / Rocky / Alma | dnf / yum | systemd | 支持 | 暂不提供 |
+| Arch | pacman | systemd | 支持 | 暂不提供 |
+| openSUSE | zypper | systemd | 支持 | 暂不提供 |
+
+系统必须实际运行 systemd 或 OpenRC，并有与架构匹配的 sing-box Release。
+可选组件使用已配置的发行版软件源；不会为了安装组件自动添加第三方源。
+网站共用 443 还要求兼容的 Nginx/Caddy 配置：Nginx stream 模块目前只在
+Debian/Ubuntu、Alpine 自动补装，其他系统需要先安装匹配的模块。
+内核 BBR、nftables 流量计数、tc 限速等取决于内核和权限，普通容器不视为完整 VPS。
+
+可选依赖按发行版映射：Fedora/Rocky/Alma 的 `ss` 使用 `iproute`、`tc` 使用
+`iproute-tc`；Arch 的 Sub-Store 使用 `nodejs` 和 `python`；Alpine 继续按需
+使用拆分的 `iproute2-ss`、`iproute2-tc`，保留 BusyBox/OpenRC 兼容。
 
 ## 新 VPS 初始化（alpha.56）
 
@@ -23,7 +52,7 @@ sb vps init
 sb vps status
 ```
 
-也可在首次安装时传入 `--init-vps`，或选择主菜单“21. 新 VPS 初始化”。
+也可在首次安装时传入 `--init-vps`，或选择“15. VPS 与网站运维 → 新 VPS 一键初始化”。
 支持 Debian/Ubuntu + systemd、Alpine + OpenRC，使用发行版已配置的签名软件源
 安装 Caddy、UFW、Fail2ban。Alpine 需要可用的 community 软件源；缺少包时会
 报错，不自动添加第三方源。新 VPS 的基础初始化与网站 443 共存接入是两个功能：
@@ -101,7 +130,7 @@ sb mux setup
 sb node add anytls --id any-main --domain node.example.com
 ```
 
-面板入口：“全局设置 → TCP/443 多协议复用 → 一键接入现有 Nginx/Caddy
+面板入口：“15. VPS 与网站运维 → 网站与节点共用 443 → 一键接入现有 Nginx/Caddy
 网站并自动同步”。自动接入后，全部启用的 AnyTLS、Trojan、VLESS TLS/Reality、
 Naive TCP、ShadowTLS 都按唯一 SNI 分流；添加、删除、启停、修改域名会自动更新
 网站入口。节点只监听本机，分享与订阅使用公网 443，UFW 无需额外放行。
@@ -271,7 +300,49 @@ sb tunnel route remove api
 末尾添加 404。调用 Cloudflared 校验 ingress，失败时恢复状态和原服务。
 既有 fixed/quick 模式保留，同一时间运行一个模式。
 
-面板：“Cloudflare Tunnel 管理 → 多域名/路径路由管理”。
+面板：“7. CF Tunnel → 配置多域名/路径转发到本机 HTTP 服务”。
+
+## Snell 分享与客户端导入
+
+`sb share NODE_ID` 和面板分享功能优先显示可复制的 Surge 原生配置，放入
+Surge 配置文件的 `[Proxy]` 段即可。单节点还保存 `surge.conf`；批量分享先显示
+全部可用 Snell 原生行，再显示其他协议链接，并保存 `snell-surge.conf`。
+这些文件与凭据一样按 0600 保存。
+
+服务端 v5 导出 Surge 兼容的 `version=4`，v6 需要支持 v6 的 Surge。
+sing-box 多用户 Snell 不兼容 Surge，不生成误导的原生行；请用主菜单 5 或
+节点菜单导出 sing-box 配置。Snell 分享页不再重复显示通用 URI 和二维码，
+程序使用的 `share.txt` / `links.txt`、sing-box JSON 和 Sub-Store 兼容订阅仍保留。
+此次调整不更改节点凭据或已有客户端连接。
+
+## Sub-Store 使用入门
+
+Sub-Store 是**订阅整理工具**。它把本机、其他 VPS 或已有订阅的节点整理成
+一份，可在网页里筛选、改名，再按 Surge、mihomo/Clash、sing-box 等客户端
+支持的格式导出。它不创建代理线路，也不会给客户端增加原本不支持的协议。
+只使用一个节点时直接导入分享内容即可，无需安装 Sub-Store。
+
+在“20. Sub-Store 订阅管理”选择“11. 首次设置”，会安装或启用组件，把本机
+节点接入 `sb-manager` 来源，加入 `sb-manager-all` 组合，并显示访问方法。
+已有安装会复用，节点变更后无需重新运行向导。选“12. 使用指南”可随时查看说明。
+
+首次使用流程：
+
+1. 完成首次设置，选择“5. 打开管理网页”。
+2. 在自己的电脑执行面板提供的 SSH 转发命令，替换服务器 IP、用户名和实际
+   SSH 端口。默认示例：`ssh -N -L 3001:127.0.0.1:3001 -p 22 root@YOUR_VPS_IP`。
+3. 保持连接，在该电脑浏览器打开 `http://127.0.0.1:3001/`；网页要求后端地址时，
+   填入面板显示的完整后端 URL（含随机访问路径）。无需在 UFW 开放 3001。
+4. 打开 `sb-manager-all` 组合，选择客户端格式，导出内容并导入客户端。
+   单用户 Snell 可选择 Surge；多用户 Snell 请通过主菜单 5 直接导出 sing-box 配置。
+5. 合并其他服务器时，选择“9. 接入其他 VPS/订阅并合并来源”，填写中心机
+   能访问的订阅地址。来源服务器无需安装 Sub-Store。
+
+“来源”是一份输入订阅，“组合”合并多个来源。动态订阅在客户端刷新时读取
+最新节点，不会主动推送到客户端。SSH 转发结束后本机地址不再可用；手机等
+设备需要长期自动刷新时，须另行配置可访问的 HTTPS/CF Tunnel 入口。
+首次设置不会自动创建公网入口，`127.0.0.1` 不能直接作为其他设备的公网订阅地址。
+后端 URL 和订阅 URL 含访问凭据，应当保密。
 
 ## Sub-Store 生命周期与节点同步
 
@@ -302,7 +373,7 @@ sb substore enable
 0600。普通卸载停止组件并保留数据，彻底卸载才删除。完整恢复沿用 128 MiB
 压缩 / 512 MiB 解压上限；独立恢复为 128 MiB 压缩 / 256 MiB 解压上限。
 
-面板主菜单：“Sub-Store 组件与订阅同步”。
+面板主菜单：“20. Sub-Store 订阅管理”。
 
 ## 多服务器接入与动态订阅（alpha.34）
 
@@ -343,8 +414,8 @@ sb substore source add server-c 'https://other.example.com/sub/TOKEN?format=subs
 来源地址不接受 URL 用户名/密码、空白或 `#` 片段；系统自动添加 `#noCache`
 参数，确保拉取时读取最新内容。源站不可达时由 Sub-Store 报告拉取失败。
 
-面板入口：“Sub-Store → 接入本机节点（自动更新）/其他服务器来源与自动合并/
-本机动态订阅地址管理”。来源 URL 在输入时隐藏，列表不显示 URL 或令牌。
+面板入口：“20. Sub-Store 订阅管理 → 将本机节点接入订阅组合/接入其他 VPS
+与订阅并合并来源/管理本机动态订阅 URL”。来源 URL 在输入时隐藏，列表不显示 URL 或令牌。
 面板会根据已有的整域名 Tunnel 路由建议 HTTPS 入口；首次仍须配置网络可达性。
 
 `--live` 为显式启用选项；不带它创建的订阅仍是有期限的快照。`never` 仅用于

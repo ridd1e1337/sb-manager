@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.56`
+当前版本：`0.1.0-alpha.57`
 
 ## 第一步：安装
 
@@ -28,7 +28,9 @@ apk add --no-cache bash curl tar ca-certificates
 curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh | bash -s -- --init-vps
 ```
 
-UFW 自动放行 **22/TCP、80/TCP、443/TCP、443/UDP**，并保护检测到的当前 SSH 端口；新启用时默认拒绝其他入站、允许出站，已有规则保留。安装过本脚本也可运行 `sb vps init`，或在主菜单选择“21. 新 VPS 初始化”。普通安装和更新不会触发初始化。详情见[新 VPS 初始化](docs/OPERATIONAL_FEATURES.md#新-vps-初始化alpha56)。
+UFW 自动放行 **22/TCP、80/TCP、443/TCP、443/UDP**，并保护检测到的当前 SSH 端口；新启用时默认拒绝其他入站、允许出站，已有规则保留。安装过本脚本也可运行 `sb vps init`，或选择“15. VPS 与网站运维 → 新 VPS 一键初始化”。普通安装和更新不会触发初始化。详情见[新 VPS 初始化](docs/OPERATIONAL_FEATURES.md#新-vps-初始化alpha56)。
+
+各功能的系统范围可用 `sb vps systems` 查看；完整列表见[系统支持说明](docs/OPERATIONAL_FEATURES.md#系统支持说明)。
 
 ## 第二步：使用
 
@@ -42,7 +44,11 @@ sb
 
 1. 选择“添加节点”，选择协议并填写地址、端口和域名。
 2. 需要 TLS 的协议直接输入 Cloudflare 托管的域名；没有可用证书时，自动添加指向本机公网 IP 的 DNS 记录（关闭橙云），再申请证书。首次填写 API Token 和邮箱，之后自动复用。
-3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。
+3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。Snell 会把 Surge 原生配置放在最上面，可直接复制到 Surge 的 `[Proxy]` 段。
+
+面板用“功能名＋用途”说明各项操作：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **15. VPS 与网站运维**。
+
+**20. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容；需要管理多份订阅时，进入 Sub-Store 后选 **11. 首次设置**完成安装和本机节点接入，选 **12. 使用指南**查看网页访问、组合与客户端导入方法。详见[Sub-Store 使用入门](docs/OPERATIONAL_FEATURES.md#sub-store-使用入门)。
 
 Token 需要目标区域的「Zone:Read」和「DNS:Edit」权限。已有可用证书直接复用；已有 DNS 指向其他地址或开启橙云时会提示处理，建议为节点使用独立子域名。命令行添加 TLS 节点也支持自动准备 DNS 和证书，详见[域名与证书自动准备](docs/OPERATIONAL_FEATURES.md#节点域名与证书自动准备alpha52)。
 
@@ -67,7 +73,7 @@ sb node add trojan --id edge --domain edge.example.com --address edge.example.co
 
 参数也可以使用 `@/path/to/fields.json`。扩展会同时进入服务端 inbound 和 sing-box 客户端 outbound，实际字段由已安装核心校验；管理器继续接管协议类型、标签、地址、端口、用户和凭据。ShadowTLS 等复合协议可在 JSON 中使用 `by_tag` 按生成的 tag 指定扩展。修改已有节点使用相同参数：`sb node set NODE_ID --sing-box-inbound-json @FILE`。
 
-新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。
+新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。单用户 Snell 的单节点和批量分享都优先显示 Surge 原生配置；v5 使用兼容的 `version=4`，v6 需要支持该版本的 Surge。多用户模式使用 sing-box 配置。
 
 多个 TLS 节点可以使用内置 TCP/SNI 复用：
 
@@ -81,7 +87,7 @@ sb mux auto all --port 443 --backend sing-box
 sb mux setup
 ```
 
-自动识别网站程序、备份配置、补齐所需模块并接入 SNI 分流。此后添加、删除、启停 TCP/TLS 节点会自动同步，分享链接使用公网 443，后端只监听本机。也可在“全局设置 → TCP/443 多协议复用 → 一键接入现有 Nginx/Caddy 网站”操作；恢复入口用 `sb mux detach`。UFW、SSH 和 Fail2ban 设置保持不变。支持范围和迁移边界见[网站一键接入](docs/OPERATIONAL_FEATURES.md#nginxcaddy-网站一键接入alpha54)。
+自动识别网站程序、备份配置、补齐所需模块并接入 SNI 分流。此后添加、删除、启停 TCP/TLS 节点会自动同步，分享链接使用公网 443，后端只监听本机。也可在“15. VPS 与网站运维 → 网站与节点共用 443 → 一键接入现有 Nginx/Caddy 网站”操作；恢复入口用 `sb mux detach`。UFW、SSH 和 Fail2ban 设置保持不变。支持范围和迁移边界见[网站一键接入](docs/OPERATIONAL_FEATURES.md#nginxcaddy-网站一键接入alpha54)。
 
 更多协议参数、安全边界、证书、Sub-Store、备份和高级功能见：
 

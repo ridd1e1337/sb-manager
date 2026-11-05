@@ -72,6 +72,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb status [--json]              查看统一状态
   sb vps init [--dry-run]         新 VPS 一键安装 Caddy、UFW、Fail2ban 并放行基础端口
   sb vps status [--json]          查看 VPS 基础环境状态
+  sb vps systems                 查看各功能支持的 Linux 系统与当前环境
   sb node list [--json] [--tag TAG] [--region REGION] 列出节点
   sb quick                       添加节点向导（兼容别名）
   sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]

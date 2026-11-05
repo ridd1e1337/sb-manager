@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.56",
+  "manager_version": "0.1.0-alpha.57",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -116,6 +116,11 @@ records the completion timestamp, manager version, SSH ports and backup path.
 Per-operation host configuration/service before-images live in that directory;
 they are separate from node state rollback. Ordinary installation and upgrades
 never execute VPS initialization without the explicit `--init-vps` option.
+
+Alpha.57 reorganizes panel navigation, adds Sub-Store onboarding and system
+support information, and prioritizes native Surge entries when sharing Snell.
+It adds no state fields or migrations. Generated export files remain derived
+artifacts; Snell credentials and the schema version remain unchanged.
 
 Notification provider choice and thresholds are non-secret state. Telegram tokens/chat IDs and Webhook URLs live only in `secrets/notifications.json` with mode `0600`. Delivery deduplication and the last health report are runtime journals under `/var/lib/sb-manager/`.
 

@@ -26,7 +26,7 @@ dependency_distro() {
 }
 
 dependency_package_hint() {
-  local feature=${1:-base} distro
+  local feature=${1:-base} distro packages
   distro=$(dependency_distro)
   case "$feature:$distro" in
     base:alpine) printf 'apk add --no-cache bash curl ca-certificates jq openssl coreutils findutils flock gcompat libcap-utils\n' ;;
@@ -50,7 +50,19 @@ dependency_package_hint() {
     scheduler:alpine) printf 'apk add --no-cache dcron\n' ;;
     logrotate:alpine) printf 'apk add --no-cache logrotate\n' ;;
     logrotate:debian) printf 'apt-get install --no-install-recommends logrotate\n' ;;
-    *) printf '%s\n' '请使用当前发行版的包管理器安装缺少的依赖。' ;;
+    *)
+      packages=$(dependency_feature_packages "$feature" | paste -sd ' ' -) || packages=''
+      if [[ -z "$packages" ]]; then
+        printf '%s\n' '请使用当前发行版的包管理器安装缺少的依赖。'
+        return
+      fi
+      case "$distro" in
+        dnf|yum) printf '%s install %s\n' "$distro" "$packages";;
+        pacman) printf 'pacman -S --needed %s\n' "$packages";;
+        zypper) printf 'zypper install %s\n' "$packages";;
+        *) printf '请使用当前发行版的包管理器安装：%s\n' "$packages";;
+      esac
+      ;;
   esac
 }
 
@@ -156,7 +168,9 @@ dependency_feature_packages() {
   case "$feature:$distro" in
     benchmark:*) printf '%s\n' iperf3 ;;
     shaping:alpine) printf '%s\n' iproute2-tc ;;
-    shaping:debian) printf '%s\n' iproute2 ;;
+    shaping:debian|shaping:pacman|shaping:zypper) printf '%s\n' iproute2 ;;
+    shaping:dnf|shaping:yum) printf '%s\n' iproute-tc ;;
+    substore:pacman) printf '%s\n' nodejs python ;;
     substore:*) printf '%s\n' nodejs python3 ;;
     low-port:alpine) printf '%s\n' libcap-utils ;;
     low-port:debian) printf '%s\n' libcap2-bin ;;
@@ -174,7 +188,8 @@ dependency_feature_packages() {
     bbr:pacman) printf '%s\n' kmod ;;
     probe:alpine) printf '%s\n' iproute2-ss ;;
     probe:debian) printf '%s\n' iproute2 ;;
-    probe:dnf|probe:yum|probe:pacman|probe:zypper) printf '%s\n' iproute2 ;;
+    probe:dnf|probe:yum) printf '%s\n' iproute ;;
+    probe:pacman|probe:zypper) printf '%s\n' iproute2 ;;
     scheduler:alpine) printf '%s\n' dcron ;;
     logrotate:alpine|logrotate:debian|logrotate:dnf|logrotate:yum|logrotate:pacman|logrotate:zypper) printf '%s\n' logrotate ;;
     *) return 1 ;;

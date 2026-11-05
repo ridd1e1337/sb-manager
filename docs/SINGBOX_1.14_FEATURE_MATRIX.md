@@ -14,7 +14,7 @@
 | Hysteria2 Gecko obfs | 添加节点 → Hysteria2 | `--obfs gecko --obfs-min-packet-size N --obfs-max-packet-size N` | 需要 1.14+ |
 | Hysteria2 Chrome QUIC 指纹开关 | 添加节点 → Hysteria2 | `--disable-chrome-parrot` | 需要 1.14+ |
 | Hysteria2 BBR profile / Brutal debug | 添加节点 → Hysteria2 | `--bbr-profile`、`--brutal-debug` | 需要 1.14+ |
-| Optimistic DNS、DNS timeout | 全局设置 → sing-box 1.14 DNS 优化 | `sb settings dns ...` | 需要 1.14+，1.13 自动省略字段 |
+| Optimistic DNS、DNS timeout | sing-box 设置 → DNS 缓存与查询超时 | `sb settings dns ...` | 需要 1.14+，1.13 自动省略字段 |
 | TUN DNS mode/address | 完整客户端配置导出 | `sb export config --mode tun --tun-dns-mode ...` | 需要 1.14+，1.13 保持旧格式 |
 | Hysteria Realm rendezvous service | Hysteria Realm 菜单 | `sb realm enable|disable|status|show-token`；Hysteria2 使用 `--realm-id` | 需要 1.14+ |
 | API Service / Dashboard | sing-box API/Dashboard | `sb api ...` | loopback-only |

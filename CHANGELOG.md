@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.57
+
+- Explain panel entries in Chinese, name Cloudflare functionality CF Tunnel,
+  and group VPS initialization, UFW/Fail2ban, Nginx/Caddy shared 443 and network
+  tuning under the VPS and website operations menu.
+- Add a Sub-Store guide and first-use workflow covering installation, live
+  local-node synchronization, SSH forwarding, collections and client export.
+  Explain remote sources, refresh behavior and public-access requirements.
+- Display native Surge Snell entries before ancillary exports in single-node
+  and batch shares. Retain machine-readable files, skip redundant Snell URI/QR
+  display, and explain the sing-box requirement for multi-user nodes. Preserve
+  credentials and state schema without migration.
+- Add read-only `sb vps systems` and a panel support matrix, distinguishing
+  multi-distribution core management from Debian/Ubuntu and Alpine host
+  initialization. Correct RPM-family probe/tc dependencies and Arch Sub-Store
+  Python packages; retain BusyBox/OpenRC compatibility.
+- Show shared public ports in node-creation firewall guidance. Ordinary node
+  operations do not change host firewall rules.
+
 ## 0.1.0-alpha.56
 
 - Keep sing-box installation and node management as the primary workflow; add
