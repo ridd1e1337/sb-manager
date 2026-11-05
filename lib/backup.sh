@@ -18,6 +18,7 @@ _backup_create() {
   [[ -f "$SBM_CONFIG" ]] && cp -a "$SBM_CONFIG" "$stage/etc/config.json"
   [[ -d "$SBM_SUBSCRIPTIONS" ]] && cp -a "$SBM_SUBSCRIPTIONS" "$stage/var/subscriptions"
   [[ -f "$SBM_TRAFFIC_USAGE" ]] && cp -a "$SBM_TRAFFIC_USAGE" "$stage/var/traffic-usage.json"
+  [[ ! -d "$SBM_WEBSITE_MUX_DIR" ]] || cp -a "$SBM_WEBSITE_MUX_DIR" "$stage/var/website-mux"
   if declare -F substore_backup_payload >/dev/null 2>&1; then substore_backup_payload "$stage/var/substore" || return 1; fi
   {
     printf 'manager_version=%s\n' "$SBM_VERSION"
@@ -76,6 +77,13 @@ _restore_backup() {
     state_normalize_v2_file "$stage/etc/state.json"
   fi
   state_validate "$stage/etc/state.json"
+  if website_mux_managed "$stage/etc/state.json" || website_mux_managed "$SBM_STATE"; then
+    if ! website_mux_managed "$stage/etc/state.json" || ! website_mux_managed "$SBM_STATE" \
+      || [[ ! -s "$SBM_WEBSITE_MUX_DIR/manifest.json" ]] \
+      || [[ $(jq -Sc '.nginx_stream.website' "$stage/etc/state.json") != "$(jq -Sc '.nginx_stream.website' "$SBM_STATE")" ]]; then
+      die '网站自动接入备份只能恢复到同一接入配置；请先用 sb mux detach 恢复入口，或在目标主机重新接入网站。'
+    fi
+  fi
   safety="$SBM_BACKUPS/pre-restore-$(now_stamp).tar.gz"; _backup_create "$safety" >/dev/null
 
   rm -rf "$SBM_SECRETS.restore" "$SBM_CERTS.restore"
@@ -148,7 +156,7 @@ backup_validate_archive() {
     path=${path%/}
     [[ -n "$path" && "$path" != /* && "$path" != *$'\n'* ]] || return 1
     case "$path" in
-      etc|etc/state.json|etc/config.json|etc/secrets|etc/secrets/*|etc/certs|etc/certs/*|meta|meta/manifest.txt|var|var/subscriptions|var/subscriptions/*|var/traffic-usage.json|var/substore|var/substore/app|var/substore/app/*|var/substore/data|var/substore/data/*) ;;
+      etc|etc/state.json|etc/config.json|etc/secrets|etc/secrets/*|etc/certs|etc/certs/*|meta|meta/manifest.txt|var|var/subscriptions|var/subscriptions/*|var/traffic-usage.json|var/substore|var/substore/app|var/substore/app/*|var/substore/data|var/substore/data/*|var/website-mux|var/website-mux/*) ;;
       *) return 1 ;;
     esac
     IFS=/ read -r -a parts <<<"$path"

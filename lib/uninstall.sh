@@ -37,6 +37,10 @@ uninstall_manager() {
   if [[ "$assume_yes" != 1 ]]; then confirm "$message" N || return 0; fi
   manager_update_lock || die '脚本更新正在进行，暂不能卸载；请等待更新完成。'
 
+  if [[ -s "$SBM_STATE" ]] && website_mux_managed; then
+    website_mux_detach || die '无法恢复现有网站入口，卸载已取消。'
+  fi
+
   if [[ -f "$SBM_SHAPING_DIR/baseline.json" ]]; then
     with_lock shaping_restore || die "无法恢复 tc 队列；卸载已取消，请检查 $SBM_SHAPING_DIR。"
   fi

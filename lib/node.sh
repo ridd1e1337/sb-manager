@@ -292,6 +292,9 @@ _node_add() {
   if [[ "$protocol" == vless && "$security" == reality ]]; then
     node_secret=$(jq -n --arg hs "$handshake_server" --argjson hp "$handshake_port" --argjson reality "$reality_secret" '$reality + {handshake_server:$hs,handshake_port:$hp}')
   fi
+  if website_mux_managed && [[ "$transport" == tcp && "$port" == 443 ]]; then
+    case "$protocol" in anytls|trojan|vless|shadowtls|naive) port=$(node_choose_port tcp) || return 1;; esac
+  fi
   validate_port "$port" || die "无效端口：$port"
   [[ -n "$id" ]] || id=$(state_unique_id "$base")
   validate_node_id "$id" || die "节点 ID 只能包含小写字母、数字、点、下划线和连字符。"

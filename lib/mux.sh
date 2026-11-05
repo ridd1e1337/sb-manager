@@ -12,6 +12,7 @@ mux_backend_label() {
     sing-box) printf 'sing-box 内置';;
     nginx) printf 'Nginx Stream';;
     caddy) printf '现有 Caddy L4';;
+    nginx-site) printf '现有 Nginx 网站';;
     *) return 1;;
   esac
 }
@@ -25,6 +26,7 @@ mux_service() {
     sing-box) printf '%s\n' "$SBM_SERVICE";;
     nginx) printf '%s\n' "$SBM_NGINX_STREAM_SERVICE";;
     caddy) printf 'caddy.service\n';;
+    nginx-site) printf 'nginx.service\n';;
     *) return 1;;
   esac
 }
@@ -36,6 +38,8 @@ mux_reserved_port() {
     (.api.enabled==true and .api.port==$port)
     or (.realm.enabled==true and .realm.port==$port)
     or (.substore.enabled==true and .substore.port==$port)
+    or (.nginx_stream.website.managed==true and
+        (.nginx_stream.website.website_port==$port or .nginx_stream.website.relay_port==$port))
   ' "$state" >/dev/null
 }
 
@@ -67,6 +71,10 @@ mux_frontend_available() {
 _mux_auto_configure() {
   local ids=$1 public_port=${2:-443} backend=${3:-} candidate id node sni route backend_port tmp
   local -a node_ids=()
+  if website_mux_managed; then
+    [[ "$public_port" == 443 && ( -z "$backend" || "$backend" == "$(mux_backend)" ) ]] || { log_error '网站自动接入使用固定入口，请先 sb mux detach 再切换。'; return 1; }
+    _website_mux_setup; return $?
+  fi
   [[ "$ids" == all ]] && ids=$(jq -r '[.nodes[]? | select(.enabled==true) | select(
     (.protocol|IN("anytls","trojan","shadowtls"))
     or (.protocol=="vless" and (.security|IN("tls","reality")))
@@ -143,6 +151,7 @@ mux_builtin_config() {
 
 _mux_set_backend() {
   local backend=$1 candidate
+  website_mux_managed && { log_error '网站自动接入已启用；请使用 sb mux detach 恢复后再切换方式。'; return 1; }
   case "$backend" in sing-box|nginx|caddy) ;; *) usage_die '复用方式只能是 sing-box、nginx 或 caddy。';; esac
   candidate=$(state_candidate) || return 1
   if ! jq --arg backend "$backend" '.nginx_stream.backend=$backend' "$SBM_STATE" >"$candidate" \
@@ -171,6 +180,20 @@ mux_cli() {
   shift
   (($# == 0)) || shift
   case "$action" in
+    setup)
+      local server=auto config='' binary=''
+      while (($#)); do
+        case "$1" in
+          --server) server=${2:?缺少网站程序}; shift 2;;
+          --config) config=${2:?缺少配置路径}; shift 2;;
+          --binary) binary=${2:?缺少程序路径}; shift 2;;
+          *) usage_die '用法：sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE]';;
+        esac
+      done
+      website_mux_setup "$server" "$config" "$binary";;
+    detach)
+      (($# == 0)) || usage_die '用法：sb mux detach'
+      website_mux_detach;;
     status)
       if [[ ${1:-} == --json ]]; then json=1; shift; fi
       (($# == 0)) || usage_die '用法：sb mux status [--json]'

@@ -49,7 +49,62 @@ DNS 请求与证书申请由管理器锁保护。本次新建记录带独立标�
 准备，再继续填写节点参数；准备成功后取消创建节点会保留 DNS 和证书供复用。
 普通节点删除和本地备份恢复不会删除已成功创建的 Cloudflare 记录。
 
-## 与现有 Caddy 网站共享 443（alpha.53）
+## Nginx/Caddy 网站一键接入（alpha.54）
+
+网站通过系统的 `nginx` 或 `caddy` 服务监听 TCP/443 时，执行 `sb mux setup`
+即可接入。也可指定 `--server nginx|caddy`、`--config /实际配置路径` 和
+`--binary /实际程序路径`。先接入网站，再添加节点，无需先开放临时端口：
+
+```bash
+sb mux setup
+sb node add anytls --id any-main --domain node.example.com
+```
+
+面板入口：“全局设置 → TCP/443 多协议复用 → 一键接入现有 Nginx/Caddy
+网站并自动同步”。自动接入后，全部启用的 AnyTLS、Trojan、VLESS TLS/Reality、
+Naive TCP、ShadowTLS 都按唯一 SNI 分流；添加、删除、启停、修改域名会自动更新
+网站入口。节点只监听本机，分享与订阅使用公网 443，UFW 无需额外放行。
+节点必须使用与网站不同的域名，且不能开启隐藏 SNI 的 ECH。SS、Snell、
+VMess Tunnel 和 QUIC 协议不在该 TCP/SNI 接入范围内。
+
+Caddy 沿用 HTTP 网站配置并增加 L4 listener wrapper。缺少 L4 时会在独立路径
+编译程序，保留原程序，固定 `xcaddy`/`caddy-l4` 源码版本并通过 Go 校验数据库
+验证模块；缺少合适 Go 时，从官方元数据取 SHA-256 校验下载。已有模块保留，
+无可复现版本的本地模块拒绝自动重建。低于 2.11.7 的 Caddy 会升级到构建基线
+2.11.8。首次构建可能耗时数分钟，需要约 1.8 GB 可用磁盘；不在基础安装时
+安装这些工具。systemd 用独立 drop-in，Alpine OpenRC 保留服务脚本并更新
+`command`，使启动和重载都使用带 L4 的程序。自定义 Caddy 的安全更新需维护
+带相同模块的版本；发行版软件包更新不会更新这个独立程序。
+
+Nginx 使用现有进程的 Stream 模块：公网 TCP/443 按 SNI 分流，网站 TLS
+监听移到本机端口。Stream 向网站发送 PROXY 协议以保留真实客户端地址；
+节点经过另一条本机 Stream 监听剥离此头，再收到原始 TLS 数据。
+HTTP/80、UDP/443、证书和业务 upstream 保留。支持标准 wildcard 443 ssl
+监听、include 及多站点；已有自定义 Stream、real-IP 信任链、指定公网 IP
+绑定、混合 TCP 端口或依赖 `$server_port` 的网站会停止自动接入。容器内的
+Nginx/Caddy、自定义服务名和无法识别的配置布局也不自动改写。
+
+Python 只在接入时按需安装，用于按语法编辑配置及记录恢复信息。候选网站配置
+和 sing-box 配置均通过实际程序校验后才安装。首次切换服务可能短暂中断连接，
+后续路由变化使用重载。应用失败时按操作快照恢复网站配置、服务命令与节点状态；
+外部修改过的文件不会被显式恢复命令覆盖。
+
+```bash
+sb mux detach
+```
+
+该命令恢复接入前的网站配置和复用方式；若原先没有分流，节点恢复独立端口。
+若接入前已有 alpha.53 Caddy 分流，则保留它原来的手工配置。相关原节点被删除
+或改了域名时，恢复可能因旧路由不再适用而被拒绝，需先处理旧路由。
+网站配置被人工修改后，恢复会要求先合并修改；不会静默覆盖后来的网站内容。
+恢复信息保存在 `/var/lib/sb-manager/website-mux/`，每次操作的 before-image
+保存在状态快照内。完整备份包含这些信息供人工恢复，同一接入配置可恢复节点；
+不会把其他主机的网站路径和服务命令直接应用到本机。卸载前也会先恢复网站入口。
+
+仅开放 22/80/443 并不能让所有协议共用 443：TCP 与 UDP 是不同监听。
+Caddy/Nginx HTTP/3 占用 UDP/443 时，Hysteria2/TUIC 不能再直接绑定同一 UDP 端口。
+
+## 与现有 Caddy 网站共享 443（alpha.53，手工接入）
 
 Caddy 已监听 443 时，先为 AnyTLS 等 TLS 节点选一个空闲端口，再显式选择
 `caddy` 方式。Caddy 需要编译 `github.com/mholt/caddy-l4`；普通 HTTP

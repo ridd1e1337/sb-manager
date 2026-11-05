@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.53",
+  "manager_version": "0.1.0-alpha.54",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -144,7 +144,7 @@ Multiple TLS nodes may reference the same `certificates[].domain` and certificat
 Every node has a normalized `traffic` object. `configured` distinguishes a never-configured node from a disabled policy; `enabled` controls runtime rules without discarding policy or usage. `quota_bytes` and either directional rate may be `null` for unlimited. `quota_mode` is `total` (upload plus download) or `download`; `reset_day` is an integer from 1 through 28 and is evaluated in UTC. Rate values are stored as bit/s. Accumulated counters are runtime data and live in `/var/lib/sb-manager/traffic-usage.json`, not in state or generated sing-box configuration.
 
 `nginx_stream` retains its historical key for TCP/SNI mux backends.
-`backend` is `sing-box`, `nginx`, or `caddy`. The `caddy` backend represents an
+`backend` is `sing-box`, `nginx`, `caddy`, or `nginx-site`. The `caddy` backend represents an
 operator-owned Caddy L4 frontend: the manager renders loopback node listeners,
 exports the public port, and observes `caddy.service` (`caddy` on OpenRC).
 It does not install, stop, rewrite or reload Caddy. `sb mux caddy` emits a
@@ -153,6 +153,23 @@ New empty configurations default to
 `sing-box`; legacy configurations missing `backend` keep `nginx` when enabled
 or when any routes were saved. Explicit choices survive upgrades and disabling.
 Older schema-v2 files without this section normalize to a disabled empty mux.
+
+`nginx_stream.website` is optional. When `managed:true`, it stores the website
+server (`nginx`/`caddy`), actual config/binary paths, init backend, optional
+service override and stream module paths, plus reserved `website_port` and
+`relay_port`. The frontend stays enabled at port 443 even without active nodes.
+Routes are derived from enabled SNI-capable nodes on each candidate operation;
+existing route backend ports are reused. `nginx-site` uses the host's Nginx
+service rather than the separate sb-manager Nginx service.
+
+The website source files remain operator-owned. Protected host journals under
+`var/website-mux/` store original file contents and installed hashes; operation
+snapshots hold immediate before-images. These journals are recovery metadata,
+not generated sing-box configuration or topology state. A detach verifies
+installed hashes and restores the original frontend/mux selection. Cross-host
+restore of managed website settings is refused, and external manual changes
+must be merged before detach. Plain `caddy` states without `managed:true`
+retain alpha.53's manual synchronization behavior.
 
 `nginx_stream.routes` separates the public frontend from sing-box's runtime listener. A node keeps its original direct `listen`/`port`; while the mux is enabled, rendering substitutes `127.0.0.1:<backend_port>` and exports substitute the shared public port. Node IDs, case-insensitive SNI values, and backend ports must each be unique. The built-in backend adds a TCP-only direct inbound, scoped TLS sniffing, fixed loopback route destinations and a final reject for that inbound. It adds no credentials and does not terminate TLS. API, subscriptions, Realm, Sub-Store and node port reservations are checked before applying a candidate.
 

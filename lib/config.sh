@@ -51,6 +51,7 @@ config_state_diff_files() {
 
 config_preview_candidate() {
   local candidate=$1 json=${2:-${SBM_OUTPUT_JSON:-0}} rendered installed state_diff config_diff changed
+  website_mux_sync_routes "$candidate" || return 1
   rendered=$(mktemp "$SBM_RUN/config-preview.XXXXXX")
   installed=$(mktemp "$SBM_RUN/config-installed.XXXXXX")
   state_diff=$(mktemp "$SBM_RUN/state-diff.XXXXXX")

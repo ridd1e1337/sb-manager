@@ -864,8 +864,8 @@ ui_nginx_stream_menu() {
   local c id sni backend port node engine_choice
   nginx_stream_status
   printf '不同节点需使用不同 SNI；证书验证保持开启，UDP 节点仍使用独立监听。\n'
-  printf '\n1. 一键配置多个节点并启用 TCP/443 复用\n2. 添加单条 SNI 路由\n3. 删除 SNI 路由\n4. 启用 TCP 端口复用\n5. 停用复用，恢复独立端口\n6. 查看路由\n7. 切换复用方式\n0. 返回\n'
-  ui_menu_choice c '选择操作' 7
+  printf '\n1. 一键配置多个节点并启用 TCP/443 复用\n2. 添加单条 SNI 路由\n3. 删除 SNI 路由\n4. 启用 TCP 端口复用\n5. 停用复用，恢复独立端口\n6. 查看路由\n7. 切换复用方式\n8. 一键接入现有 Nginx/Caddy 网站并自动同步\n9. 恢复接入前的网站配置\n0. 返回\n'
+  ui_menu_choice c '选择操作' 9
   case "$c" in
     1) ui_mux_auto_menu;;
     2)
@@ -887,6 +887,8 @@ ui_nginx_stream_menu() {
       ;;
     5) nginx_stream_disable;;
     6) nginx_stream_route_list;;
+    8) website_mux_setup;;
+    9) website_mux_detach;;
     7)
       printf '1. sing-box 内置（推荐小内存服务器，无新增进程或软件包）\n2. Nginx Stream（按需安装并启动独立服务）\n3. 现有 Caddy L4（须自行安装模块并接入分流配置）\n0. 返回\n'
       ui_menu_choice engine_choice '选择复用方式' 3

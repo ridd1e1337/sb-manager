@@ -338,6 +338,7 @@ state_validate() {
     def nonempty: string and length > 0;
     def timestamp: nonempty and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$");
     def port: type == "number" and floor == . and . >= 1 and . <= 65535;
+    def web_path: type=="string" and test("^/[A-Za-z0-9_./+-]+$") and (split("/") | all(.[]; .!=".."));
     def traffic_value:
       (type == "number" and floor == . and . >= 1 and . <= 9000000000000000) or type == "null";
     def node_traffic:
@@ -478,7 +479,17 @@ state_validate() {
       and (.max_realms | type == "number" and floor == . and . >= 0 and . <= 1000000))
     and (.nginx_stream | type == "object"
       and (.enabled | type == "boolean")
-      and (.backend | IN("sing-box", "nginx", "caddy"))
+      and (.backend | IN("sing-box", "nginx", "caddy", "nginx-site"))
+      and (if .website==null then true else
+        (.website | type=="object" and (.managed|type=="boolean")
+          and (.server|IN("nginx","caddy")) and (.binary|web_path) and (.original_binary|web_path)
+          and (.config|web_path) and (.init|IN("systemd","openrc"))
+          and (.service_override=="" or (.service_override|web_path))
+          and (.stream_module=="" or (.stream_module|web_path))
+          and (.website_port|port) and (.relay_port|port) and .website_port!=.relay_port)
+        and (if .website.managed then .enabled and .port==443 and
+          ((.website.server=="nginx" and .backend=="nginx-site") or (.website.server=="caddy" and .backend=="caddy"))
+          else true end) end)
       and (.listen | nonempty)
       and (.port | port)
       and (.routes | type == "array")
@@ -704,6 +715,9 @@ snapshot_restore() {
   [[ -f "$snapshot/state.json" ]] && cp -a "$snapshot/state.json" "$SBM_STATE"
   [[ -f "$snapshot/config.json" ]] && cp -a "$snapshot/config.json" "$SBM_CONFIG"
   snapshot_restore_payload "$snapshot" || return 1
+  if declare -F website_mux_rollback >/dev/null 2>&1; then
+    website_mux_rollback "$snapshot" || log_error '网站配置恢复失败，请检查本次快照中的 website-files。'
+  fi
   if [[ -f "$SBM_STATE" ]]; then
     state_migrate || return 1
     state_validate "$SBM_STATE"
@@ -772,6 +786,12 @@ state_install_candidate() {
 
   local state_tmp config_tmp
   state_tmp="${SBM_STATE}.new.$$"; config_tmp="${SBM_CONFIG}.new.$$"
+  if declare -F website_mux_prepare >/dev/null 2>&1; then
+    if ! website_mux_prepare "$candidate" "$backup"; then
+      website_mux_rollback "$backup" || log_error '网站配置自动恢复失败。'
+      return 1
+    fi
+  fi
   if declare -F nginx_stream_prepare_transition >/dev/null 2>&1; then
     nginx_stream_prepare_transition "$candidate" || return 1
   fi
@@ -808,6 +828,9 @@ state_install_candidate() {
       snapshot_restore "$backup" || log_error '自动回滚失败，请立即检查快照。'
       return 1
     fi
+  fi
+  if declare -F website_mux_reconcile >/dev/null 2>&1; then
+    website_mux_reconcile || return 1
   fi
   snapshot_prune 20
   return 0

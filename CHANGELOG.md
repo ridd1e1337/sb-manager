@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.54
+
+- Add `sb mux setup` to detect an existing Nginx/Caddy HTTPS frontend, stage
+  and validate website changes, preserve before-images, then activate shared
+  TCP/443 with automatic node-route synchronization. Add `sb mux detach` and
+  matching panel actions for guarded restoration.
+- Keep Caddy's HTTP routes and TLS passthrough, adopting compatible alpha.53
+  wrappers. Build a separate Caddy L4 binary when needed with pinned modules,
+  Go checksum verification and preservation of existing module identities.
+- Integrate Nginx stream with loopback website TLS listeners, PROXY protocol
+  for real client addresses, and a local relay that strips that header for
+  proxy nodes. Preserve UDP/443 and HTTP/80 listeners. Reject unsupported
+  listener layouts, custom stream blocks and conflicting real-IP policies.
+- Journal website files and service commands in state transactions, reload
+  routes after node changes, and restore on failure. Refuse detach when an
+  operator has modified managed files; retain host recovery metadata in
+  backups and guard cross-host restore/uninstall.
+- Support Debian/systemd and Alpine/OpenRC; Python and Caddy build tools are
+  optional dependencies of website integration only. No firewall, SSH or
+  Fail2ban rules are changed. No test assets or procedures are added.
+
 ## 0.1.0-alpha.53
 
 - Add an explicit `caddy` TCP/SNI backend for sharing an existing website's

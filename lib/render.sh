@@ -282,6 +282,7 @@ core_validate_config() { core_validate_config_with "$SBM_SING_BOX_BIN" "$1"; }
 
 apply_candidate_state() {
   local candidate=$1 reason=${2:-change} tmp_config
+  website_mux_sync_routes "$candidate" || return 1
   tmp_config=$(mktemp "$SBM_RUN/config.candidate.XXXXXX")
   if ! render_config_from_state "$candidate" "$tmp_config"; then rm -f "$tmp_config"; return 1; fi
   if ! core_validate_config "$tmp_config"; then rm -f "$tmp_config"; return 1; fi

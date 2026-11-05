@@ -74,7 +74,7 @@ nginx_stream_validate_state() {
   port=$(jq -r '.port // 0' <<<"$cfg")
   routes=$(jq -c '.routes // []' <<<"$cfg")
   engine=$(mux_backend "$state") || return 1
-  case "$engine" in sing-box|nginx|caddy) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
+  case "$engine" in sing-box|nginx|caddy|nginx-site) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
   if [[ "$enabled" == true && "$engine" == sing-box ]]; then
     version_ge "$(core_current_version)" 1.11.0 || { log_error '内置 TCP/SNI 分流需要 sing-box 1.11 或更高版本。'; return 1; }
   fi
@@ -106,6 +106,9 @@ nginx_stream_validate_state() {
     node=$(jq -c --arg id "$node_id" '.nodes[]? | select(.id==$id)' "$state")
     [[ -n "$node" ]] || { log_error "TCP/SNI 路由引用了不存在的节点：$node_id"; return 1; }
     nginx_stream_supported_node "$node" || { log_error "协议不支持 TCP/SNI 复用：$(jq -r '.protocol' <<<"$node")/$node_id"; return 1; }
+    if jq -e '.singbox.outbound.tls.ech.enabled==true or .singbox.inbound.tls.ech.enabled==true' <<<"$node" >/dev/null; then
+      log_error "节点 $node_id 使用 ECH，无法按可见 SNI 复用。"; return 1
+    fi
     expected_sni=$(nginx_stream_node_sni "$node")
     [[ "${sni,,}" == "${expected_sni,,}" ]] || { log_error "节点 $node_id 的路由 SNI 必须与协议 server_name 一致：$expected_sni"; return 1; }
     if [[ "$enabled" == true && $(jq -r '.enabled' <<<"$node") != true ]]; then
@@ -113,7 +116,7 @@ nginx_stream_validate_state() {
     fi
     seen_nodes[$node_id]=1; seen_sni[$sni]=1; seen_backends[$backend]=1
   done < <(jq -c '.[]' <<<"$routes")
-  if [[ "$enabled" == true && $route_count -eq 0 ]]; then
+  if [[ "$enabled" == true && $route_count -eq 0 ]] && ! website_mux_managed "$state"; then
     log_error 'TCP/SNI 已启用，但没有任何 SNI 路由。'; return 1
   fi
   if [[ "$enabled" == true ]]; then
@@ -376,6 +379,7 @@ nginx_stream_choose_backend_port() {
 
 _nginx_stream_route_add() {
   local node_id=$1 sni=$2 backend_port=${3:-} node route candidate expected_sni
+  website_mux_managed && { log_error '网站自动接入会随节点自动维护路由，无需手工添加。'; return 1; }
   node=$(jq -c --arg id "$node_id" '.nodes[]? | select(.id==$id)' "$SBM_STATE")
   [[ -n "$node" ]] || { log_error "节点不存在：$node_id"; return 1; }
   [[ $(jq -r '.enabled' <<<"$node") == true ]] || { log_error "节点必须先启用才能加入 TCP/SNI：$node_id"; return 1; }
@@ -405,6 +409,7 @@ nginx_stream_route_add() { with_state_transaction nginx-route-add _nginx_stream_
 
 _nginx_stream_route_remove() {
   local node_id=$1 candidate
+  website_mux_managed && { log_error '网站自动接入会随节点启停自动维护路由，请停用或删除对应节点。'; return 1; }
   jq -e --arg id "$node_id" '.nginx_stream.routes[]? | select(.node_id==$id)' "$SBM_STATE" >/dev/null || { log_error "TCP/SNI 路由不存在：$node_id"; return 1; }
   if nginx_stream_state_enabled "$SBM_STATE" && [[ $(jq '.nginx_stream.routes|length' "$SBM_STATE") == 1 ]]; then
     log_error '不能删除启用中的最后一条路由；请先执行 sb mux disable。'; return 1
@@ -420,6 +425,11 @@ nginx_stream_route_remove() { with_state_transaction nginx-route-remove _nginx_s
 
 _nginx_stream_enable() {
   local public_port=${1:-} backend=${2:-} candidate
+  if website_mux_managed; then
+    [[ -z "$public_port" || "$public_port" == 443 ]] || { log_error '网站自动接入固定使用 443。'; return 1; }
+    [[ -z "$backend" || "$backend" == "$(mux_backend)" ]] || { log_error '请先 sb mux detach 再切换方式。'; return 1; }
+    _website_mux_setup; return $?
+  fi
   case "$backend" in ''|sing-box|nginx|caddy) ;; *) usage_die '复用方式只能是 sing-box、nginx 或 caddy。';; esac
   if [[ $(jq '.nginx_stream.routes|length' "$SBM_STATE") == 0 ]]; then
     log_error '请先添加至少一条 SNI 路由：sb mux route add NODE_ID SNI。'; return 1
@@ -440,6 +450,7 @@ nginx_stream_enable() { with_state_transaction nginx-enable _nginx_stream_enable
 
 _nginx_stream_disable() {
   local candidate
+  if website_mux_managed; then _website_mux_detach; return $?; fi
   candidate=$(state_candidate)
   jq '.nginx_stream.enabled=false' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" nginx-disable; then rm -f "$candidate"; return 1; fi
@@ -470,7 +481,8 @@ nginx_stream_status() {
   fi
   printf 'TCP/SNI 复用：%s，方式：%s，公网端口：%s/TCP，路由：%s 条\n' "$([[ "$enabled" == true ]] && echo '启用' || echo '停用')" "$(mux_backend_label)" "$port" "$routes"
   if [[ $(mux_backend) == sing-box ]]; then printf '复用现有 sing-box 核心，无需额外代理进程；仅转发已登记的 TLS SNI。\n'; fi
-  if [[ $(mux_backend) == caddy ]]; then printf '公网由现有 Caddy 管理；节点只监听 loopback。使用 sb mux caddy 导出分流配置，变更路由后需同步并重载 Caddy。\n'; fi
+  if website_mux_managed; then printf '网站自动接入已启用；节点变化会自动同步网站分流，后端只监听本机。\n'
+  elif [[ $(mux_backend) == caddy ]]; then printf '公网由现有 Caddy 管理；节点只监听 loopback。使用 sb mux caddy 导出分流配置，变更路由后需同步并重载 Caddy。\n'; fi
   if [[ "$enabled" == true && "$SBM_SKIP_INIT" != 1 && ("$backend" == systemd || "$backend" == openrc) ]] && service_exists "$service"; then
     service_status_text "$service" || true
   fi
@@ -482,11 +494,11 @@ nginx_stream_doctor_check() {
   [[ "$enabled" == true ]] || return 0
   port=$(jq -r '.nginx_stream.port' "$SBM_STATE"); routes=$(jq '.nginx_stream.routes|length' "$SBM_STATE")
   backend=$(init_system 2>/dev/null || true)
-  if [[ $(mux_backend) == caddy ]]; then
-    if service_active caddy.service && host_port_in_use tcp "$port"; then
-      check_line PASS "Caddy 服务与公网端口可见（${port}/TCP）；SNI 路由由 Caddy 配置管理"
+  if [[ $(mux_backend) == caddy || $(mux_backend) == nginx-site ]]; then
+    if service_active "$(mux_service)" && host_port_in_use tcp "$port"; then
+      check_line PASS "$(mux_backend_label)服务与公网端口可见（${port}/TCP）"
     else
-      check_line FAIL "Caddy 复用入口未就绪：${port}/TCP"; failures=$((failures + 1))
+      check_line FAIL "网站复用入口未就绪：${port}/TCP"; failures=$((failures + 1))
     fi
     return 0
   fi

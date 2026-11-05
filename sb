@@ -17,6 +17,7 @@ source "$SBM_LIB/lib/service.sh"
 source "$SBM_LIB/lib/state.sh"
 source "$SBM_LIB/lib/nginx_stream.sh"
 source "$SBM_LIB/lib/mux.sh"
+source "$SBM_LIB/lib/website_mux.sh"
 source "$SBM_LIB/protocols/vmess_ws_cf.sh"
 source "$SBM_LIB/protocols/shadowsocks.sh"
 source "$SBM_LIB/protocols/anytls.sh"
@@ -109,6 +110,9 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb mux status [--json]|enable [PORT] [--backend sing-box|nginx|caddy]|disable|backend sing-box|nginx|caddy|auto [NODE_IDS]
   sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID
   sb mux caddy                   导出现有 Caddy L4 的 HTTPS listener_wrappers 配置
+  sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE]
+                                 一键接入现有网站，共用 443 并自动同步节点
+  sb mux detach                  恢复接入前的网站配置，节点恢复独立端口
   sb traffic group set ID --nodes NODE1,NODE2 --quota 500G [--reset-day 1] [--quota-mode total|download]
   sb traffic group status [--json]|remove ID|reset ID
   sb traffic shaping plan|enable IFACE --capacity 1G | disable | status [--json]
