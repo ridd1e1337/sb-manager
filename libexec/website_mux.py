@@ -90,7 +90,7 @@ class Journal:
     def restore(self, strict=False):
         if strict:
             for path, entry in self.entries.items():
-                if digest(path) != entry['installed']:
+                if entry.get('external_changes') or digest(path) != entry['installed']:
                     fail('网站配置已被外部修改，保留现场，请先合并修改再恢复：' + path)
         for path, entry in reversed(list(self.entries.items())):
             if entry['backup']:
@@ -452,7 +452,7 @@ def main():
         write_json(tx.directory / 'frontend.json', config)
         # Validate every before-image before mutating any website file.
         for path, entry in originals.entries.items():
-            if digest(path) != entry['installed']:
+            if entry.get('external_changes') or digest(path) != entry['installed']:
                 fail('配置已被外部修改，自动恢复已停止：' + path)
             tx.save(path)
         tx.save(originals.index)
@@ -520,6 +520,12 @@ def main():
             continue
         tx.save(path)
         originals.save(path)
+        # Updating our directive after an operator edits the same file must
+        # not make their changes appear to be part of our original baseline.
+        entry = originals.entries[path]
+        if entry['installed'] is not None and digest(path) != entry['installed']:
+            entry['external_changes'] = True
+            write_json(originals.index, originals.entries)
         atomic(path, content, 0o644)
         originals.installed(path)
         changed.append(path)

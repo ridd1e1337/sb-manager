@@ -58,7 +58,7 @@ website_mux_sync_routes() {
 website_mux_build_caddy() {
   local binary=$1 version output target go_bin arch metadata digest work plugin plugins module_ids module_id built_modules
   local -a build_args=()
-  if "$binary" list-modules 2>/dev/null | grep -Fxq caddy.listeners.layer4; then printf '%s\n' "$binary"; return 0; fi
+  if "$binary" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then printf '%s\n' "$binary"; return 0; fi
   output=$("$binary" list-modules --packages --versions) || return 1
   plugins=$(awk 'NF==3 && $3 ~ /\// && $3!="github.com/caddyserver/caddy/v2" {print $3 "@" $2}' <<<"$output" | sort -u) || return 1
   module_ids=$(awk 'NF==3 && $3 ~ /\// {print $1}' <<<"$output") || return 1
@@ -72,7 +72,7 @@ website_mux_build_caddy() {
   version_ge "${version#v}" 2.11.7 || version=v2.11.8
   digest=$(printf '%s' "$plugins" | sha256sum | cut -c1-12) || return 1
   target="$SBM_PREFIX/lib/sb-manager-web/caddy-$version-${SBM_WEBSITE_L4_COMMIT:0:12}-$digest"
-  if [[ -x "$target" ]] && "$target" list-modules 2>/dev/null | grep -Fxq caddy.listeners.layer4; then printf '%s\n' "$target"; return; fi
+  if [[ -x "$target" ]] && "$target" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then printf '%s\n' "$target"; return; fi
   core_check_free_space "$SBM_CACHE" 1800000000 || return 1
   work=$(mktemp -d "$SBM_CACHE/caddy-build.XXXXXX") || return 1
   chmod 0700 "$work"
@@ -95,12 +95,12 @@ website_mux_build_caddy() {
     --with "github.com/mholt/caddy-l4@$SBM_WEBSITE_L4_COMMIT" "${build_args[@]}" --output "$work/caddy" >"$work/build.log" 2>&1); then
     log_error "Caddy 编译失败，原网站未切换；请查看 $work/build.log。"; return 1
   fi
-  "$work/caddy" list-modules | grep -Fxq caddy.listeners.layer4 || return 1
+  "$work/caddy" list-modules | grep -Fx caddy.listeners.layer4 >/dev/null || return 1
   [[ $("$work/caddy" version | awk '{print $1}') == "$version" ]] || { log_error '编译后的 Caddy 版本与目标不一致。'; return 1; }
   built_modules=$("$work/caddy" list-modules --packages --versions) || return 1
   while IFS= read -r module_id; do
     [[ -n "$module_id" ]] || continue
-    awk '{print $1}' <<<"$built_modules" | grep -Fxq "$module_id" || { log_error "重建的 Caddy 缺少原有模块：$module_id"; return 1; }
+    awk '{print $1}' <<<"$built_modules" | grep -Fx "$module_id" >/dev/null || { log_error "重建的 Caddy 缺少原有模块：$module_id"; return 1; }
   done <<<"$module_ids"
   install -d -m 0755 "$SBM_PREFIX/lib/sb-manager-web" || return 1
   install -m 0755 "$work/caddy" "$target" || return 1

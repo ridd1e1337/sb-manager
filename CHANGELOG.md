@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.55
+
+- Remember external edits when later synchronizing an owned directive in the
+  same website file, so detach cannot silently restore over operator changes.
+- Consume complete Caddy module listings when checking required modules to
+  avoid SIGPIPE failures with large plugin sets under Bash pipefail.
+
 ## 0.1.0-alpha.54
 
 - Add `sb mux setup` to detect an existing Nginx/Caddy HTTPS frontend, stage
