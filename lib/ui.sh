@@ -888,9 +888,9 @@ ui_nginx_stream_menu() {
     5) nginx_stream_disable;;
     6) nginx_stream_route_list;;
     7)
-      printf '1. sing-box 内置（推荐小内存服务器，无新增进程或软件包）\n2. Nginx Stream（按需安装并启动独立服务）\n0. 返回\n'
-      ui_menu_choice engine_choice '选择复用方式' 2
-      case "$engine_choice" in 1) mux_set_backend sing-box;; 2) mux_set_backend nginx;; esac;;
+      printf '1. sing-box 内置（推荐小内存服务器，无新增进程或软件包）\n2. Nginx Stream（按需安装并启动独立服务）\n3. 现有 Caddy L4（须自行安装模块并接入分流配置）\n0. 返回\n'
+      ui_menu_choice engine_choice '选择复用方式' 3
+      case "$engine_choice" in 1) mux_set_backend sing-box;; 2) mux_set_backend nginx;; 3) mux_set_backend caddy;; esac;;
   esac
 }
 

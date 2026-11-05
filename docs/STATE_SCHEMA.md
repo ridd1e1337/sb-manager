@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.52",
+  "manager_version": "0.1.0-alpha.53",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -143,8 +143,13 @@ Multiple TLS nodes may reference the same `certificates[].domain` and certificat
 
 Every node has a normalized `traffic` object. `configured` distinguishes a never-configured node from a disabled policy; `enabled` controls runtime rules without discarding policy or usage. `quota_bytes` and either directional rate may be `null` for unlimited. `quota_mode` is `total` (upload plus download) or `download`; `reset_day` is an integer from 1 through 28 and is evaluated in UTC. Rate values are stored as bit/s. Accumulated counters are runtime data and live in `/var/lib/sb-manager/traffic-usage.json`, not in state or generated sing-box configuration.
 
-`nginx_stream` retains its historical key for both TCP/SNI mux backends.
-`backend` is `sing-box` or `nginx`. New empty configurations default to
+`nginx_stream` retains its historical key for TCP/SNI mux backends.
+`backend` is `sing-box`, `nginx`, or `caddy`. The `caddy` backend represents an
+operator-owned Caddy L4 frontend: the manager renders loopback node listeners,
+exports the public port, and observes `caddy.service` (`caddy` on OpenRC).
+It does not install, stop, rewrite or reload Caddy. `sb mux caddy` emits a
+listener-wrapper snippet to integrate into that frontend after route changes.
+New empty configurations default to
 `sing-box`; legacy configurations missing `backend` keep `nginx` when enabled
 or when any routes were saved. Explicit choices survive upgrades and disabling.
 Older schema-v2 files without this section normalize to a disabled empty mux.

@@ -74,7 +74,7 @@ nginx_stream_validate_state() {
   port=$(jq -r '.port // 0' <<<"$cfg")
   routes=$(jq -c '.routes // []' <<<"$cfg")
   engine=$(mux_backend "$state") || return 1
-  case "$engine" in sing-box|nginx) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
+  case "$engine" in sing-box|nginx|caddy) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
   if [[ "$enabled" == true && "$engine" == sing-box ]]; then
     version_ge "$(core_current_version)" 1.11.0 || { log_error '内置 TCP/SNI 分流需要 sing-box 1.11 或更高版本。'; return 1; }
   fi
@@ -420,7 +420,7 @@ nginx_stream_route_remove() { with_state_transaction nginx-route-remove _nginx_s
 
 _nginx_stream_enable() {
   local public_port=${1:-} backend=${2:-} candidate
-  case "$backend" in ''|sing-box|nginx) ;; *) usage_die '复用方式只能是 sing-box 或 nginx。';; esac
+  case "$backend" in ''|sing-box|nginx|caddy) ;; *) usage_die '复用方式只能是 sing-box、nginx 或 caddy。';; esac
   if [[ $(jq '.nginx_stream.routes|length' "$SBM_STATE") == 0 ]]; then
     log_error '请先添加至少一条 SNI 路由：sb mux route add NODE_ID SNI。'; return 1
   fi
@@ -470,6 +470,7 @@ nginx_stream_status() {
   fi
   printf 'TCP/SNI 复用：%s，方式：%s，公网端口：%s/TCP，路由：%s 条\n' "$([[ "$enabled" == true ]] && echo '启用' || echo '停用')" "$(mux_backend_label)" "$port" "$routes"
   if [[ $(mux_backend) == sing-box ]]; then printf '复用现有 sing-box 核心，无需额外代理进程；仅转发已登记的 TLS SNI。\n'; fi
+  if [[ $(mux_backend) == caddy ]]; then printf '公网由现有 Caddy 管理；节点只监听 loopback。使用 sb mux caddy 导出分流配置，变更路由后需同步并重载 Caddy。\n'; fi
   if [[ "$enabled" == true && "$SBM_SKIP_INIT" != 1 && ("$backend" == systemd || "$backend" == openrc) ]] && service_exists "$service"; then
     service_status_text "$service" || true
   fi
@@ -481,6 +482,14 @@ nginx_stream_doctor_check() {
   [[ "$enabled" == true ]] || return 0
   port=$(jq -r '.nginx_stream.port' "$SBM_STATE"); routes=$(jq '.nginx_stream.routes|length' "$SBM_STATE")
   backend=$(init_system 2>/dev/null || true)
+  if [[ $(mux_backend) == caddy ]]; then
+    if service_active caddy.service && host_port_in_use tcp "$port"; then
+      check_line PASS "Caddy 服务与公网端口可见（${port}/TCP）；SNI 路由由 Caddy 配置管理"
+    else
+      check_line FAIL "Caddy 复用入口未就绪：${port}/TCP"; failures=$((failures + 1))
+    fi
+    return 0
+  fi
   if [[ $(mux_backend) == sing-box ]]; then
     if service_active "$SBM_SERVICE" && singbox_port_in_use tcp "$port"; then
       check_line PASS "sing-box 内置 TCP/SNI 分流正在运行（${port}/TCP，${routes} 条路由）"

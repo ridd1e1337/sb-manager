@@ -11,6 +11,7 @@ mux_backend_label() {
   case "$(mux_backend "${1:-$SBM_STATE}")" in
     sing-box) printf 'sing-box 内置';;
     nginx) printf 'Nginx Stream';;
+    caddy) printf '现有 Caddy L4';;
     *) return 1;;
   esac
 }
@@ -20,8 +21,12 @@ mux_uses_nginx() {
 }
 
 mux_service() {
-  if [[ $(mux_backend "${1:-$SBM_STATE}") == sing-box ]]; then printf '%s\n' "$SBM_SERVICE"
-  else printf '%s\n' "$SBM_NGINX_STREAM_SERVICE"; fi
+  case "$(mux_backend "${1:-$SBM_STATE}")" in
+    sing-box) printf '%s\n' "$SBM_SERVICE";;
+    nginx) printf '%s\n' "$SBM_NGINX_STREAM_SERVICE";;
+    caddy) printf 'caddy.service\n';;
+    *) return 1;;
+  esac
 }
 
 mux_reserved_port() {
@@ -69,7 +74,10 @@ _mux_auto_configure() {
   ) | .id] | join(",")' "$SBM_STATE")
   IFS=, read -r -a node_ids <<<"$ids"
   ((${#node_ids[@]} > 0)) || { log_error '没有可加入 TCP/SNI 复用的启用节点。'; return 1; }
-  mux_frontend_available "$SBM_STATE" "$public_port" || return 1
+  [[ -n "$backend" ]] || backend=$(mux_backend "$SBM_STATE") || return 1
+  case "$backend" in sing-box|nginx|caddy) ;; *) usage_die '复用方式只能是 sing-box、nginx 或 caddy。';; esac
+  validate_port "$public_port" || { log_error '无效公网端口。'; return 1; }
+  if [[ "$backend" != caddy ]]; then mux_frontend_available "$SBM_STATE" "$public_port" || return 1; fi
   candidate=$(state_candidate) || return 1
   cp "$SBM_STATE" "$candidate" || { rm -f "$candidate"; return 1; }
   for id in "${node_ids[@]}"; do
@@ -102,6 +110,7 @@ _mux_auto_configure() {
   if ! apply_candidate_state "$candidate" mux-auto; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
   log_ok "已配置并启用 TCP/SNI 复用：$(jq '.nginx_stream.routes|length' "$SBM_STATE") 条路由，共用 ${public_port}/TCP。"
+  [[ "$backend" != caddy ]] || log_info '请将 sb mux caddy 输出接入现有 Caddy 的 HTTPS listener_wrappers 并重载；管理器只配置本机后端和公网导出端口。'
 }
 
 mux_auto_configure() { with_state_transaction mux-auto _mux_auto_configure "$@"; }
@@ -134,7 +143,7 @@ mux_builtin_config() {
 
 _mux_set_backend() {
   local backend=$1 candidate
-  case "$backend" in sing-box|nginx) ;; *) usage_die '复用方式只能是 sing-box 或 nginx。';; esac
+  case "$backend" in sing-box|nginx|caddy) ;; *) usage_die '复用方式只能是 sing-box、nginx 或 caddy。';; esac
   candidate=$(state_candidate) || return 1
   if ! jq --arg backend "$backend" '.nginx_stream.backend=$backend' "$SBM_STATE" >"$candidate" \
     || ! apply_candidate_state "$candidate" mux-backend; then
@@ -146,6 +155,17 @@ _mux_set_backend() {
 
 mux_set_backend() { with_state_transaction mux-backend _mux_set_backend "$@"; }
 
+# Operator-owned Caddy keeps the public socket and HTTP/QUIC applications.
+# This snippet only peeks at TLS SNI; unmatched connections continue to Caddy.
+mux_caddy_config() {
+  [[ $(mux_backend) == caddy ]] && nginx_stream_state_enabled "$SBM_STATE" || { log_error '请先启用 caddy 复用方式。'; return 1; }
+  nginx_stream_validate_state "$SBM_STATE" || return 1
+  printf 'listener_wrappers {\n\tlayer4 {\n'
+  jq -r '.nginx_stream.routes | to_entries[] |
+    "\t\t@sbm_\(.key) tls sni \(.value.sni)\n\t\troute @sbm_\(.key) {\n\t\t\tproxy 127.0.0.1:\(.value.backend_port)\n\t\t}"' "$SBM_STATE"
+  printf '\t}\n\ttls\n}\n'
+}
+
 mux_cli() {
   local alias=$1 action=${2:-status} port='' backend='' json=${SBM_OUTPUT_JSON:-0}
   shift
@@ -155,17 +175,20 @@ mux_cli() {
       if [[ ${1:-} == --json ]]; then json=1; shift; fi
       (($# == 0)) || usage_die '用法：sb mux status [--json]'
       nginx_stream_status "$json";;
+    caddy)
+      (($# == 0)) || usage_die '用法：sb mux caddy（输出 HTTPS listener_wrappers 配置）'
+      mux_caddy_config;;
     enable)
       [[ "$alias" != nginx-stream ]] || backend=nginx
       if [[ $# -gt 0 && "$1" != --backend ]]; then port=$1; shift; fi
       if [[ ${1:-} == --backend ]]; then backend=${2:?缺少复用方式}; shift 2; fi
-      (($# == 0)) || usage_die '用法：sb mux enable [PORT] [--backend sing-box|nginx]'
+      (($# == 0)) || usage_die '用法：sb mux enable [PORT] [--backend sing-box|nginx|caddy]'
       nginx_stream_enable "$port" "$backend";;
     disable)
       (($# == 0)) || usage_die '用法：sb mux disable'
       nginx_stream_disable;;
     backend)
-      (($# == 1)) || usage_die '用法：sb mux backend sing-box|nginx'
+      (($# == 1)) || usage_die '用法：sb mux backend sing-box|nginx|caddy'
       mux_set_backend "$1";;
     auto)
       local ids=all auto_port=443 auto_backend=''
@@ -174,7 +197,7 @@ mux_cli() {
         case "$1" in
           --port) auto_port=${2:?缺少端口}; shift 2;;
           --backend) auto_backend=${2:?缺少复用方式}; shift 2;;
-          *) usage_die '用法：sb mux auto [all|NODE1,NODE2,...] [--port 443] [--backend sing-box|nginx]';;
+          *) usage_die '用法：sb mux auto [all|NODE1,NODE2,...] [--port 443] [--backend sing-box|nginx|caddy]';;
         esac
       done
       mux_auto_configure "$ids" "$auto_port" "$auto_backend";;
@@ -191,6 +214,6 @@ mux_cli() {
           nginx_stream_route_remove "$1";;
         *) usage_die '用法：sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID';;
       esac;;
-    *) usage_die '用法：sb mux status|enable [PORT] [--backend sing-box|nginx]|disable|backend sing-box|nginx|auto [NODE_IDS]|route ...';;
+    *) usage_die '用法：sb mux status|enable [PORT] [--backend sing-box|nginx|caddy]|disable|backend sing-box|nginx|caddy|auto [NODE_IDS]|route ...';;
   esac
 }

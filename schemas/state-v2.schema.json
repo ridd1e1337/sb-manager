@@ -85,7 +85,7 @@
       "additionalProperties": true,
       "properties": {
         "enabled": {"type": "boolean"},
-        "backend": {"enum": ["sing-box", "nginx"]},
+        "backend": {"enum": ["sing-box", "nginx", "caddy"]},
         "listen": {"type": "string", "minLength": 1},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "routes": {

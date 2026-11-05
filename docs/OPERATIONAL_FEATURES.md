@@ -49,6 +49,33 @@ DNS 请求与证书申请由管理器锁保护。本次新建记录带独立标�
 准备，再继续填写节点参数；准备成功后取消创建节点会保留 DNS 和证书供复用。
 普通节点删除和本地备份恢复不会删除已成功创建的 Cloudflare 记录。
 
+## 与现有 Caddy 网站共享 443（alpha.53）
+
+Caddy 已监听 443 时，先为 AnyTLS 等 TLS 节点选一个空闲端口，再显式选择
+`caddy` 方式。Caddy 需要编译 `github.com/mholt/caddy-l4`；普通 HTTP
+`reverse_proxy` 无法透传 AnyTLS。管理器不会安装模块或改写 Caddy 网站配置。
+
+```bash
+sb node add anytls --id any-main --domain node.example.com --port 24443
+sb mux auto any-main --port 443 --backend caddy
+sb mux caddy
+```
+
+启用后，节点改为只监听分配的 `127.0.0.1:后端端口`，分享链接和订阅使用
+`node.example.com:443`。将最后一条命令输出保存为 Caddy 片段，在全局选项
+的 `servers :443` 中 `import`；若已有 `listener_wrappers`，需合并，保持
+`layer4` 在 `tls` 前。校验并重载 Caddy 后，匹配节点 SNI 的原始 TLS 连接
+转入后端，其余连接继续由现有网站处理。无需开放后端端口或修改 UFW。
+
+路由增删或后端端口变化后，需要重新导出并重载 Caddy。停用管理器复用不会
+移除 Caddy 的片段，需同步移除对应分流。Caddy 网站与节点应使用不同域名，
+此模式依靠可见 SNI；节点不要启用隐藏 SNI 的 ECH。网站的 UDP/443 HTTP/3
+仍由 Caddy 占用，不能同时给 Hysteria2/TUIC 直接使用。
+
+使用自定义 Caddy 二进制时，应将 systemd/OpenRC 的启动与重载命令都指向
+该二进制，并保留原程序、配置与服务定义以便回滚。状态页检查 `caddy`
+服务和端口，不能代替对外部 Caddy 路由配置的核对。
+
 ## 吞吐测速与对比
 
 目标需要运行自己的 iperf3 服务。管理器只启动客户端，默认测试 10 秒、单连接，

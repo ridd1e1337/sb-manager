@@ -478,7 +478,7 @@ state_validate() {
       and (.max_realms | type == "number" and floor == . and . >= 0 and . <= 1000000))
     and (.nginx_stream | type == "object"
       and (.enabled | type == "boolean")
-      and (.backend | IN("sing-box", "nginx"))
+      and (.backend | IN("sing-box", "nginx", "caddy"))
       and (.listen | nonempty)
       and (.port | port)
       and (.routes | type == "array")

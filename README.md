@@ -2,7 +2,7 @@
 
 `sb-manager` 是 sing-box 的中文管理脚本，支持 systemd 和 OpenRC。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.52`
+当前版本：`0.1.0-alpha.53`
 
 ## 第一步：安装
 
@@ -67,7 +67,7 @@ sb node add trojan --id edge --domain edge.example.com --address edge.example.co
 sb mux auto all --port 443 --backend sing-box
 ```
 
-如果 443 已由 Caddy 或 Nginx 网站占用，脚本会保持网站不变并拒绝接管；请让现有 L4/Stream 配置转发到脚本显示的后端端口。
+如果 443 已由 Caddy 或 Nginx 网站占用，内置方式会拒绝接管。有 Caddy L4 模块时可使用 `sb mux auto all --port 443 --backend caddy`，再将 `sb mux caddy` 输出接入 Caddy 的 HTTPS 配置；网站与节点按 SNI 共用 443，客户端导出自动使用公网端口。管理器不安装或改写现有 Caddy，具体接入见[共享 Caddy 443](docs/OPERATIONAL_FEATURES.md#与现有-caddy-网站共享-443alpha53)。
 
 更多协议参数、安全边界、证书、Sub-Store、备份和高级功能见：
 

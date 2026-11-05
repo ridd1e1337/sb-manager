@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.53
+
+- Add an explicit `caddy` TCP/SNI backend for sharing an existing website's
+  public HTTPS port. Keep node listeners on loopback and export the frontend
+  port in shares and subscriptions, without managing Caddy's lifecycle.
+- Export TLS passthrough listener wrappers with `sb mux caddy`; unmatched
+  connections continue to the existing HTTPS handler. Report the actual Caddy
+  service in status and diagnostics on systemd/OpenRC.
+- Preserve existing sing-box/Nginx defaults and schema-v2 states. Caddy requires
+  a separately installed L4 module and explicit configuration/reload after
+  route changes. No test assets, environments or procedures are added.
+
 ## 0.1.0-alpha.52
 
 - Prepare Cloudflare DNS-only A/AAAA records and DNS-01 certificates when
