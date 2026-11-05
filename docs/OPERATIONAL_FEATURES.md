@@ -310,6 +310,10 @@ Surge 配置文件的 `[Proxy]` 段即可。单节点还保存 `surge.conf`；�
 这些文件与凭据一样按 0600 保存。
 
 服务端 v5 导出 Surge 兼容的 `version=4`，v6 需要支持 v6 的 Surge。
+截至 2026-11-06，官方 mihomo 最新稳定版 v1.19.33 仍不接受 Snell v6；
+其 [Snell 实现](https://github.com/MetaCubeX/mihomo/blob/v1.19.33/adapter/outbound/snell.go)
+仅将 v5 转为 v4 兼容连接，版本检查会拒绝 v6。因此 mihomo 导出只提供可兼容
+的单用户 v5，不会把 v6 改写成 v4。客户端版本号和 Snell 协议版本是两回事。
 sing-box 多用户 Snell 不兼容 Surge，不生成误导的原生行；请用主菜单 5 或
 节点菜单导出 sing-box 配置。Snell 分享页不再重复显示通用 URI 和二维码，
 程序使用的 `share.txt` / `links.txt`、sing-box JSON 和 Sub-Store 兼容订阅仍保留。

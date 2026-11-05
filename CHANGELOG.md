@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.58
+
+- Allow Caddy websites using file_server to enroll in shared TLS/443 without
+  falsely rejecting an unchanged site: normalize only the candidate Caddyfile
+  path that Caddy automatically adds to file_server.hide. Keep all other
+  website settings and explicit hidden paths subject to exact comparison,
+  native configuration validation and rollback.
+- Document the verified Snell v6 limitation in official mihomo v1.19.33.
+  No state or credential migration is required.
+
 ## 0.1.0-alpha.57
 
 - Explain panel entries in Chinese, name Cloudflare functionality CF Tunnel,

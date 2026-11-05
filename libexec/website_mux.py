@@ -374,7 +374,8 @@ def validate_plan(server, binary, main_path, snippet, planned, files, before, ro
                 text = planned[str(main_path)].replace(f'import {snippet}', f'import {candidate_snippet}')
                 candidate_main.write_text(text)
                 after = json.loads(run([binary, 'adapt', '--adapter', 'caddyfile', '--config', str(candidate_main)]))
-                caddy_semantics(before, after, routes, legacy)
+                caddy_semantics(before, after, routes, legacy,
+                                main_path=main_path, candidate_main=candidate_main)
                 run([binary, 'validate', '--adapter', 'caddyfile', '--config', str(candidate_main)])
             else:
                 contents = dict(files)
@@ -403,7 +404,7 @@ def validate_plan(server, binary, main_path, snippet, planned, files, before, ro
             candidate_main.unlink(missing_ok=True)
 
 
-def caddy_semantics(before, after, routes, legacy=False):
+def caddy_semantics(before, after, routes, legacy=False, *, main_path=None, candidate_main=None):
     def servers(config):
         return config.get('apps', {}).get('http', {}).get('servers', {})
     for srv in servers(before).values():
@@ -430,6 +431,22 @@ def caddy_semantics(before, after, routes, legacy=False):
         fail('Caddy 公网 :443 未接入 L4 wrapper；自定义 bind/servers 需先调整')
     for srv in servers(after).values():
         srv.pop('listener_wrappers', None)
+    # Caddy automatically hides the Caddyfile used by the adapter from each
+    # file_server. Candidate validation uses a temporary filename, so map only
+    # that exact generated path back to the live Caddyfile. All other hide
+    # entries and website settings must still compare exactly.
+    def normalize_candidate_path(obj):
+        if isinstance(obj, dict):
+            if obj.get('handler') == 'file_server' and isinstance(obj.get('hide'), list):
+                obj['hide'] = [str(main_path) if value == str(candidate_main) else value
+                               for value in obj['hide']]
+            for value in obj.values():
+                normalize_candidate_path(value)
+        elif isinstance(obj, list):
+            for value in obj:
+                normalize_candidate_path(value)
+    if main_path is not None and candidate_main is not None:
+        normalize_candidate_path(after)
     if before != after:
         fail('分流之外的 Caddy 网站设置发生变化，已拒绝应用')
 
