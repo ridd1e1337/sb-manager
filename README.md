@@ -1,8 +1,8 @@
 # sb-manager
 
-`sb-manager` 是 sing-box 的中文管理脚本，支持 systemd 和 OpenRC。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
+`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.55`
+当前版本：`0.1.0-alpha.56`
 
 ## 第一步：安装
 
@@ -21,6 +21,14 @@ apk add --no-cache bash curl tar ca-certificates
 ```
 
 然后仍使用上面的安装命令。支持 Debian、Ubuntu、Alpine、Rocky、Alma、Fedora、Arch 和 openSUSE；系统必须实际运行 systemd 或 OpenRC。安装时可追加 `--no-menu`，固定核心版本可追加 `--core-version VERSION`。
+
+新 VPS 可同时安装并启用 **Caddy、UFW、Fail2ban**（Debian/Ubuntu systemd、Alpine OpenRC）：
+
+```bash
+curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh | bash -s -- --init-vps
+```
+
+UFW 自动放行 **22/TCP、80/TCP、443/TCP、443/UDP**，并保护检测到的当前 SSH 端口；新启用时默认拒绝其他入站、允许出站，已有规则保留。安装过本脚本也可运行 `sb vps init`，或在主菜单选择“21. 新 VPS 初始化”。普通安装和更新不会触发初始化。详情见[新 VPS 初始化](docs/OPERATIONAL_FEATURES.md#新-vps-初始化alpha56)。
 
 ## 第二步：使用
 

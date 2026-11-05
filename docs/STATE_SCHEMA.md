@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.55",
+  "manager_version": "0.1.0-alpha.56",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -109,6 +109,13 @@ is an integer 0–179, generated once and retained, representing minutes after
 03:00 in the host's local timezone. These fields control manager scripts only;
 `core_update_policy` and `cloudflared_update_policy` remain independent.
 Last-attempt state and logs live under `var/updates/`, not in topology state.
+
+Explicit VPS initialization is a host operation and does not add topology
+fields or change the schema version. Its protected `var/vps-init/last.json`
+records the completion timestamp, manager version, SSH ports and backup path.
+Per-operation host configuration/service before-images live in that directory;
+they are separate from node state rollback. Ordinary installation and upgrades
+never execute VPS initialization without the explicit `--init-vps` option.
 
 Notification provider choice and thresholds are non-secret state. Telegram tokens/chat IDs and Webhook URLs live only in `secrets/notifications.json` with mode `0600`. Delivery deduplication and the last health report are runtime journals under `/var/lib/sb-manager/`.
 

@@ -14,6 +14,47 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 认证代理向导按监听地址建议客户端地址：本机监听保留 loopback，公网监听
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
 
+## 新 VPS 初始化（alpha.56）
+
+项目的主功能仍是 sing-box 安装与节点管理。基础环境初始化是独立的显式操作：
+
+```bash
+sb vps init
+sb vps status
+```
+
+也可在首次安装时传入 `--init-vps`，或选择主菜单“21. 新 VPS 初始化”。
+支持 Debian/Ubuntu + systemd、Alpine + OpenRC，使用发行版已配置的签名软件源
+安装 Caddy、UFW、Fail2ban。Alpine 需要可用的 community 软件源；缺少包时会
+报错，不自动添加第三方源。新 VPS 的基础初始化与网站 443 共存接入是两个功能：
+这里沿用 Caddy 包的默认配置或创建 HTTP 欢迎页，域名网站配置好后可使用
+`sb mux setup` 接入节点分流。
+
+UFW 会允许 22/TCP、80/TCP、443/TCP 和 443/UDP，后者用于 HTTP/3 或 QUIC。
+同时探测 sshd 配置、监听套接字和当前 `SSH_CONNECTION`，保留实际 SSH 端口；
+显式的 `SBM_SSH_PORTS` 也不会排除当前连接端口。新启用 UFW 时设为默认拒绝
+入站、允许出站。不会 reset 或清空已有规则，也不会按节点列表额外开放端口；
+因此已有规则和非标准 SSH 端口可能使放行范围多于这三个端口。IPv6 沿用
+发行版 UFW 的配置，若管理员已关闭 UFW IPv6 支持，需另行处理 IPv6 防护。
+云厂商安全组仍由管理员管理。
+
+已有正常工作的 Caddy 和 Fail2ban SSH jail 会复用；UFW 应用后会重启 Fail2ban
+以重新建立封禁规则。没有 SSH jail 时使用 600 秒内失败 5 次、封禁 3600 秒，
+并将本机和当前 SSH 客户端 IP 加入忽略列表。Debian 按需补齐 journal Python
+依赖；Alpine 按需启用系统日志服务以供 Fail2ban 读取。SSH 登录配置、密钥和
+认证方式保持原样，初始化不会自动关闭密码登录或改 SSH 端口。
+
+操作由管理器锁保护。Caddy/Fail2ban 配置经过原生程序校验，Fail2ban 使用
+候选目录校验后安装；UFW 配置和服务状态保存到
+`/var/lib/sb-manager/vps-init/<时间>/`。失败时尝试恢复本次修改的规则、配置
+和服务状态，已安装的包保留，修正问题后可重试。成功记录位于同目录的
+`last.json`，状态命令读取实时服务状态。备份和日志仅供 root 访问。
+
+80/443 已由其他程序占用，或 firewalld 正在运行时，初始化会停止，避免改动
+现有网站入口。该入口面向新 VPS，不适合直接替换已有 Nginx 环境。
+`--init-vps` 与 `--no-start` 不能合用；VPS 初始化失败不会撤销已完成的
+sing-box 安装。普通安装、日常升级和节点操作不会自动触发这套初始化。
+
 ## 节点域名与证书自动准备（alpha.52）
 
 添加 AnyTLS、Hysteria2、Trojan、TUIC、Naive 或 VLESS TLS 节点时，输入

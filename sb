@@ -38,6 +38,7 @@ source "$SBM_LIB/lib/traffic_groups.sh"
 source "$SBM_LIB/lib/shaping.sh"
 source "$SBM_LIB/lib/expiry.sh"
 source "$SBM_LIB/lib/firewall.sh"
+source "$SBM_LIB/lib/vps.sh"
 source "$SBM_LIB/lib/notification.sh"
 source "$SBM_LIB/lib/health.sh"
 source "$SBM_LIB/lib/status.sh"
@@ -69,6 +70,8 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb                              打开交互面板
   sb [--json] [--yes] [--dry-run] [--quiet] <命令>  通用选项可放在命令前
   sb status [--json]              查看统一状态
+  sb vps init [--dry-run]         新 VPS 一键安装 Caddy、UFW、Fail2ban 并放行基础端口
+  sb vps status [--json]          查看 VPS 基础环境状态
   sb node list [--json] [--tag TAG] [--region REGION] 列出节点
   sb quick                       添加节点向导（兼容别名）
   sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]
@@ -199,6 +202,7 @@ main() {
     tcp) shift; require_command jq; tcp_tuning_cli "$@"; return $?;;
     network) shift; require_command jq; network_cli "$@"; return $?;;
     update) shift; manager_update_cli "$@"; return $? ;;
+    vps) shift; vps_cli "$@"; return $? ;;
     uninstall)
       require_root
       local purge=0 assume_yes=${SBM_ASSUME_YES:-0} arg

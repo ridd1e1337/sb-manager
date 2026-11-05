@@ -15,6 +15,7 @@ CORE_VERSION=latest
 KEEP_CORE=0
 INSTALL_PROFILE=${SBM_INSTALL_PROFILE:-minimal}
 INSTALL_CLOUDFLARED=${SBM_INSTALL_CLOUDFLARED:-0}
+INIT_VPS=0
 SETUP_MUTATED=0
 SETUP_ROLLBACK_DIR=''
 
@@ -125,6 +126,7 @@ usage() {
   --profile PROFILE     安装依赖档位：minimal（默认）或 full
   --full                --profile full 的快捷方式（会预装高级功能依赖）
   --with-cloudflared    同时安装可选的 Cloudflare Tunnel 客户端
+  --init-vps            安装后初始化新 VPS：Caddy、UFW、Fail2ban，放行 22/80/443
   -h, --help            帮助
 EOF_USAGE
 }
@@ -137,10 +139,16 @@ while (($#)); do
     --profile) INSTALL_PROFILE=${2:?}; shift 2 ;;
     --full) INSTALL_PROFILE=full; shift ;;
     --with-cloudflared) INSTALL_CLOUDFLARED=1; shift ;;
+    --init-vps) INIT_VPS=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1" >&2; usage; exit 1 ;;
   esac
 done
+
+if [[ "$INIT_VPS" == 1 && "$NO_START" == 1 ]]; then
+  echo '--init-vps 会启用服务和 UFW，不能与 --no-start 同时使用。' >&2
+  exit 1
+fi
 
 case "$INSTALL_PROFILE" in
   minimal|full) ;;
@@ -649,8 +657,18 @@ fi
 if [[ ! -x "$SBM_CLOUDFLARED_BIN" ]]; then
   printf '  cloudflared：未安装（Tunnel 功能启用前执行 sb cloudflared install）。\n'
 fi
-printf '\n注意：脚本不会关闭防火墙，也不会自动开放直连协议端口。\n'
+if [[ "$INIT_VPS" == 1 ]]; then
+  printf '\n即将按 --init-vps 启用 UFW，放行基础端口和实际 SSH 端口。\n'
+else
+  printf '\n普通安装保持防火墙设置；新 VPS 可运行 sb vps init 初始化基础环境。\n'
+fi
 
 trap - ERR
 setup_release_lock
+if [[ "$INIT_VPS" == 1 ]]; then
+  if ! "$SBM_BIN_DIR/sb" vps init; then
+    printf 'sing-box 管理器已安装；VPS 初始化未完成，请按上方提示处理后运行 sb vps init。\n' >&2
+    exit 1
+  fi
+fi
 if [[ "$NO_MENU" == 0 && -t 0 ]]; then "$SBM_BIN_DIR/sb"; fi

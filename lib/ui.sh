@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -1004,6 +1004,18 @@ ui_firewall_menu() {
   esac
 }
 
+ui_vps_menu() {
+  local choice
+  printf '为新 VPS 准备 Caddy、UFW 和 Fail2ban；执行后自动启用基础防护。\n'
+  printf '1. 一键初始化\n2. 查看组件状态\n3. 预览初始化内容\n0. 返回\n'
+  ui_menu_choice choice '选择操作' 3
+  case "$choice" in
+    1) vps_init;;
+    2) vps_init_status;;
+    3) vps_init_plan;;
+  esac
+}
+
 ui_notification_health_menu() {
   local c provider token destination thresholds warn_days
   notification_status
@@ -1230,7 +1242,7 @@ ui_main() {
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
       printf '还没有节点：输入 2 开始创建。\n'
     fi
-    printf '1. 状态\n2. 添加节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n0. 退出\n\n'
+    printf '1. 状态\n2. 添加节点\n3. 节点管理\n4. 分享/导出\n5. 客户端配置\n6. 证书\n7. Tunnel\n8. 更新\n9. API\n10. Realm\n11. 日志\n12. 诊断\n13. 备份\n14. 设置\n15. 防火墙\n16. 流量\n17. 通知\n18. 模板/批量\n19. 卸载\n20. Sub-Store\n21. 新 VPS 初始化\n0. 退出\n\n'
     # Stay at the root on empty input without reopening a page or redrawing
     # the entire menu for every buffered Enter key.
     while true; do
@@ -1249,6 +1261,7 @@ ui_main() {
       14) page=ui_settings_menu;; 15) page=ui_firewall_menu;; 16) page=ui_traffic_menu;;
       17) page=ui_notification_health_menu;; 18) page=ui_template_menu;;
       19) page=ui_uninstall_menu;; 20) page=ui_substore_menu;;
+      21) page=ui_vps_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

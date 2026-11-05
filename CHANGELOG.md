@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.56
+
+- Keep sing-box installation and node management as the primary workflow; add
+  explicit `sb vps init`, `sb vps status`, a panel entry, and installer
+  `--init-vps` for new-host provisioning.
+- Install Caddy, UFW and Fail2ban from distribution repositories on
+  Debian/Ubuntu systemd and Alpine OpenRC. Open 22/TCP, 80/TCP and 443/TCP+UDP,
+  always preserve the current SSH port, and retain existing firewall rules.
+- Validate component configuration, protect before-images, and attempt to
+  restore configuration/service state on failure. Reuse existing websites and
+  SSH jails; reject conflicting web listeners and active firewalld. Reestablish
+  Fail2ban actions after UFW applies its rules.
+- Keep ordinary installation/upgrades and SSH authentication settings unchanged;
+  provisioning is opt-in and cannot be combined with `--no-start`. No tests,
+  fixtures, disposable environments or test procedures are added.
+
 ## 0.1.0-alpha.55
 
 - Remember external edits when later synchronizing an owned directive in the
