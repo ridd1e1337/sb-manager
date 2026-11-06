@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.62
+
+- Shorten main and submenu labels by removing parenthetical descriptions.
+  Keep menu numbers and actions unchanged, distinguish data-preserving and
+  full removal directly in their labels, and simplify menu-choice prompts.
+- Preserve existing input guidance, destructive-action confirmation, and
+  Debian/systemd and Alpine/OpenRC behavior. No state migration or test
+  assets are introduced.
+
 ## 0.1.0-alpha.61
 
 - Refresh the official custom Caddy build on every explicit update, including

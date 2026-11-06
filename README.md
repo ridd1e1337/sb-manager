@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.61`
+当前版本：`0.1.0-alpha.62`
 
 ## 第一步：安装
 
@@ -46,7 +46,7 @@ sb
 2. 需要 TLS 的协议直接输入 Cloudflare 托管的域名；没有可用证书时，自动添加指向本机公网 IP 的 DNS 记录（关闭橙云），再申请证书。首次填写 API Token 和邮箱，之后自动复用。
 3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。Snell 会把 Surge 原生配置放在最上面，可直接复制到 Surge 的 `[Proxy]` 段。
 
-面板用“功能名＋用途”说明各项操作：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **15. VPS 与网站运维**。
+面板按节点管理和维护功能分组，菜单使用简短名称：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **15. VPS 与网站运维**。
 
 **20. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容；需要管理多份订阅时，进入 Sub-Store 后选 **11. 首次设置**完成安装和本机节点接入，选 **12. 使用指南**查看网页访问、组合与客户端导入方法。详见[Sub-Store 使用入门](docs/OPERATIONAL_FEATURES.md#sub-store-使用入门)。
 
