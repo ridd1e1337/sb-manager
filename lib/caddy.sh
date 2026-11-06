@@ -41,7 +41,9 @@ caddy_store_binary() {
   digest=$(sha256sum "$binary" | awk '{print $1}') || return 1
   directory="$SBM_CADDY_STORE/$version-${digest:0:16}"
   target="$directory/caddy"
-  install -d -m 0755 "$SBM_CADDY_STORE" "$directory" || return 1
+  # install -d can leave intermediate directories subject to the caller's
+  # restrictive umask. The service account must traverse this program tree.
+  install -d -m 0755 "$SBM_PREFIX/lib/sb-manager-web" "$SBM_CADDY_STORE" "$directory" || return 1
   if [[ -e "$target" ]]; then
     [[ ! -L "$target" && "$(sha256sum "$target" | awk '{print $1}')" == "$digest" ]] || {
       log_error '已有 Caddy 版本目录摘要不匹配，请先检查文件。'; return 1;
@@ -109,6 +111,21 @@ caddy_validate_candidate() {
   }
 }
 
+caddy_service_can_execute() {
+  local binary=$1 backend=$2 user
+  [[ "$backend" == systemd ]] || return 0
+  user=$(systemctl show caddy.service -p User --value) || return 1
+  user=${user:-root}
+  if command_exists runuser; then
+    runuser -u "$user" -- "$binary" version >"$SBM_RUN/caddy-exec.log" 2>&1
+  elif command_exists su; then
+    # The caller has already restricted binary paths to safe absolute names.
+    su -s /bin/sh -c "$binary version" "$user" >"$SBM_RUN/caddy-exec.log" 2>&1
+  else
+    log_error '缺少 runuser/su，无法确认 Caddy 服务用户能够执行候选程序。'; return 1
+  fi
+}
+
 caddy_package_restore() {
   local snapshot=$1
   [[ -f "$snapshot/caddy-package/package.json" ]] || return 0
@@ -173,6 +190,9 @@ _caddy_switch() {
   if [[ "$mode" == rollback ]]; then
     "$target" list-modules | grep -Fx caddy.listeners.layer4 >/dev/null || return 1
   else caddy_verify_modules "$old" "$target" || return 1; fi
+  caddy_service_can_execute "$target" "$backend" || {
+    log_error "Caddy 服务用户无法执行候选程序，未切换；日志：$SBM_RUN/caddy-exec.log"; return 1;
+  }
   caddy_validate_candidate "$target" "$config" || return 1
   version=$(caddy_version "$target") || return 1
   digest=$(sha256sum "$target" | awk '{print $1}') || return 1

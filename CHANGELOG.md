@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.60
+
+- Make the managed Caddy program parent explicitly traversable by its service
+  account, including hosts migrating from older custom binary layouts under a
+  restrictive umask. Check candidate execution as the configured systemd
+  service user before changing package integration or restarting websites.
+- Preserve the existing rollback path and state schema; no test assets or
+  procedures are added.
+
 ## 0.1.0-alpha.59
 
 - Add explicit Caddy program enrollment, status, candidate-first updates and
