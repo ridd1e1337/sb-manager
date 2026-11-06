@@ -137,14 +137,16 @@ Naive TCP、ShadowTLS 都按唯一 SNI 分流；添加、删除、启停、修�
 节点必须使用与网站不同的域名，且不能开启隐藏 SNI 的 ECH。SS、Snell、
 VMess Tunnel 和 QUIC 协议不在该 TCP/SNI 接入范围内。
 
-Caddy 沿用 HTTP 网站配置并增加 L4 listener wrapper。缺少 L4 时会在独立路径
-编译程序，保留原程序，固定 `xcaddy`/`caddy-l4` 源码版本并通过 Go 校验数据库
-验证模块；缺少合适 Go 时，从官方元数据取 SHA-256 校验下载。已有模块保留，
-无可复现版本的本地模块拒绝自动重建。低于 2.11.7 的 Caddy 会升级到构建基线
-2.11.8。首次构建可能耗时数分钟，需要约 1.8 GB 可用磁盘；不在基础安装时
-安装这些工具。systemd 用独立 drop-in，Alpine OpenRC 保留服务脚本并更新
-`command`，使启动和重载都使用带 L4 的程序。自定义 Caddy 的安全更新需维护
-带相同模块的版本；发行版软件包更新不会更新这个独立程序。
+Caddy 沿用 HTTP 网站配置并增加 L4 listener wrapper。从 alpha.59 起，缺少 L4
+时默认从 Caddy 官方构建接口下载带现有插件的程序；校验 CPU 架构、正式版本、
+模块集合和网站配置后才接入。官方构建不可用时保持现状并报错，不自动在 VPS
+安装编译工具。接入完成后自动启用下方的 Caddy 程序维护。
+
+确需本机编译时，可显式使用 `sb mux setup --server caddy --build-caddy`。
+该方式固定 `xcaddy`/`caddy-l4` 源码版本并通过 Go 校验数据库验证模块；缺少
+合适 Go 时，从官方元数据取 SHA-256 校验下载。编译需要约 1.8 GB 可用磁盘；
+Go 模块、构建缓存与工具链均限制在本次临时目录，成功后删除，失败资料受一天
+保留策略管理。基础安装不安装编译工具。
 
 Nginx 使用现有进程的 Stream 模块：公网 TCP/443 按 SNI 分流，网站 TLS
 监听移到本机端口。Stream 向网站发送 PROXY 协议以保留真实客户端地址；
@@ -174,10 +176,70 @@ sb mux detach
 仅开放 22/80/443 并不能让所有协议共用 443：TCP 与 UDP 是不同监听。
 Caddy/Nginx HTTP/3 占用 UDP/443 时，Hysteria2/TUIC 不能再直接绑定同一 UDP 端口。
 
+## Caddy 程序维护（alpha.59）
+
+面板入口：“15. VPS 与网站运维 → Caddy 程序维护”。已有 alpha.53–58 网站接入
+使用 `sb caddy manage` 迁移；网站、节点凭据和 DNS 保持原值。新的网站接入自动
+执行这一操作。接入需要正在运行、可验证的网站服务，不会接管其他工具已有的
+diversion/alternatives 配置。
+
+Debian/Ubuntu 安装了 `caddy` 软件包时，采用
+[Caddy 官方的软件包接入方式](https://caddyserver.com/docs/build)：
+`dpkg-divert` 保留 `/usr/bin/caddy.default`，`update-alternatives` 让
+`/usr/bin/caddy` 指向 `/usr/bin/caddy.custom`，后者指向受管版本目录。
+继续保留官方源，APT 更新官方包不会覆盖定制版。独立的服务覆盖文件让运行
+程序与命令入口一致，并保留实际网站配置路径。包操作持有 APT frontend 锁，
+发现其他包管理操作时停止；包管理数据库通过原生命令维护。
+
+Alpine/OpenRC 等不使用 Debian 包管理的环境保留发行版程序，使用独立的
+`caddy-managed` 链接和原有服务脚本；按需设置低端口 capability。两种方式都
+保留当前版本和一个可回滚版本，不把运行程序当临时缓存删除。
+
+`sb caddy status` 分别显示命令入口、实际服务、官方包和回滚版本。
+`sb caddy update --check` 查询官方正式版本；`sb caddy update` 使用与官方
+`caddy upgrade` 相同的 HTTPS 构建服务下载候选，保留插件集合，并允许发布方
+更新插件版本。构建服务未提供独立签名摘要：管理器校验 HTTPS 来源、大小、ELF
+架构、正式版本、模块身份和配置，并记录 SHA-256 用于安装及后续完整性核对。
+不会把自行计算的摘要描述为发布方签名。请通过 `sb caddy update` 维护受管程序，
+直接覆盖二进制会导致摘要检查停止后续升级。
+
+候选配置校验通过后才切换链接，重启 Caddy 并确认实际运行版本；操作失败按
+事务记录恢复链接、服务定义、包管理接入和状态。升级可能短暂中断网站连接。
+`sb caddy rollback` 对上一版重新校验当前网站配置后切换。当前配置已使用旧版
+不支持的字段时会停止，不覆盖网站配置。回滚记录属于必要恢复资料，保留至
+后续成功升级或显式清理。完整备份和旧状态快照要求 Caddy 管理状态匹配，
+不会直接覆盖另一台主机的包管理数据库。
+
+网站分流恢复与 Caddy 程序维护是独立操作；`sb mux detach` 恢复网站配置，
+已经接入的程序维护仍然保留。卸载 sb-manager 不删除运行网站需要的 Caddy
+程序、官方包或 alternatives 链接。定制 Caddy 升级为显式操作，普通脚本更新
+不会连带更换网站程序。
+
+## 缓存与日志的一天保留策略
+
+`sb maintenance status` 查看策略；`sb maintenance run` 立即维护。正常安装
+启用每 15 分钟的 systemd timer 或 OpenRC periodic 任务，`--no-start` 仅写入
+任务定义。维护使用更新、安装和管理器锁，避免清理正在使用的候选程序。
+
+已知下载/构建临时目录在成功后立即删除；遗留目录按 23 小时阈值清理，为调度
+间隔预留余量。项目文件日志使用固定时间窗口，约一天内重置，单文件超过
+5 MiB 在下一轮维护时截断，不重启代理服务。诊断、管理器更新、网站构建日志
+同样按时间和容量清理。活动操作、停机或调度器不可用期间无法保证准时清理。
+
+systemd 245+ 使用独立 `sb-manager` journal namespace：23 小时、持久总量
+16 MiB，并每 15 分钟轮转与清理；不修改主机默认 namespace。日志命令和
+Quick Tunnel 域名发现同时兼容迁移前后的日志。迁移前共享 journal 中的旧记录
+不能按单个服务物理删除，仍沿用宿主机策略；systemd 245 之前也保留主机策略。
+OpenRC 使用项目文件日志，旧的八轮日志配置调整为不保留轮转副本。
+
+清理范围不包含证书、密钥、CF Token、订阅与规则快照、流量计数、手动备份、
+网站恢复记录以及当前/回滚程序。旧版本曾写入共享 Go 目录的缓存无法可靠归属，
+不会自动清空其他项目使用的 Go 缓存；后续显式编译全部使用隔离目录。
+
 ## 与现有 Caddy 网站共享 443（alpha.53，手工接入）
 
 Caddy 已监听 443 时，先为 AnyTLS 等 TLS 节点选一个空闲端口，再显式选择
-`caddy` 方式。Caddy 需要编译 `github.com/mholt/caddy-l4`；普通 HTTP
+`caddy` 方式。Caddy 需要包含 `github.com/mholt/caddy-l4` 模块；普通 HTTP
 `reverse_proxy` 无法透传 AnyTLS。管理器不会安装模块或改写 Caddy 网站配置。
 
 ```bash

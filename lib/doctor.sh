@@ -620,7 +620,10 @@ show_logs() {
       fi
       ;;
     follow)
-      if [[ $(init_system) == systemd ]]; then journalctl -u "$SBM_SERVICE" -u "$SBM_TUNNEL_SERVICE" -u "$SBM_NGINX_STREAM_SERVICE" -f
+      if [[ $(init_system) == systemd ]]; then
+        local -a journal_args=()
+        mapfile -t journal_args < <(maintenance_journal_args)
+        journalctl "${journal_args[@]}" -u "$SBM_SERVICE" -u "$SBM_TUNNEL_SERVICE" -u "$SBM_NGINX_STREAM_SERVICE" --since '-24 hours' -f
       else service_logs "$SBM_SERVICE" "$lines" 1; fi
       ;;
     *) die '日志目标应为 all、singbox、tunnel、mux、nginx 或 follow。' ;;

@@ -110,6 +110,14 @@ All lifecycle operations use a shared service abstraction: existence, enable/dis
 
 On OpenRC, sing-box runs through `supervise-daemon` as root so low ports remain usable on VPS/container kernels that do not apply file capabilities to unprivileged users. OpenRC logs are stored under `/var/log/sb-manager/`; the Cloudflared directory and logs are created only when the optional component is installed.
 
+From alpha.59, owned service units on systemd 245+ use a dedicated `sb-manager`
+journal namespace with a 23-hour retention window and a 16 MiB disk budget.
+Older shared journals retain the host policy. A 15-minute maintenance task also
+bounds OpenRC file logs and known temporary build/download directories while
+respecting setup/update/state locks. Persistent topology and recovery metadata
+are excluded. Caddy custom builds are normally downloaded from the publisher;
+explicit local builds isolate Go caches in the temporary build directory.
+
 ## Minimal installation and optional dependencies
 
 The default installer uses the `minimal` profile. It installs the manager's small command-line base, the sing-box core and the Alpine `gcompat`/OpenRC runtime, but does not download Cloudflared or install Python, nftables, kmod or Nginx. Default-on manager updates install dcron on Alpine when needed. Other feature modules call the dependency resolver immediately before use (`subscription`, `traffic`, `bbr`, `probe`, `scheduler`, and `logrotate`). This keeps the first boot suitable for a roughly 1GB disk while preserving the full feature set for larger hosts.

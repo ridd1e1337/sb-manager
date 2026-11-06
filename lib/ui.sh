@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -1023,8 +1023,8 @@ ui_firewall_menu() {
 ui_vps_menu() {
   local choice
   printf 'VPS 与网站运维：集中管理主机基础环境、防火墙、SSH 防护、网站入口和网络调优。\n'
-  printf '1. 新 VPS 一键初始化（安装 Caddy、UFW、Fail2ban）\n2. 查看基础环境状态（Caddy / UFW / SSH 防护）\n3. 防火墙与 SSH 防护（UFW 放行端口 / Fail2ban）\n4. 网站与节点共用 443（Nginx / Caddy / 多节点分流）\n5. 网络性能与调优（BBR / TCP / QUIC 缓冲 / 测速）\n6. 支持的 Linux 系统与当前环境\n0. 返回\n'
-  ui_menu_choice choice '选择服务器功能' 6
+  printf '1. 新 VPS 一键初始化（安装 Caddy、UFW、Fail2ban）\n2. 查看基础环境状态（Caddy / UFW / SSH 防护）\n3. 防火墙与 SSH 防护（UFW 放行端口 / Fail2ban）\n4. 网站与节点共用 443（Nginx / Caddy / 多节点分流）\n5. 网络性能与调优（BBR / TCP / QUIC 缓冲 / 测速）\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护（官方包接入 / 定制版升级 / 回滚）\n8. 缓存与日志（一天保留策略 / 立即清理）\n0. 返回\n'
+  ui_menu_choice choice '选择服务器功能' 8
   case "$choice" in
     1) ui_open_submenu ui_vps_init_menu;;
     2) vps_init_status;;
@@ -1032,7 +1032,31 @@ ui_vps_menu() {
     4) ui_open_submenu ui_nginx_stream_menu;;
     5) ui_open_submenu ui_vps_network_menu;;
     6) vps_system_support;;
+    7) ui_open_submenu ui_caddy_menu;;
+    8) ui_open_submenu ui_maintenance_menu;;
   esac
+}
+
+ui_caddy_menu() {
+  local choice
+  printf '保留官方软件源；带 L4 的定制程序通过这里升级。升级与回滚可能短暂重启 Caddy。\n'
+  printf '1. 查看官方包、定制版和回滚版本\n2. 接入已有 Caddy 的程序维护\n3. 查询官方最新版本\n4. 下载、校验并升级定制 Caddy\n5. 恢复上一版定制 Caddy\n0. 返回\n'
+  ui_menu_choice choice '选择 Caddy 操作' 5
+  case "$choice" in
+    1) caddy_status;;
+    2) caddy_manage;;
+    3) caddy_cli update --check;;
+    4) caddy_cli update;;
+    5) caddy_cli rollback;;
+  esac
+}
+
+ui_maintenance_menu() {
+  local choice
+  maintenance_status
+  printf '\n1. 查看保留策略\n2. 立即清理过期的项目缓存与日志\n0. 返回\n'
+  ui_menu_choice choice '选择维护操作' 2
+  case "$choice" in 1) maintenance_status;; 2) maintenance_run; log_ok '项目缓存与日志维护完成。';; esac
 }
 
 ui_vps_network_menu() {

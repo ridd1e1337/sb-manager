@@ -477,6 +477,16 @@ state_validate() {
       and (.tls_domain | string)
       and (.user_name | nonempty and length <= 128)
       and (.max_realms | type == "number" and floor == . and . >= 0 and . <= 1000000))
+    and (if .caddy==null then true else
+      (.caddy | type=="object" and .managed==true and (.binary|web_path) and (.target|web_path)
+        and (.config|web_path) and (.service_file|web_path) and (.init|IN("systemd","openrc"))
+        and (.method|IN("debian-alternatives","standalone"))
+        and (.version|type=="string" and test("^2\\.[0-9]+\\.[0-9]+$"))
+        and (.sha256|type=="string" and test("^[0-9a-f]{64}$"))
+        and (if .previous==null then true else
+          (.previous | type=="object" and (.target|web_path)
+            and (.version|type=="string" and test("^2\\.[0-9]+\\.[0-9]+$"))
+            and (.sha256|type=="string" and test("^[0-9a-f]{64}$"))) end)) end)
     and (.nginx_stream | type == "object"
       and (.enabled | type == "boolean")
       and (.backend | IN("sing-box", "nginx", "caddy", "nginx-site"))
@@ -709,15 +719,23 @@ snapshot_restore_payload() {
 snapshot_restore() {
   local snapshot=$1
   [[ -d "$snapshot" ]] || return 1
+  if [[ ! -f "$snapshot/caddy-package/package.json" && -f "$snapshot/state.json" && -f "$SBM_STATE" ]] \
+    && [[ $(jq -Sc '.caddy // null' "$snapshot/state.json") != "$(jq -Sc '.caddy // null' "$SBM_STATE")" ]]; then
+    log_error '快照对应的 Caddy 程序版本与当前不同，请先使用 sb caddy rollback 对齐版本。'; return 1
+  fi
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F nginx_stream_reconcile >/dev/null 2>&1 && service_exists "$SBM_NGINX_STREAM_SERVICE"; then
     service_stop "$SBM_NGINX_STREAM_SERVICE"
   fi
   [[ -f "$snapshot/state.json" ]] && cp -a "$snapshot/state.json" "$SBM_STATE"
   [[ -f "$snapshot/config.json" ]] && cp -a "$snapshot/config.json" "$SBM_CONFIG"
   snapshot_restore_payload "$snapshot" || return 1
+  if declare -F caddy_package_restore >/dev/null 2>&1; then
+    caddy_package_restore "$snapshot" || { log_error 'Caddy 包管理恢复未完成，保留快照供恢复。'; return 1; }
+  fi
   if declare -F website_mux_rollback >/dev/null 2>&1; then
     website_mux_rollback "$snapshot" || log_error '网站配置恢复失败，请检查本次快照中的 website-files。'
   fi
+  if declare -F caddy_restart_restored >/dev/null 2>&1; then caddy_restart_restored "$snapshot" || return 1; fi
   if [[ -f "$SBM_STATE" ]]; then
     state_migrate || return 1
     state_validate "$SBM_STATE"

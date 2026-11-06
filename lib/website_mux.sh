@@ -55,7 +55,7 @@ website_mux_sync_routes() {
   mv -f "$tmp" "$candidate"
 }
 
-website_mux_build_caddy() {
+website_mux_compile_caddy() {
   local binary=$1 version output target go_bin arch metadata digest work plugin plugins module_ids module_id built_modules
   local -a build_args=()
   if "$binary" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then printf '%s\n' "$binary"; return 0; fi
@@ -90,7 +90,8 @@ website_mux_build_caddy() {
   fi
   log_info "编译 Caddy $version + L4，可能需要数分钟；日志：$work/build.log"
   if ! (cd "$work" && GOTOOLCHAIN=auto GOSUMDB=sum.golang.org GOPROXY=https://proxy.golang.org \
-    GOPRIVATE='' GONOSUMDB='' CGO_ENABLED=0 GOMAXPROCS=1 GOMEMLIMIT=256MiB GOFLAGS=-p=1 \
+    GOPRIVATE='' GONOSUMDB='' GOMODCACHE="$work/go-mod" GOCACHE="$work/go-cache" GOPATH="$work/go-path" \
+    CGO_ENABLED=0 GOMAXPROCS=1 GOMEMLIMIT=256MiB GOFLAGS=-p=1 \
     "$go_bin" run "github.com/caddyserver/xcaddy/cmd/xcaddy@$SBM_WEBSITE_XCADDY_VERSION" build "$version" \
     --with "github.com/mholt/caddy-l4@$SBM_WEBSITE_L4_COMMIT" "${build_args[@]}" --output "$work/caddy" >"$work/build.log" 2>&1); then
     log_error "Caddy 编译失败，原网站未切换；请查看 $work/build.log。"; return 1
@@ -104,8 +105,19 @@ website_mux_build_caddy() {
   done <<<"$module_ids"
   install -d -m 0755 "$SBM_PREFIX/lib/sb-manager-web" || return 1
   install -m 0755 "$work/caddy" "$target" || return 1
-  sha256sum "$target" >"$work/installed.sha256"
+  mkdir -p "$SBM_WEBSITE_MUX_DIR" || return 1
+  install -m 0600 "$work/build.log" "$SBM_WEBSITE_MUX_DIR/build.log" || return 1
+  rm -rf -- "$work" || return 1
   printf '%s\n' "$target"
+}
+
+website_mux_build_caddy() {
+  local binary=$1
+  if "$binary" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then
+    printf '%s\n' "$binary"; return 0
+  fi
+  if [[ ${SBM_CADDY_BUILD_LOCAL:-0} == 1 ]]; then website_mux_compile_caddy "$binary"
+  else caddy_download_candidate "$binary"; fi
 }
 
 _website_mux_setup() {
@@ -204,7 +216,10 @@ _website_mux_setup() {
 
 website_mux_setup() {
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '网站接入不支持 --dry-run。'
-  with_state_transaction website-setup _website_mux_setup "$@"
+  with_state_transaction website-setup _website_mux_setup "$@" || return 1
+  if [[ $(jq -r '.nginx_stream.website.server' "$SBM_STATE") == caddy ]] && ! caddy_managed; then
+    caddy_manage || { log_warn '网站共用 443 已保留；Caddy 程序维护接入未完成，可运行 sb caddy manage 重试。'; return 1; }
+  fi
 }
 
 website_mux_prepare() {
@@ -221,6 +236,7 @@ website_mux_prepare() {
 
 website_mux_reload() {
   local server=$1 restart=${2:-false}
+  if [[ "$server" == caddy ]]; then caddy_runtime_reconcile || return 1; fi
   service_reload_manager || return 1
   if [[ "$restart" == true ]]; then service_restart "$server.service" || return 1
   elif [[ $(init_system) == systemd ]]; then systemctl reload "$server.service" || return 1

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.59
+
+- Add explicit Caddy program enrollment, status, candidate-first updates and
+  rollback. Integrate Debian/Ubuntu official packages through diversion and
+  alternatives; retain separate binaries and OpenRC support on other systems.
+- Download custom Caddy builds from the official HTTPS service by default,
+  retaining module identities and validating architecture, version, integrity,
+  website configuration and running service before completing a switch.
+  Journal package/service changes for rollback; keep one prior program version.
+- Keep local Caddy compilation opt-in through `--build-caddy`, isolate its Go
+  caches, and remove successful build/download workspaces immediately.
+- Add scheduled project cache/log maintenance, one-day retention windows,
+  bounded file logs and an isolated journal namespace on systemd 245+. Preserve
+  state, secrets, certificates, subscriptions, backups and recovery metadata;
+  leave legacy shared journals and older systemd host policies intact.
+- Add VPS panel entries and documentation for Caddy maintenance and retention.
+  No test scripts, fixtures, environments or test procedures are introduced.
+
 ## 0.1.0-alpha.58
 
 - Allow Caddy websites using file_server to enroll in shared TLS/443 without

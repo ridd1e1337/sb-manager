@@ -140,7 +140,9 @@ service_enabled() {
 service_reload_manager() {
   [[ ${SBM_SKIP_INIT:-0} != 1 ]] || return 0
   case "$(init_system)" in
-    systemd) systemctl daemon-reload ;;
+    systemd)
+      if declare -F maintenance_journal_units >/dev/null 2>&1; then maintenance_journal_units || return 1; fi
+      systemctl daemon-reload ;;
     openrc) return 0 ;;
   esac
 }
@@ -250,7 +252,10 @@ service_logs() {
   native=$(service_native_name "$unit")
   case "$(init_system 2>/dev/null || true)" in
     systemd)
-      if [[ "$follow" == 1 ]]; then journalctl -u "$unit" -f; else journalctl -u "$unit" -n "$lines" --no-pager -l; fi
+      local -a journal_args=()
+      if declare -F maintenance_journal_args >/dev/null 2>&1; then mapfile -t journal_args < <(maintenance_journal_args); fi
+      if [[ "$follow" == 1 ]]; then journalctl "${journal_args[@]}" -u "$unit" --since '-24 hours' -f
+      else journalctl "${journal_args[@]}" -u "$unit" --since '-24 hours' -n "$lines" --no-pager -l; fi
       ;;
     openrc)
       local -a files=()

@@ -25,6 +25,7 @@ SETUP_ROLLBACK_DIR=''
 source "$SRC_DIR/lib/common.sh"
 # shellcheck source=lib/dependencies.sh
 source "$SRC_DIR/lib/dependencies.sh"
+SBM_JOURNAL_CONFIG="${SBM_JOURNAL_CONFIG:-$(dirname "$SETUP_SYSTEMD_DIR")/journald@sb-manager.conf}"
 
 setup_rollback_on_error() {
   local rc=$?
@@ -42,7 +43,14 @@ setup_rollback_on_error() {
       "$SETUP_SYSTEMD_DIR/sb-subscription.service" "$SETUP_SYSTEMD_DIR/sb-traffic.service" \
       "$SETUP_SYSTEMD_DIR/sb-traffic-sync.service" "$SETUP_SYSTEMD_DIR/sb-traffic-sync.timer" \
       "$SETUP_SYSTEMD_DIR/sb-health-check.service" "$SETUP_SYSTEMD_DIR/sb-health-check.timer"
+    rm -f "$SETUP_SYSTEMD_DIR/sb-maintenance.service" "$SETUP_SYSTEMD_DIR/sb-maintenance.timer"
     [[ ! -d "$SETUP_ROLLBACK_DIR/systemd" ]] || cp -a "$SETUP_ROLLBACK_DIR/systemd"/. "$SETUP_SYSTEMD_DIR"/
+    if [[ -f "$SETUP_ROLLBACK_DIR/journal.conf" ]]; then cp -a "$SETUP_ROLLBACK_DIR/journal.conf" "$SBM_JOURNAL_CONFIG"
+    else rm -f "$SBM_JOURNAL_CONFIG"; fi
+    if [[ ! -f "$SETUP_ROLLBACK_DIR/systemd/sb-maintenance.timer" ]]; then
+      command -v systemctl >/dev/null 2>&1 && systemctl disable --now sb-maintenance.timer >/dev/null 2>&1 || true
+      rm -f "$SETUP_SYSTEMD_DIR/timers.target.wants/sb-maintenance.timer"
+    fi
     if [[ ! -f "$SETUP_ROLLBACK_DIR/systemd/sb-manager-update.timer" ]]; then
       command -v systemctl >/dev/null 2>&1 && systemctl disable --now sb-manager-update.timer >/dev/null 2>&1 || true
       rm -f "$SETUP_SYSTEMD_DIR/timers.target.wants/sb-manager-update.timer"
@@ -58,6 +66,10 @@ setup_rollback_on_error() {
     if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-manager-update" ]]; then
       mkdir -p "$SETUP_PERIODIC_DIR/15min"
       cp -a "$SETUP_ROLLBACK_DIR/periodic/sb-manager-update" "$SETUP_PERIODIC_DIR/15min/"
+    fi
+    rm -f "$SETUP_PERIODIC_DIR/15min/sb-maintenance"
+    if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-maintenance" ]]; then
+      cp -a "$SETUP_ROLLBACK_DIR/periodic/sb-maintenance" "$SETUP_PERIODIC_DIR/15min/"
     fi
     command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
   fi
@@ -388,11 +400,10 @@ EOF_OPENRC
   mkdir -p "$(dirname "$SBM_LOGROTATE_FILE")"
   cat >"$SBM_LOGROTATE_FILE" <<EOF_LOGROTATE
 $SBM_LOG_DIR/*.log {
-  weekly
-  rotate 8
-  size 10M
-  compress
-  delaycompress
+  daily
+  rotate 0
+  maxage 1
+  maxsize 5M
   missingok
   notifempty
   copytruncate
@@ -443,6 +454,8 @@ if [[ "$src_real" != "$target_real" ]]; then
     for path in "$SETUP_OPENRC_DIR"/sb-*; do [[ ! -f "$path" ]] || cp -a "$path" "$backup/openrc/"; done
     [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-health-check" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-health-check" "$backup/periodic/"
     [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-manager-update" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-manager-update" "$backup/periodic/"
+    [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-maintenance" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-maintenance" "$backup/periodic/"
+    [[ ! -f "$SBM_JOURNAL_CONFIG" ]] || cp -a "$SBM_JOURNAL_CONFIG" "$backup/journal.conf"
     SETUP_MUTATED=1
     trap setup_rollback_on_error ERR
   fi
@@ -467,6 +480,8 @@ source "$TARGET_LIB/lib/manager.sh"
 source "$TARGET_LIB/lib/nginx_stream.sh"
 source "$TARGET_LIB/lib/mux.sh"
 source "$TARGET_LIB/lib/website_mux.sh"
+source "$TARGET_LIB/lib/caddy.sh"
+source "$TARGET_LIB/lib/maintenance.sh"
 source "$TARGET_LIB/protocols/vmess_ws_cf.sh"
 source "$TARGET_LIB/protocols/shadowsocks.sh"
 source "$TARGET_LIB/protocols/anytls.sh"
@@ -637,6 +652,7 @@ if [[ -x "$SBM_CLOUDFLARED_BIN" ]] && declare -F cloudflared_prune_cached_versio
   cloudflared_prune_cached_versions
 fi
 if [[ "$NO_START" == 1 ]]; then manager_auto_reconcile 0; else manager_auto_reconcile 1; fi
+if [[ "$NO_START" == 1 ]]; then maintenance_reconcile 0; else maintenance_reconcile 1; fi
 prune_setup_backups
 
 printf '\n安装完成。\n'

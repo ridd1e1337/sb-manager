@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.58`
+当前版本：`0.1.0-alpha.59`
 
 ## 第一步：安装
 
@@ -88,6 +88,19 @@ sb mux setup
 ```
 
 自动识别网站程序、备份配置、补齐所需模块并接入 SNI 分流。此后添加、删除、启停 TCP/TLS 节点会自动同步，分享链接使用公网 443，后端只监听本机。也可在“15. VPS 与网站运维 → 网站与节点共用 443 → 一键接入现有 Nginx/Caddy 网站”操作；恢复入口用 `sb mux detach`。UFW、SSH 和 Fail2ban 设置保持不变。支持范围和迁移边界见[网站一键接入](docs/OPERATIONAL_FEATURES.md#nginxcaddy-网站一键接入alpha54)。
+
+Caddy 默认从官方构建接口下载带 L4 的程序，无需在 VPS 编译；Debian/Ubuntu 保留官方源，并使用 diversion/alternatives 管理定制程序。已有网站接入可运行 `sb caddy manage` 迁移到这一维护方式。菜单 15 提供版本查询、升级与回滚：
+
+```bash
+sb caddy status
+sb caddy update --check
+sb caddy update
+sb caddy rollback
+```
+
+升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。官方软件包与定制程序分别维护，`sb update` 不会顺带升级网站程序。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
+
+安装后自动维护项目缓存与日志，最长约一天，并限制日志容量；成功下载和编译的临时目录立即删除。查看策略用 `sb maintenance status`，手动清理用 `sb maintenance run`。证书、凭据、规则、备份以及当前和回滚程序保留。迁移前的共享系统日志仍按宿主机策略管理。
 
 更多协议参数、安全边界、证书、Sub-Store、备份和高级功能见：
 

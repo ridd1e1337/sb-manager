@@ -186,7 +186,9 @@ tunnel_extract_domain() {
   local output=''
   case "$(init_system 2>/dev/null || true)" in
     systemd)
-      output=$(journalctl -u "$SBM_TUNNEL_SERVICE" --since '-24 hours' --no-pager 2>/dev/null || true)
+      local -a journal_args=()
+      mapfile -t journal_args < <(maintenance_journal_args)
+      output=$(journalctl "${journal_args[@]}" -u "$SBM_TUNNEL_SERVICE" --since '-24 hours' --no-pager 2>/dev/null || true)
       ;;
     openrc)
       output=$(cat "$SBM_TUNNEL_LOG" "$SBM_TUNNEL_ERROR_LOG" 2>/dev/null || true)

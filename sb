@@ -18,6 +18,8 @@ source "$SBM_LIB/lib/state.sh"
 source "$SBM_LIB/lib/nginx_stream.sh"
 source "$SBM_LIB/lib/mux.sh"
 source "$SBM_LIB/lib/website_mux.sh"
+source "$SBM_LIB/lib/caddy.sh"
+source "$SBM_LIB/lib/maintenance.sh"
 source "$SBM_LIB/protocols/vmess_ws_cf.sh"
 source "$SBM_LIB/protocols/shadowsocks.sh"
 source "$SBM_LIB/protocols/anytls.sh"
@@ -114,9 +116,12 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb mux status [--json]|enable [PORT] [--backend sing-box|nginx|caddy]|disable|backend sing-box|nginx|caddy|auto [NODE_IDS]
   sb mux route list|add NODE_ID SNI [BACKEND_PORT]|remove NODE_ID
   sb mux caddy                   导出现有 Caddy L4 的 HTTPS listener_wrappers 配置
-  sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE]
+  sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE] [--build-caddy]
                                  一键接入现有网站，共用 443 并自动同步节点
   sb mux detach                  恢复接入前的网站配置，节点恢复独立端口
+  sb caddy status|manage|update [--check]|rollback
+                                 Caddy 官方包接入、定制版升级与回滚
+  sb maintenance status|run       查看/执行项目缓存与一天日志保留策略
   sb traffic group set ID --nodes NODE1,NODE2 --quota 500G [--reset-day 1] [--quota-mode total|download]
   sb traffic group status [--json]|remove ID|reset ID
   sb traffic shaping plan|enable IFACE --capacity 1G | disable | status [--json]
@@ -204,6 +209,7 @@ main() {
     network) shift; require_command jq; network_cli "$@"; return $?;;
     update) shift; manager_update_cli "$@"; return $? ;;
     vps) shift; vps_cli "$@"; return $? ;;
+    maintenance) shift; require_root; maintenance_cli "$@"; return $? ;;
     uninstall)
       require_root
       local purge=0 assume_yes=${SBM_ASSUME_YES:-0} arg
@@ -428,6 +434,7 @@ main() {
         *) usage_die '用法：sb hy2 buffer enable|disable|status [--json]';;
       esac
       ;;
+    caddy) shift; caddy_cli "$@" ;;
     mux|nginx-stream)
       mux_cli "$@"
       ;;

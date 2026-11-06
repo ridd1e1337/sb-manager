@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.58",
+  "manager_version": "0.1.0-alpha.59",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -182,6 +182,23 @@ installed hashes and restores the original frontend/mux selection. Cross-host
 restore of managed website settings is refused, and external manual changes
 must be merged before detach. Plain `caddy` states without `managed:true`
 retain alpha.53's manual synchronization behavior.
+
+The optional top-level `caddy` object records explicit program lifecycle
+enrollment: `managed:true`, canonical `binary`, immutable `target`, `config`,
+`init`, `method` (`debian-alternatives` or `standalone`), `service_file`, formal
+`version`, `sha256`, and nullable `previous:{target,version,sha256}`. Debian
+enrollment uses the publisher's diversion/alternatives convention; other
+systems retain the package binary and use a separate managed link. Package
+and service before-images are journaled under the operation snapshot's
+`caddy-package/`. These are recovery metadata, not disposable build cache.
+State restoration without that package journal requires matching lifecycle
+metadata so it cannot point at a different host package state. No schema
+version change or credential rotation is introduced.
+
+Retention epochs and last-run metadata live in `var/maintenance/`, outside
+topology state. Cleanup only owns known temporary downloads/builds and log
+files. It never purges credentials, certificates, subscriptions, rule data,
+manual backups, website recovery journals or the current/previous Caddy binary.
 
 `nginx_stream.routes` separates the public frontend from sing-box's runtime listener. A node keeps its original direct `listen`/`port`; while the mux is enabled, rendering substitutes `127.0.0.1:<backend_port>` and exports substitute the shared public port. Node IDs, case-insensitive SNI values, and backend ports must each be unique. The built-in backend adds a TCP-only direct inbound, scoped TLS sniffing, fixed loopback route destinations and a final reject for that inbound. It adds no credentials and does not terminate TLS. API, subscriptions, Realm, Sub-Store and node port reservations are checked before applying a candidate.
 

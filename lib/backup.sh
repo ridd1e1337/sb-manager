@@ -77,6 +77,9 @@ _restore_backup() {
     state_normalize_v2_file "$stage/etc/state.json"
   fi
   state_validate "$stage/etc/state.json"
+  if [[ $(jq -Sc '.caddy // null' "$stage/etc/state.json") != "$(jq -Sc '.caddy // null' "$SBM_STATE")" ]]; then
+    die '备份的 Caddy 程序管理状态与当前不同，请先通过 sb caddy rollback 对齐版本；备份不会覆盖宿主机包管理数据库。'
+  fi
   if website_mux_managed "$stage/etc/state.json" || website_mux_managed "$SBM_STATE"; then
     if ! website_mux_managed "$stage/etc/state.json" || ! website_mux_managed "$SBM_STATE" \
       || [[ ! -s "$SBM_WEBSITE_MUX_DIR/manifest.json" ]] \

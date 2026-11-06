@@ -187,7 +187,8 @@ mux_cli() {
           --server) server=${2:?缺少网站程序}; shift 2;;
           --config) config=${2:?缺少配置路径}; shift 2;;
           --binary) binary=${2:?缺少程序路径}; shift 2;;
-          *) usage_die '用法：sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE]';;
+          --build-caddy) SBM_CADDY_BUILD_LOCAL=1; shift;;
+          *) usage_die '用法：sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE] [--build-caddy]';;
         esac
       done
       website_mux_setup "$server" "$config" "$binary";;
