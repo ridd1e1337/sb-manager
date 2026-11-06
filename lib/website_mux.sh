@@ -122,6 +122,9 @@ website_mux_build_caddy() {
 
 _website_mux_setup() {
   local server=${1:-auto} config=${2:-} binary=${3:-} candidate frontend=0 owner init override='' original_binary website_port relay_port module='' active_command
+  if jq -e '.caddy_apt != null' "$SBM_STATE" >/dev/null; then
+    log_error '已选择官方 APT Caddy；标准包不提供 L4，请保持节点使用独立端口。'; return 1
+  fi
   website_mux_require_python || return 1
   [[ ${SBM_SKIP_INIT:-0} != 1 ]] || { log_error '网站自动接入需要真实 systemd/OpenRC。'; return 1; }
   if website_mux_managed; then

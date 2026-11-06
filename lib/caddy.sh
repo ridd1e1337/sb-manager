@@ -7,6 +7,28 @@ caddy_managed() {
   jq -e '.caddy.managed == true' "$SBM_STATE" >/dev/null
 }
 
+caddy_apt_managed() {
+  jq -e '.caddy == null and .caddy_apt.enabled == true' "$SBM_STATE" >/dev/null
+}
+
+caddy_apt_run() {
+  local action=$1 config
+  config=$(jq -er '.caddy_apt.config' "$SBM_STATE") || return 1
+  python3 "$SBM_LIB/libexec/caddy_apt.py" "$action" "$config" "$SBM_CACHE" "$SBM_VAR/updates/caddy-apt.log"
+}
+
+_caddy_apt_enroll() {
+  local candidate config=/etc/caddy/Caddyfile
+  caddy_managed && { log_error '请先解除 L4 分流并恢复标准 Caddy 软件包；此命令仅登记现有官方包。'; return 1; }
+  website_mux_managed && { log_error '请先解除网站 443 分流。'; return 1; }
+  python3 "$SBM_LIB/libexec/caddy_apt.py" verify "$config" "$SBM_CACHE" "$SBM_VAR/updates/caddy-apt.log" || return 1
+  candidate=$(state_candidate) || return 1
+  jq --arg config "$config" '.caddy_apt={enabled:true,config:$config}' "$SBM_STATE" >"$candidate" || return 1
+  apply_candidate_state "$candidate" caddy-apt-enroll || { rm -f "$candidate"; return 1; }
+  rm -f "$candidate"
+  log_ok '官方 APT Caddy 已接入 sb update 和现有每日任务。'
+}
+
 caddy_version() {
   local version
   version=$("$1" version 2>/dev/null | awk 'NR==1 {print $1}') || return 1
@@ -258,6 +280,7 @@ caddy_manage() {
 
 _caddy_update() {
   local context latest current target digest
+  if caddy_apt_managed; then caddy_apt_run update; return "$?"; fi
   caddy_managed || { log_error '请先运行 sb caddy manage。'; return 1; }
   context=$(caddy_context) || return 1
   [[ "$(sha256sum "$(jq -r '.target' <<<"$context")" | awk '{print $1}')" == "$(jq -r '.sha256' <<<"$context")" ]] || {
@@ -296,6 +319,7 @@ _caddy_rollback() {
 }
 
 caddy_status() {
+  if caddy_apt_managed; then caddy_apt_run check; return "$?"; fi
   local context binary version pid running='未运行或不可读取' official='未通过 Debian 软件包接入'
   context=$(caddy_context) || return 1
   binary=$(jq -r '.binary' <<<"$context")
@@ -317,10 +341,15 @@ caddy_cli() {
   (($# == 0)) || shift
   case "$action" in
     status) (($# == 0)) || usage_die '用法：sb caddy status'; caddy_status;;
+    apt)
+      (($# == 0)) || usage_die '用法：sb caddy apt'
+      [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'APT 接入不接受 --dry-run。'
+      with_state_transaction caddy-apt-enroll _caddy_apt_enroll;;
     manage) (($# == 0)) || usage_die '用法：sb caddy manage'; caddy_manage;;
     update)
       if [[ ${1:-} == --check ]]; then
         (($# == 1)) || usage_die '用法：sb caddy update [--check]'
+        if caddy_apt_managed; then caddy_apt_run check; return "$?"; fi
         caddy_status
         local latest
         latest=$(caddy_latest_version) || return 1
@@ -335,6 +364,6 @@ caddy_cli() {
       (($# == 0)) || usage_die '用法：sb caddy rollback'
       [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'Caddy 回滚不接受 --dry-run。'
       with_state_transaction caddy-rollback _caddy_rollback;;
-    *) usage_die '用法：sb caddy status|manage|update [--check]|rollback';;
+    *) usage_die '用法：sb caddy status|apt|manage|update [--check]|rollback';;
   esac
 }

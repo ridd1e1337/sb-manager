@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.64
+
+- Add explicit `sb caddy apt` enrollment for standard official stable APT
+  Caddy on Debian/Ubuntu systemd. Route manual and daily updates through APT
+  while preserving the existing updater schedule and Alpine/OpenRC behavior.
+- Verify package origin and SHA256, validate the real website configuration
+  with the candidate binary, refuse unrelated package changes, and restore
+  the original package on installation or service failure. Unchanged packages
+  do not restart Caddy; temporary downloads are removed and logs use the
+  existing one-day retention policy.
+- Keep standard-package enrollment separate from L4 management and reject
+  implicit conversion back to website multiplexing. Document the optional
+  state record; no test assets or procedures are introduced.
+
 ## 0.1.0-alpha.63
 
 - Include managed Caddy in `sb update` and the existing daily updater, even

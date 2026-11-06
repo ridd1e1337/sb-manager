@@ -477,6 +477,10 @@ state_validate() {
       and (.tls_domain | string)
       and (.user_name | nonempty and length <= 128)
       and (.max_realms | type == "number" and floor == . and . >= 0 and . <= 1000000))
+    and (if .caddy_apt==null then true else
+      .caddy==null and (.caddy_apt | type=="object" and (.enabled|type=="boolean")
+        and (.config|web_path))
+      and (.nginx_stream.website.managed != true) end)
     and (if .caddy==null then true else
       (.caddy | type=="object" and .managed==true and (.binary|web_path) and (.target|web_path)
         and (.config|web_path) and (.service_file|web_path) and (.init|IN("systemd","openrc"))

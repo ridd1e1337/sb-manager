@@ -43,7 +43,7 @@ _manager_update_components() (
     [[ ! -e "$SBM_STATE" ]] || log_warn '无法读取 Caddy 管理状态，本次仅处理脚本更新。'
     exit "$script_rc"
   fi
-  managed=$(jq -r '.caddy.managed == true' "$SBM_STATE") || exit 1
+  managed=$(jq -r '.caddy.managed == true or (.caddy == null and .caddy_apt.enabled == true)' "$SBM_STATE") || exit 1
   [[ "$managed" == true ]] || exit "$script_rc"
   if (( check_only )); then
     # Query directly: the Caddy CLI entry point initializes state, whereas

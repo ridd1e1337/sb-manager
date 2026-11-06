@@ -119,7 +119,7 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb mux setup [--server auto|nginx|caddy] [--config FILE] [--binary FILE] [--build-caddy]
                                  一键接入现有网站，共用 443 并自动同步节点
   sb mux detach                  恢复接入前的网站配置，节点恢复独立端口
-  sb caddy status|manage|update [--check]|rollback
+  sb caddy status|apt|manage|update [--check]|rollback
                                  Caddy 官方包接入、定制版升级与回滚
   sb maintenance status|run       查看/执行项目缓存与一天日志保留策略
   sb traffic group set ID --nodes NODE1,NODE2 --quota 500G [--reset-day 1] [--quota-mode total|download]
