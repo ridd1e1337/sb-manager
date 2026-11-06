@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.61
+
+- Refresh the official custom Caddy build on every explicit update, including
+  when the core version is unchanged, so plugin and build dependency updates
+  are not skipped. Keep the current service and rollback record when the
+  downloaded program matches the running binary; refuse automatic downgrades.
+- Clarify that update checks query only core releases and that retaining the
+  official package does not start another Caddy service. Keep Debian/systemd
+  and Alpine/OpenRC support without state migration or test assets.
+
 ## 0.1.0-alpha.60
 
 - Make the managed Caddy program parent explicitly traversable by its service

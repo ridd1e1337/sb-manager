@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.60`
+当前版本：`0.1.0-alpha.61`
 
 ## 第一步：安装
 
@@ -98,7 +98,7 @@ sb caddy update
 sb caddy rollback
 ```
 
-升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。官方软件包与定制程序分别维护，`sb update` 不会顺带升级网站程序。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
+升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使 Caddy 主版本未变，显式升级也会重新获取官方插件构建；程序摘要一致时不重启。`--check` 仅查询主程序正式版本。官方软件包与定制程序分别维护，只配置一个 Caddy 服务，`sb update` 不会顺带升级网站程序。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
 安装后自动维护项目缓存与日志，最长约一天，并限制日志容量；成功下载和编译的临时目录立即删除。查看策略用 `sb maintenance status`，手动清理用 `sb maintenance run`。证书、凭据、规则、备份以及当前和回滚程序保留。迁移前的共享系统日志仍按宿主机策略管理。
 

@@ -257,7 +257,7 @@ caddy_manage() {
 }
 
 _caddy_update() {
-  local context latest current target
+  local context latest current target digest
   caddy_managed || { log_error '请先运行 sb caddy manage。'; return 1; }
   context=$(caddy_context) || return 1
   [[ "$(sha256sum "$(jq -r '.target' <<<"$context")" | awk '{print $1}')" == "$(jq -r '.sha256' <<<"$context")" ]] || {
@@ -265,8 +265,20 @@ _caddy_update() {
   }
   latest=$(caddy_latest_version) || { log_error '无法取得官方 Caddy 版本，保留当前服务。'; return 1; }
   current=$(jq -r '.version' <<<"$context")
-  if version_ge "$current" "$latest"; then log_ok "Caddy $current 已是当前正式版本。"; return 0; fi
+  if [[ "$current" != "$latest" ]] && version_ge "$current" "$latest"; then
+    log_error "当前 Caddy $current 高于官方最新正式版 $latest，保留当前程序，不自动降级。"; return 1
+  fi
+  # Plugins and build dependencies can change without a Caddy core release.
+  # An explicit update must refresh the publisher's build in that case too.
+  if [[ "$current" == "$latest" ]]; then
+    log_info "Caddy 主版本已是 $current，继续检查官方插件构建。"
+  fi
   target=$(caddy_download_candidate "$(jq -r '.target' <<<"$context")" "$latest") || return 1
+  digest=$(sha256sum "$target" | awk '{print $1}') || return 1
+  if [[ "$digest" == "$(jq -r '.sha256' <<<"$context")" ]]; then
+    caddy_verify_running "$target" "$digest" || return 1
+    log_ok '官方构建与当前运行程序一致，无需切换或重启。'; return 0
+  fi
   _caddy_switch "$target" update
 }
 
@@ -311,6 +323,7 @@ caddy_cli() {
         local latest
         latest=$(caddy_latest_version) || return 1
         printf '官方最新正式版本：%s\n' "$latest"
+        printf '此查询仅比较 Caddy 主版本；运行 sb caddy update 获取当前官方插件构建。\n'
       else
         (($# == 0)) || usage_die '用法：sb caddy update [--check]'
         [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '请使用 sb caddy update --check 查看更新。'
