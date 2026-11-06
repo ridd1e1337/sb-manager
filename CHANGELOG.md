@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.66
+
+- Add a zero-input recommended node: VLESS Reality with an auto-detected
+  public address, a free port (443 first) and the default Reality camouflage
+  site, followed directly by the share link and QR code. Available as
+  `sb quick --auto [--address HOST] [--port N]`, installer `--quick`, main
+  menu key `a`, and wizard option 12. No domain, certificate or Cloudflare
+  token is required, and firewalls are not changed.
+- Collapse protocol tuning prompts (Shadowsocks method, Hysteria2
+  obfuscation/fingerprint/BBR/debug, TUIC congestion control, VLESS Reality
+  SNI/handshake, NaiveProxy transport, ShadowTLS strictness, Snell version)
+  into one "use recommended values" question; answering `n` keeps every
+  existing advanced option. Recommended values follow the existing `sb node add`
+  defaults; the ShadowTLS handshake target now defaults to the Reality site.
+- Open the panel after `curl | bash` installations by reattaching the
+  controlling terminal when available, otherwise print how to open it.
+- No state migration, test assets or procedures; Debian/systemd and
+  Alpine/OpenRC behavior is unchanged.
+
 ## 0.1.0-alpha.65
 
 - Replace the long `sb help` wall with a grouped overview of commands and

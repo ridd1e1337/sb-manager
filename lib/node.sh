@@ -144,6 +144,35 @@ node_validate_json_object() {
   jq -e 'type == "object" and ((.by_tag // {}) | type == "object") and all(.by_tag[]?; type == "object")' <<<"$value" >/dev/null 2>&1 || die "$label 必须是 JSON 对象，by_tag 的每项也必须是对象；支持直接传 JSON 或 @FILE。"
 }
 
+# Recommended zero-input node: VLESS Reality needs no domain, certificate or
+# Cloudflare token, so it can be created with only auto-detected values.
+SBM_RECOMMENDED_REALITY_SNI=www.apple.com
+
+node_recommended_port() {
+  local port
+  for port in 443 8443 9443 10443; do
+    if ! node_port_in_state tcp "$port" && ! host_port_in_use tcp "$port"; then printf '%s\n' "$port"; return 0; fi
+  done
+  node_choose_port tcp
+}
+
+node_add_recommended() {
+  local address=${1:-} port=${2:-} id
+  [[ -n "$address" ]] || address=$(node_auto_address '')
+  [[ -n "$port" ]] || port=$(node_recommended_port)
+  validate_port "$port" || die "无效端口：$port"
+  id="vless-$(random_hex 4)"
+  printf '一键推荐节点：VLESS + Reality（无需域名、证书或 Cloudflare Token）\n'
+  printf '连接地址：%s  端口：%s/TCP  伪装站点：%s\n' "$address" "$port" "$SBM_RECOMMENDED_REALITY_SNI"
+  node_add vless --id "$id" --name 'VLESS Reality' --address "$address" --port "$port" --security reality \
+    --domain "$SBM_RECOMMENDED_REALITY_SNI" --handshake-server "$SBM_RECOMMENDED_REALITY_SNI" --handshake-port 443
+  printf '\n节点已创建：%s\n' "$id"
+  printf '公网连接需要放行 %s/TCP（云安全组和主机防火墙）。\n' "$port"
+  printf '客户端可从剪贴板导入下面的分享链接，或扫描二维码：\n'
+  node_share "$id" 1
+  printf '\n之后再次查看：sb share %s；打开面板：sb\n' "$id"
+}
+
 _node_add() {
   local type=$1; shift
   local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}'

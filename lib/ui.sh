@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_quick_recommended_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -487,11 +487,35 @@ ui_add_node_and_deliver() {
   ui_page_back
 }
 
+ui_quick_recommended_node() {
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
+  local address port
+  address=$(ui_client_address_default '')
+  port=$(node_recommended_port)
+  printf '一键推荐节点：VLESS + Reality（无需域名、证书或 Cloudflare Token）\n'
+  if [[ -z "$address" ]]; then
+    log_warn '未探测到公网 IP，请手动填写客户端连接地址。'
+    ui_prompt_server_address address '' || { ui_page_back; return; }
+  fi
+  printf '连接地址：%s  端口：%s/TCP  伪装站点：%s\n' "$address" "$port" "$SBM_RECOMMENDED_REALITY_SNI"
+  ui_add_node_and_deliver vless --name 'VLESS Reality' --address "$address" --port "$port" --security reality \
+    --domain "$SBM_RECOMMENDED_REALITY_SNI" --handshake-server "$SBM_RECOMMENDED_REALITY_SNI" --handshake-port 443
+}
+
+# One question replaces the protocol-specific tuning prompts. Choosing n keeps
+# every advanced option available.
+ui_use_recommended() {
+  local __ui_answer
+  prompt_value __ui_answer '其余选项使用推荐值？(Y/n，n 逐项自定义)' 'Y' || return 1
+  [[ ! "$__ui_answer" =~ ^[Nn]$ ]]
+}
+
 ui_add_node() {
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
   local choice domain address port name id obfs method security security_choice snell_obfs_choice snell_obfs_host snell_version_choice snell_mode_choice
   local hy2_obfs_choice hy2_min_packet_size hy2_max_packet_size hy2_disable_chrome hy2_bbr_profile hy2_brutal_debug hy2_realm_choice hy2_realm_id hy2_realm_ip hy2_realm_mapping
   local handshake_server handshake_port congestion_control network strict_mode wildcard_sni
+  printf '不知道选哪个：输入 12 一键创建推荐节点，全程自动。\n'
   printf '%s\n' \
     '1. VMess + WebSocket + Cloudflare Tunnel' \
     '2. Shadowsocks 2022' \
@@ -504,8 +528,9 @@ ui_add_node() {
     '9. ShadowTLS v3' \
     '10. Snell v5/v6' \
     '11. SOCKS5 / HTTP / mixed 认证代理' \
+    '12. 一键推荐：VLESS Reality（无需域名）' \
     '0. 返回'
-  ui_menu_choice choice '选择协议' 11
+  ui_menu_choice choice '选择协议' 12
   case "$choice" in
     1)
       prompt_value name '节点名称' 'VMess WS Cloudflare'; prompt_value domain '固定 Tunnel 域名（Quick Tunnel 可留空）' ''; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
@@ -516,7 +541,8 @@ ui_add_node() {
       ;;
     2)
       prompt_value name '节点名称' 'Shadowsocks 2022'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 8388 8389 8390 8443
-      printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm\n3. 2022-blake3-chacha20-poly1305\n'; ui_menu_choice method '选择方法' 3
+      if ui_use_recommended; then method=2
+      else printf '1. 2022-blake3-aes-128-gcm\n2. 2022-blake3-aes-256-gcm\n3. 2022-blake3-chacha20-poly1305\n'; ui_menu_choice method '选择方法' 3; fi
       case "$method" in 1) method=2022-blake3-aes-128-gcm;; 2) method=2022-blake3-aes-256-gcm;; 3) method=2022-blake3-chacha20-poly1305;; *) log_error '选择无效'; return;; esac
       ui_add_node_and_deliver ss --name "$name" --address "$address" --port "$port" --method "$method"
       ;;
@@ -526,28 +552,30 @@ ui_add_node() {
       ;;
     4)
       prompt_value name '节点名称' 'Hysteria2'; ui_select_certificate_domain domain || { ui_cancel; return; }; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
-      printf '1. 不启用混淆\n2. Salamander\n3. Gecko\n'; ui_menu_choice hy2_obfs_choice '选择 Hysteria2 混淆' 3
       local -a hy2_args=(hy2 --name "$name" --domain "$domain" --address "$address" --port "$port")
-      case "$hy2_obfs_choice" in
-        1) ;;
-        2) hy2_args+=(--obfs salamander) ;;
-        3)
-          prompt_value hy2_min_packet_size 'Gecko 最小包长' '512'; prompt_value hy2_max_packet_size 'Gecko 最大包长' '1200'
-          hy2_args+=(--obfs gecko --obfs-min-packet-size "$hy2_min_packet_size" --obfs-max-packet-size "$hy2_max_packet_size") ;;
-        *) log_error '选择无效'; return ;;
-      esac
-      prompt_value hy2_disable_chrome '关闭 Chrome QUIC 指纹伪装？(y/N)' 'N'
-      [[ "$hy2_disable_chrome" =~ ^[Yy]$ ]] && hy2_args+=(--disable-chrome-parrot)
-      printf '1. standard\n2. conservative\n3. aggressive\n4. 不显式设置\n'; ui_menu_choice hy2_bbr_profile 'BBR profile' 4
-      case "$hy2_bbr_profile" in
-        1) hy2_args+=(--bbr-profile standard) ;;
-        2) hy2_args+=(--bbr-profile conservative) ;;
-        3) hy2_args+=(--bbr-profile aggressive) ;;
-        4) ;;
-        *) log_error '选择无效'; return ;;
-      esac
-      prompt_value hy2_brutal_debug '启用 Hysteria Brutal 调试日志？(y/N)' 'N'
-      [[ "$hy2_brutal_debug" =~ ^[Yy]$ ]] && hy2_args+=(--brutal-debug)
+      if ! ui_use_recommended; then
+        printf '1. 不启用混淆\n2. Salamander\n3. Gecko\n'; ui_menu_choice hy2_obfs_choice '选择 Hysteria2 混淆' 3
+        case "$hy2_obfs_choice" in
+          1) ;;
+          2) hy2_args+=(--obfs salamander) ;;
+          3)
+            prompt_value hy2_min_packet_size 'Gecko 最小包长' '512'; prompt_value hy2_max_packet_size 'Gecko 最大包长' '1200'
+            hy2_args+=(--obfs gecko --obfs-min-packet-size "$hy2_min_packet_size" --obfs-max-packet-size "$hy2_max_packet_size") ;;
+          *) log_error '选择无效'; return ;;
+        esac
+        prompt_value hy2_disable_chrome '关闭 Chrome QUIC 指纹伪装？(y/N)' 'N'
+        [[ "$hy2_disable_chrome" =~ ^[Yy]$ ]] && hy2_args+=(--disable-chrome-parrot)
+        printf '1. standard\n2. conservative\n3. aggressive\n4. 不显式设置\n'; ui_menu_choice hy2_bbr_profile 'BBR profile' 4
+        case "$hy2_bbr_profile" in
+          1) hy2_args+=(--bbr-profile standard) ;;
+          2) hy2_args+=(--bbr-profile conservative) ;;
+          3) hy2_args+=(--bbr-profile aggressive) ;;
+          4) ;;
+          *) log_error '选择无效'; return ;;
+        esac
+        prompt_value hy2_brutal_debug '启用 Hysteria Brutal 调试日志？(y/N)' 'N'
+        [[ "$hy2_brutal_debug" =~ ^[Yy]$ ]] && hy2_args+=(--brutal-debug)
+      fi
       if [[ $(jq -r '.realm.enabled // false' "$SBM_STATE") == true ]]; then
         prompt_value hy2_realm_choice '启用 Hysteria Realm NAT 穿透？(y/N)' 'N'
         if [[ "$hy2_realm_choice" =~ ^[Yy]$ ]]; then
@@ -568,13 +596,14 @@ ui_add_node() {
     6)
       prompt_value name '节点名称' 'TUIC'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port udp 'UDP 端口' 443 8443 9443 10443
-      printf '1. cubic\n2. new_reno\n3. bbr\n'; ui_menu_choice congestion_control '拥塞控制' 3
+      if ui_use_recommended; then congestion_control=1
+      else printf '1. cubic\n2. new_reno\n3. bbr\n'; ui_menu_choice congestion_control '拥塞控制' 3; fi
       case "$congestion_control" in 1) congestion_control=cubic;; 2) congestion_control=new_reno;; 3) congestion_control=bbr;; *) log_error '选择无效'; return;; esac
       ui_add_node_and_deliver tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
       ;;
     7)
       prompt_value name '节点名称' 'VLESS'
-      printf '1. TLS\n2. Reality\n'; ui_menu_choice security_choice '选择安全层' 2
+      printf '1. TLS（需要域名）\n2. Reality（无需域名，推荐）\n'; ui_menu_choice security_choice '选择安全层' 2
       case "$security_choice" in
         1)
           security=tls; ui_select_certificate_domain domain || { ui_cancel; return; }
@@ -582,8 +611,11 @@ ui_add_node() {
           ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security"
           ;;
         2)
-          security=reality; prompt_value domain 'Reality SNI' 'www.apple.com'; prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-          prompt_value handshake_server 'Reality 握手域名' 'www.apple.com'; prompt_value handshake_port 'Reality 握手端口' '443'
+          security=reality; prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
+          domain=$SBM_RECOMMENDED_REALITY_SNI; handshake_server=$SBM_RECOMMENDED_REALITY_SNI; handshake_port=443
+          if ! ui_use_recommended; then
+            prompt_value domain 'Reality SNI' "$domain"; prompt_value handshake_server 'Reality 握手域名' "$domain"; prompt_value handshake_port 'Reality 握手端口' '443'
+          fi
           ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" --handshake-server "$handshake_server" --handshake-port "$handshake_port"
           ;;
         *) log_error '选择无效';;
@@ -592,20 +624,26 @@ ui_add_node() {
     8)
       prompt_value name '节点名称' 'NaiveProxy'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
-      printf '1. HTTPS/TCP\n2. QUIC/UDP\n'; ui_menu_choice security_choice '选择传输' 2
+      if ui_use_recommended; then security_choice=1
+      else printf '1. HTTPS/TCP\n2. QUIC/UDP\n'; ui_menu_choice security_choice '选择传输' 2; fi
       case "$security_choice" in 1) network=tcp;; 2) network=udp;; *) log_error '选择无效'; return;; esac
       ui_prompt_port port "$network" '端口' 443 8443 9443 10443
       ui_add_node_and_deliver naive --name "$name" --domain "$domain" --address "$address" --port "$port" --network "$network"
       ;;
     9)
-      prompt_value name '节点名称' 'ShadowTLS'; prompt_value handshake_server '握手目标域名' ''; prompt_value handshake_port '握手目标端口' '443'
+      prompt_value name '节点名称' 'ShadowTLS'; prompt_value handshake_server '握手目标域名' "$SBM_RECOMMENDED_REALITY_SNI"; prompt_value handshake_port '握手目标端口' '443'
       printf '节点包含 Shadowsocks 2022 加密内层；客户端须导入完整 sing-box 配置，或支持 shadow-tls 插件的分享链接。\n'
       prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-      prompt_value strict_mode '严格模式（true/false）' 'true'; prompt_value wildcard_sni '通配 SNI（off/authed/all）' 'off'
+      strict_mode=true; wildcard_sni=off
+      if ! ui_use_recommended; then prompt_value strict_mode '严格模式（true/false）' 'true'; prompt_value wildcard_sni '通配 SNI（off/authed/all）' 'off'; fi
       ui_add_node_and_deliver shadowtls --name "$name" --address "$address" --port "$port" --handshake-server "$handshake_server" --handshake-port "$handshake_port" --strict-mode "$strict_mode" --wildcard-sni "$wildcard_sni"
       ;;
     10)
       prompt_value name '节点名称' 'Snell'; prompt_value address '客户端连接地址（域名或 IP）' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 6160 443 8443 9443 10443
+      if ui_use_recommended; then
+        ui_add_node_and_deliver snell --name "$name" --address "$address" --port "$port" --snell-version 5 --obfs none
+        return
+      fi
       printf '1. Snell v5\n2. Snell v6\n'; ui_menu_choice snell_version_choice '选择 Snell 版本' 2
       case "$snell_version_choice" in
         1)
@@ -633,6 +671,7 @@ ui_add_node() {
       prompt_value name '节点名称' '认证代理'
       ui_add_node_and_deliver "$proxy_type" --listen "$proxy_listen" --address "$address" --port "$port" --name "$name"
       ;;
+    12) ui_quick_recommended_node;;
     0) return;; *) log_error '选择无效';;
   esac
 }
@@ -1361,7 +1400,7 @@ ui_main_options() {
   cat <<'EOF_MENU'
 节点与客户端
  1. 运行状态
- 2. 添加代理节点
+ 2. 添加代理节点（a = 一键推荐）
  3. 管理节点
  4. 节点分享与导出
  5. 完整 sing-box 客户端配置
@@ -1395,7 +1434,7 @@ ui_main() {
     printf 'Enter 返回；输入 r 留在当前页。\n'
     printf '填写时 Enter 保留当前值；q 取消；主菜单 0 / q 退出。\n'
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
-      printf '还没有节点：输入 2 开始创建。\n'
+      printf '还没有节点：输入 a 一键创建推荐节点（无需域名，全自动）；输入 2 自选协议。\n'
     fi
     ui_main_options
     # Stay at the root on empty input without reopening a page or redrawing
@@ -1409,6 +1448,7 @@ ui_main() {
     SBM_UI_RESULT=0
     case "$choice" in
       1) page=status_summary;;
+      a|A) page=ui_quick_recommended_node;;
       2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;

@@ -2,7 +2,19 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.65`
+当前版本：`0.1.0-alpha.66`
+
+## 最快上手：一条命令得到节点
+
+不需要域名、证书或 Cloudflare：
+
+```bash
+curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh | bash -s -- --quick
+```
+
+装完自动创建一个 VLESS Reality 节点（自动选端口和公网 IP），直接显示分享链接和二维码，复制到客户端即可。记得在云安全组放行输出里提示的 TCP 端口。已安装的机器运行 `sb quick --auto`，或在面板主菜单输入 `a`。
+
+需要其他协议或自定义参数，按下面步骤操作。
 
 ## 第一步：安装
 
@@ -20,7 +32,7 @@ Alpine 的最小镜像通常没有 Bash、curl 和 tar，先执行一次：
 apk add --no-cache bash curl tar ca-certificates
 ```
 
-然后仍使用上面的安装命令。支持 Debian、Ubuntu、Alpine、Rocky、Alma、Fedora、Arch 和 openSUSE；系统必须实际运行 systemd 或 OpenRC。安装时可追加 `--no-menu`，固定核心版本可追加 `--core-version VERSION`。
+然后仍使用上面的安装命令。支持 Debian、Ubuntu、Alpine、Rocky、Alma、Fedora、Arch 和 openSUSE；系统必须实际运行 systemd 或 OpenRC。安装完成后自动打开面板（`curl | bash` 也可以）；不需要时追加 `--no-menu`，固定核心版本可追加 `--core-version VERSION`。
 
 新 VPS 可同时安装并启用 **Caddy、UFW、Fail2ban**（Debian/Ubuntu systemd、Alpine OpenRC）：
 
@@ -42,7 +54,7 @@ sb
 
 常用流程：
 
-1. 选择“添加节点”，选择协议并填写地址、端口和域名。
+1. 选择“添加节点”，选择协议；地址、端口都有推荐值，直接回车即可。各协议的进阶选项合并成一个问题“其余选项使用推荐值？”，回车跳过，输入 `n` 再逐项设置。不确定选哪个协议就选 **12. 一键推荐**。
 2. 需要 TLS 的协议直接输入 Cloudflare 托管的域名；没有可用证书时，自动添加指向本机公网 IP 的 DNS 记录（关闭橙云），再申请证书。首次填写 API Token 和邮箱，之后自动复用。
 3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。Snell 会把 Surge 原生配置放在最上面，可直接复制到 Surge 的 `[Proxy]` 段。
 
