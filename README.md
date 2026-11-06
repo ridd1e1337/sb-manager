@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.64`
+当前版本：`0.1.0-alpha.65`
 
 ## 第一步：安装
 
@@ -61,7 +61,11 @@ sb share NODE_ID                 # 显示节点分享内容
 sb node show NODE_ID             # 查看节点详情
 sb update                        # 更新管理脚本与受管 Caddy
 sb update auto status            # 查看每日自动更新状态
+sb help                          # 按功能分组的命令总览
+sb help node                     # 查看某个命令的完整用法，也可用 sb node --help
 ```
+
+输错命令时会提示最接近的写法，例如 `sb stauts` 会提示 `sb status`。
 
 管理器安装和 `sb core update` 默认跟随 sing-box 最新稳定 Release。协议添加还支持把当前核心的新增字段直接写入节点：
 

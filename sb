@@ -64,10 +64,8 @@ source "$SBM_LIB/lib/ui.sh"
 source "$SBM_LIB/lib/config.sh"
 source "$SBM_LIB/lib/template.sh"
 
-sb_help() {
+sb_help_full() {
   cat <<'EOF_HELP'
-sb-manager：状态驱动的 sing-box 多协议管理器
-
 用法：
   sb                              打开交互面板
   sb [--json] [--yes] [--dry-run] [--quiet] <命令>  通用选项可放在命令前
@@ -187,6 +185,105 @@ sb-manager：状态驱动的 sing-box 多协议管理器
 EOF_HELP
 }
 
+SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
+
+sb_help_overview() {
+  cat <<EOF_OVERVIEW
+sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
+
+用法：sb [通用选项] <命令> [参数]
+直接运行 sb 打开交互面板，新手推荐从面板开始。
+
+常用：
+  status        查看服务和节点状态
+  node          添加、修改、启停和删除节点（sb quick 为添加向导）
+  share         显示节点分享链接、二维码或客户端配置
+  user          管理多用户节点的用户
+  update        更新管理脚本与受管 Caddy
+  doctor        诊断问题；sb repair 尝试自动修复
+  logs          查看运行日志
+
+节点与客户端：export  subscription  substore  tunnel  cert
+流量与监控：  traffic  notify  health  probe
+网络调优：    tcp  bbr  hy2  network
+服务器与网站：vps  firewall  mux  caddy  maintenance  settings
+核心与维护：  core  cloudflared  deps  acme  api  realm  config
+备份与卸载：  backup  restore  restart  uninstall
+
+通用选项：--json  --yes|-y  --dry-run  --quiet|-q  --no-color  --version
+
+查看某个命令的完整用法：sb help <命令>（或 sb <命令> --help）
+查看全部命令：          sb help all
+EOF_OVERVIEW
+}
+
+sb_help_canonical_topic() {
+  case "$1" in
+    hysteria2) printf 'hy2';; nginx-stream) printf 'mux';; quick) printf 'node';;
+    repair) printf 'doctor';; restore) printf 'backup';; *) printf '%s' "$1";;
+  esac
+}
+
+sb_help_is_topic() {
+  local topic
+  for topic in $SBM_HELP_TOPICS hysteria2 nginx-stream; do [[ "$topic" == "$1" ]] && return 0; done
+  return 1
+}
+
+sb_help_topic() {
+  local topic
+  topic=$(sb_help_canonical_topic "$1")
+  printf 'sb %s 用法：\n' "$topic"
+  sb_help_full | awk -v topic="$topic" '
+    /^用法：/ { in_usage=1; next }
+    /^节点添加常用参数：/ { in_usage=0; in_params=1 }
+    in_usage && /^  sb / {
+      split($0, words, " "); cmd=words[2]
+      current = (cmd == topic || (topic == "node" && (cmd == "quick" || cmd == "user")) || (topic == "doctor" && (cmd == "repair" || cmd == "probe")) || (topic == "backup" && cmd == "restore"))
+      if (current) print
+      next
+    }
+    in_usage && /^ +[^ ]/ { if (current) print; next }
+    in_usage { current=0; next }
+    in_params && topic == "node" { print }
+  '
+}
+
+sb_suggest_command() {
+  local input=$1 best
+  best=$(printf '%s\n' $SBM_HELP_TOPICS help version | awk -v input="$input" '
+    function min3(a, b, c) { m=a; if (b<m) m=b; if (c<m) m=c; return m }
+    function dist(s, t,   i, j, n, m, cost, d) {
+      n=length(s); m=length(t)
+      for (i=0; i<=n; i++) d[i,0]=i
+      for (j=0; j<=m; j++) d[0,j]=j
+      for (i=1; i<=n; i++) for (j=1; j<=m; j++) {
+        cost=(substr(s,i,1)==substr(t,j,1)) ? 0 : 1
+        d[i,j]=min3(d[i-1,j]+1, d[i,j-1]+1, d[i-1,j-1]+cost)
+      }
+      return d[n,m]
+    }
+    { k=dist(input, $0); if (index($0, input) == 1 && length(input) >= 2) k=0
+      if (best == "" || k < bestd) { best=$0; bestd=k } }
+    END { limit=(length(input) <= 4) ? 1 : 2; if (best != "" && bestd <= limit) print best }
+  ')
+  [[ -n "$best" ]] && printf '%s' "$best"
+  return 0
+}
+
+sb_help() {
+  local topic=${1:-}
+  case "$topic" in
+    '') sb_help_overview ;;
+    all) printf 'sb-manager %s：状态驱动的 sing-box 多协议管理器\n\n' "$SBM_VERSION"; sb_help_full ;;
+    *)
+      if sb_help_is_topic "$topic"; then sb_help_topic "$topic"; return 0; fi
+      local guess; guess=$(sb_suggest_command "$topic")
+      usage_die "没有 $topic 的帮助${guess:+；您是否想查看：sb help $guess}。运行 sb help 查看命令列表。"
+      ;;
+  esac
+}
+
 main() {
   local cli_json=0 cli_yes=0 cli_dry_run=0 cli_quiet=0
   while (($#)); do
@@ -202,8 +299,22 @@ main() {
     [[ -t 0 ]] || usage_die 'sb quick 需要交互终端；脚本调用请使用 sb node add。'
     (( cli_dry_run == 0 )) || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
   fi
+  if [[ "$cmd" != menu && "$cmd" != help ]] && sb_help_is_topic "$cmd"; then
+    case "${2:-}" in -h|--help|help) sb_help "$cmd"; return 0;; esac
+    case "${3:-}" in -h|--help) sb_help "$cmd"; return 0;; esac
+  fi
+  if [[ "$cmd" != menu && "$cmd" != __ui-step ]] && ! sb_help_is_topic "$cmd"; then
+    case "$cmd" in
+      -h|--help|help|-V|--version|version|uninstall) ;;
+      *)
+        local guess; guess=$(sb_suggest_command "$cmd")
+        usage_die "未知命令：$cmd${guess:+；您是否想输入：sb $guess}。运行 sb help 查看命令列表。"
+        ;;
+    esac
+  fi
+  if sb_help_is_topic "$cmd"; then SBM_HELP_CONTEXT=$(sb_help_canonical_topic "$cmd"); fi
   case "$cmd" in
-    -h|--help|help) sb_help; return 0;;
+    -h|--help|help) shift || true; sb_help "${1:-}"; return 0;;
     -V|--version|version) printf 'sb-manager %s\n' "$SBM_VERSION"; return 0;;
     tcp) shift; require_command jq; tcp_tuning_cli "$@"; return $?;;
     network) shift; require_command jq; network_cli "$@"; return $?;;

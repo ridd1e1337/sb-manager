@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.65
+
+- Replace the long `sb help` wall with a grouped overview of commands and
+  short descriptions. Add `sb help <命令>` and `sb <命令> --help` for the
+  matching usage section (node help includes add parameters), plus
+  `sb help all` for the complete reference. Help no longer requires root or
+  state initialization.
+- Suggest the closest command for mistyped commands (for example
+  `sb stauts` → `sb status`) and append a `sb help <命令>` hint to
+  subcommand usage errors. Exit codes, command behavior, Debian/systemd and
+  Alpine/OpenRC support are unchanged; no state migration or test assets.
+
 ## 0.1.0-alpha.64
 
 - Add explicit `sb caddy apt` enrollment for standard official stable APT
