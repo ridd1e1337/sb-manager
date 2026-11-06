@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.63
+
+- Include managed Caddy in `sb update` and the existing daily updater, even
+  when manager scripts are already current. Reuse the schedule and enable
+  flag on systemd and OpenRC; leave unmanaged Caddy and core update policies
+  unchanged. Check-only and dry-run operations query without writing state.
+- Run the Caddy phase through the installed entry point after self-update.
+  Attempt it even if the script stage fails, report partial failure, and keep
+  the two stages' rollback boundaries separate.
+- Download Caddy candidates before entering the switching transaction under
+  the existing manager lock. Failed downloads and unchanged builds no longer
+  create snapshots or trigger rollback restarts during daily maintenance.
+- Update panel labels and operator documentation. No state migration, tests,
+  fixtures, test environments, or test procedures are added.
+
 ## 0.1.0-alpha.62
 
 - Shorten main and submenu labels by removing parenthetical descriptions.

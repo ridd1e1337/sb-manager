@@ -13,7 +13,53 @@ manager_update() (
     require_root
     manager_update_lock || { log_error '已有脚本更新正在运行，请稍后重试。'; exit 1; }
   fi
-  _manager_update 0 "$@"
+  _manager_update_components 0 "$@"
+)
+
+_manager_update_components() (
+  set -Eeuo pipefail
+  local automatic=$1 check_only=0 script_rc=0 caddy_rc=0 managed
+  local -a arguments=()
+  shift
+  case "${1:-}" in
+    --check) check_only=1; shift;;
+    '') ;;
+    *) usage_die '用法：sb update [--check]';;
+  esac
+  (($# == 0)) || usage_die '用法：sb update [--check]'
+  [[ ${SBM_DRY_RUN:-0} != 1 ]] || check_only=1
+  (( ! check_only )) || arguments+=(--check)
+  if _manager_update "$automatic" "${arguments[@]}"; then
+    :
+  else
+    script_rc=$?
+    log_error '脚本更新阶段未完成，继续处理已接入的 Caddy。'
+  fi
+  if [[ "$automatic" == 1 ]] && ! manager_auto_enabled; then
+    log_info '自动更新已关闭，跳过后续 Caddy 更新。'
+    exit "$script_rc"
+  fi
+  if [[ ! -r "$SBM_STATE" ]]; then
+    [[ ! -e "$SBM_STATE" ]] || log_warn '无法读取 Caddy 管理状态，本次仅处理脚本更新。'
+    exit "$script_rc"
+  fi
+  managed=$(jq -r '.caddy.managed == true' "$SBM_STATE") || exit 1
+  [[ "$managed" == true ]] || exit "$script_rc"
+  if (( check_only )); then
+    # Query directly: the Caddy CLI entry point initializes state, whereas
+    # a combined --check / --dry-run must remain read-only.
+    if caddy_cli update --check; then :; else caddy_rc=$?; fi
+  else
+    log_info '正在更新已接入管理的 Caddy。'
+    # Setup may have replaced every loaded module. Use the installed entry
+    # point for this independent transaction while retaining the update lock.
+    if (unset SBM_VERSION; bash "$SBM_LIB/sb" caddy update); then :; else caddy_rc=$?; fi
+  fi
+  if (( caddy_rc != 0 )); then
+    log_error 'Caddy 更新阶段未完成，请检查上方日志；脚本阶段的结果已保留。'
+  fi
+  (( script_rc == 0 )) || exit "$script_rc"
+  exit "$caddy_rc"
 )
 
 manager_auto_enabled() {
@@ -49,7 +95,7 @@ manager_auto_reconcile() {
       mkdir -p "$SBM_SYSTEMD_DIR" || return 1
       cat >"$unit" <<EOF_UNIT || return 1
 [Unit]
-Description=Update sb-manager scripts automatically
+Description=Update sb-manager and managed Caddy automatically
 After=network-online.target
 Wants=network-online.target
 
@@ -62,7 +108,7 @@ TimeoutStartSec=infinity
 EOF_UNIT
       cat >"$timer" <<EOF_TIMER || return 1
 [Unit]
-Description=Daily sb-manager script update
+Description=Daily sb-manager and managed Caddy update
 
 [Timer]
 OnCalendar=*-*-* $time:00
@@ -106,15 +152,15 @@ _manager_auto_set() {
     || ! safe_install_file "$candidate" "$SBM_STATE" 0600; then
     rm -f "$before" "$candidate"; return 1
   fi
-  if ! manager_auto_reconcile; then
+  if ! manager_auto_reconcile 1; then
     safe_install_file "$before" "$SBM_STATE" 0600 || log_error '无法恢复自动更新设置。'
-    manager_auto_reconcile || log_error '无法恢复自动更新调度器，请检查服务状态。'
+    manager_auto_reconcile 1 || log_error '无法恢复自动更新调度器，请检查服务状态。'
     rm -f "$before" "$candidate"; return 1
   fi
   rm -f "$before" "$candidate"
   if [[ "$enabled" == true ]]; then
-    log_ok "脚本自动更新已开启，每天约 $(manager_auto_time)（服务器本地时间）。"
-  else log_ok '已停止后续脚本自动更新；正在进行的升级会完成。'; fi
+    log_ok "脚本与受管 Caddy 自动更新已开启，每天约 $(manager_auto_time)（服务器本地时间）。"
+  else log_ok '已停止后续自动更新；正在进行的升级会完成。'; fi
 }
 
 manager_auto_status() {
@@ -132,7 +178,7 @@ manager_auto_status() {
       '{enabled:$enabled,local_time:$time,scheduler:$scheduler,last_attempt:$last}'
     return
   fi
-  printf '脚本自动更新：%s\n每日时间：%s（服务器本地时间；OpenRC 最多延后 15 分钟）\n调度器：%s\n' \
+  printf '脚本与受管 Caddy 自动更新：%s\n每日时间：%s（服务器本地时间；OpenRC 最多延后 15 分钟）\n调度器：%s\n' \
     "$([[ "$enabled" == true ]] && printf '开启' || printf '关闭')" "$time" "$scheduler"
   if [[ "$record" != null ]]; then
     jq -r '"最近尝试：\(.started_at)；结果：\(.result)；退出码：\(.exit_code // "-")"' <<<"$record"
@@ -177,15 +223,15 @@ manager_auto_run() (
     mv -f "$SBM_VAR/updates/manager.log" "$SBM_VAR/updates/manager.previous.log" || exit 1
   fi
   umask 077
-  printf '%s 自动检查管理器脚本更新\n' "$started" >"$SBM_VAR/updates/manager.log" || exit 1
-  log_info "正在检查脚本更新，详情：$SBM_VAR/updates/manager.log"
-  if _manager_update 1 >>"$SBM_VAR/updates/manager.log" 2>&1; then
+  printf '%s 自动更新管理脚本与受管 Caddy\n' "$started" >"$SBM_VAR/updates/manager.log" || exit 1
+  log_info "正在更新脚本与受管 Caddy，详情：$SBM_VAR/updates/manager.log"
+  if _manager_update_components 1 >>"$SBM_VAR/updates/manager.log" 2>&1; then
     manager_auto_record "$day" "$started" success 0 || exit 1
-    log_ok "脚本更新检查完成，当前版本：$(cat "$SBM_LIB/VERSION")。"
+    log_ok "脚本与受管 Caddy 更新完成，管理器版本：$(cat "$SBM_LIB/VERSION")。"
   else
     rc=$?
     manager_auto_record "$day" "$started" failed "$rc" || exit 1
-    log_error "脚本自动更新失败，详情：$SBM_VAR/updates/manager.log"
+    log_error "自动更新未全部完成，详情：$SBM_VAR/updates/manager.log"
   fi
   exit "$rc"
 )

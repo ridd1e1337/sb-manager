@@ -426,7 +426,7 @@ scheduler_reconcile() {
         service_enable crond || true
         service_active crond || service_start crond || log_warn '无法启动 crond；自动更新和证书续期定时任务不会运行。'
       else
-        if manager_auto_enabled; then log_info '稍后会为脚本自动更新补齐 dcron 调度器。'
+        if manager_auto_enabled; then log_info '稍后会为每日自动更新补齐 dcron 调度器。'
         else log_info '未安装 dcron；已保留 periodic 任务，需自动更新/续期时运行 sb deps install scheduler。'; fi
       fi
       ;;
@@ -661,9 +661,9 @@ printf '  安装档位：%s\n' "$INSTALL_PROFILE"
 printf '  面板命令：sb\n'
 printf '  快速创建：sb quick（准备证书、添加节点并获取导入内容）\n'
 if manager_auto_enabled; then
-  printf '  脚本自动更新：默认开启，每天约 %s（服务器本地时间）\n' "$(manager_auto_time)"
+  printf '  脚本与受管 Caddy 自动更新：开启，每天约 %s（服务器本地时间）\n' "$(manager_auto_time)"
   [[ "$NO_START" != 1 ]] || printf '  使用了 --no-start，本次不启用新定时任务；已有调度状态保留，可运行 sb update auto enable 启用。\n'
-else printf '  脚本自动更新：保持关闭（可运行 sb update auto enable 开启）\n'; fi
+else printf '  每日自动更新：保持关闭（可运行 sb update auto enable 开启）\n'; fi
 printf '  状态检查：sb status\n'
 printf '  诊断命令：sb doctor（自动修复：sb doctor --repair）\n'
 printf '  数据目录：%s\n' "$SBM_ETC"

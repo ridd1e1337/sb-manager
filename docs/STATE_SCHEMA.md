@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.62",
+  "manager_version": "0.1.0-alpha.63",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -106,7 +106,9 @@ a node does not remove them. The state schema version remains 2.
 `settings.manager_auto_update` defaults to `true` only when missing/null;
 explicit `false` survives normalization and upgrades. `manager_update_minute`
 is an integer 0–179, generated once and retained, representing minutes after
-03:00 in the host's local timezone. These fields control manager scripts only;
+03:00 in the host's local timezone. Since alpha.63 these fields control both
+manager scripts and Caddy when `.caddy.managed == true`, using the same daily
+task and independent update transactions. No Caddy enrollment is implicit.
 `core_update_policy` and `cloudflared_update_policy` remain independent.
 Last-attempt state and logs live under `var/updates/`, not in topology state.
 

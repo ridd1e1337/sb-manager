@@ -156,8 +156,8 @@ sb-manager：状态驱动的 sing-box 多协议管理器
   sb probe NODE_ID                探测节点 DNS、监听和 TLS/UDP 可达性
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
-  sb update [--check]             更新脚本本身（保留核心、节点、密钥和证书）
-  sb update auto enable|disable|status [--json]|run  每日脚本自动更新（默认开启）
+  sb update [--check]             更新管理脚本与受管 Caddy
+  sb update auto enable|disable|status [--json]|run  每日更新脚本与受管 Caddy
   sb cloudflared status|install|update|policy <manual|notify|patch|stable>
   sb deps status [--json]|install <low-port|traffic|subscription|bbr|probe|scheduler|logrotate|benchmark|shaping|substore>
   sb acme update

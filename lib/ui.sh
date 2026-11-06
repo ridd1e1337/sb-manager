@@ -734,7 +734,7 @@ ui_tunnel_menu() {
 
 ui_update_menu() {
   local c p v path
-  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本更新\n11. 更新脚本本身\n12. 脚本每日自动更新\n0. 返回\n'
+  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本与 Caddy 更新\n11. 更新脚本与 Caddy\n12. 每日自动更新\n0. 返回\n'
   ui_menu_choice c '选择操作' 12
   case "$c" in
     1) core_check_update || true;; 2) core_update latest;; 3) prompt_value v '版本号，如 1.14.0-rc.1' ''; core_update "$v";; 4) core_rollback;;
@@ -750,13 +750,13 @@ ui_update_menu() {
 ui_manager_auto_menu() {
   local choice
   manager_auto_status
-  printf '\n1. 开启每日脚本自动更新\n2. 关闭每日脚本自动更新\n3. 立即执行一次自动更新检查\n4. 查看最近自动更新日志\n0. 返回\n'
+  printf '\n1. 开启每日自动更新\n2. 关闭每日自动更新\n3. 立即执行一次自动更新\n4. 查看最近自动更新日志\n0. 返回\n'
   ui_menu_choice choice '选择操作' 4
   case "$choice" in
     1) manager_update_cli auto enable;;
     2) manager_update_cli auto disable;;
     3)
-      if ! manager_auto_enabled; then log_warn '请先开启自动更新，或使用上级菜单的“更新脚本本身”。'; return; fi
+      if ! manager_auto_enabled; then log_warn '请先开启自动更新，或使用上级菜单的“更新脚本与 Caddy”。'; return; fi
       manager_auto_run
       if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then exit 203; else exec "$SBM_BIN_DIR/sb"; fi;;
     4)

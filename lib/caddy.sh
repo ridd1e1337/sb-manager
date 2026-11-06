@@ -279,7 +279,9 @@ _caddy_update() {
     caddy_verify_running "$target" "$digest" || return 1
     log_ok '官方构建与当前运行程序一致，无需切换或重启。'; return 0
   fi
-  _caddy_switch "$target" update
+  # Download failures and unchanged builds must not enter a rollback that
+  # would restart otherwise healthy services during the daily update.
+  _state_transaction_run caddy-update _caddy_switch "$target" update
 }
 
 _caddy_rollback() {
@@ -307,7 +309,7 @@ caddy_status() {
   printf 'Caddy 命令入口：%s\n定制程序版本：%s\n实际服务版本：%s\n官方包程序版本：%s\n' "$binary" "$version" "$running" "$official"
   printf '程序维护：%s\n' "$(jq -r 'if .managed then .method else "尚未接入；运行 sb caddy manage" end' <<<"$context")"
   printf '可回滚版本：%s\n' "$(jq -r '.previous.version // "无"' <<<"$context")"
-  printf '官方源继续管理官方包；定制程序通过 sb caddy update 升级。\n'
+  printf '官方源继续管理官方包；受管程序随 sb update 和每日更新维护。\n'
 }
 
 caddy_cli() {
@@ -323,11 +325,11 @@ caddy_cli() {
         local latest
         latest=$(caddy_latest_version) || return 1
         printf '官方最新正式版本：%s\n' "$latest"
-        printf '此查询仅比较 Caddy 主版本；运行 sb caddy update 获取当前官方插件构建。\n'
+        printf '此查询仅比较 Caddy 主版本；运行 sb update 获取当前官方插件构建。\n'
       else
         (($# == 0)) || usage_die '用法：sb caddy update [--check]'
         [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '请使用 sb caddy update --check 查看更新。'
-        with_state_transaction caddy-update _caddy_update
+        with_lock _caddy_update
       fi;;
     rollback)
       (($# == 0)) || usage_die '用法：sb caddy rollback'
