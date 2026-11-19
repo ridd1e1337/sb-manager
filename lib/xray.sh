@@ -162,8 +162,20 @@ xray_render_config() {
   chmod 0640 "$output" && set_group_if_exists "$SBM_SERVICE_USER" "$output"
 }
 
+# Current Xray infers the config format from the file extension and rejects
+# extensionless candidates even with -format json. BusyBox mktemp lacks
+# --suffix, so test a config.json copy inside a private temporary directory.
+xray_test_config() (
+  local bin=$1 config=$2 log=$3 dir
+  mkdir -p "$SBM_RUN" || return 1
+  dir=$(mktemp -d "$SBM_RUN/xray-test.XXXXXX") || return 1
+  trap 'rm -rf -- "$dir"' EXIT
+  chmod 0700 "$dir" && cp "$config" "$dir/config.json" || return 1
+  "$bin" run -test -config "$dir/config.json" >"$log" 2>&1
+)
+
 xray_validate_config() {
-  "$1" run -test -config "$2" >"$SBM_RUN/xray-config-check.log" 2>&1 || {
+  xray_test_config "$1" "$2" "$SBM_RUN/xray-config-check.log" || {
     log_error "Xray 配置检查失败；日志：$SBM_RUN/xray-config-check.log"; return 1;
   }
 }

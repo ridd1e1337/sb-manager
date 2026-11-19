@@ -300,8 +300,8 @@ vless_profile_validate() (
     log=$(mktemp "$SBM_RUN/vless-client-check.XXXXXX.log") || { rm -f "$tmp"; return 1; }
     trap 'rm -f -- "$tmp" "$log"' EXIT
     jq -n --argjson outbound "$outbound" '{log:{loglevel:"none"},outbounds:[$outbound]}' >"$tmp" || return 1
-    "$SBM_XRAY_BIN" run -test -config "$tmp" >"$log" 2>&1 || {
-      log_error 'VLESS 客户端参数不被当前 Xray 接受；请核对传输、安全层与客户端 JSON。'; return 1;
+    xray_test_config "$SBM_XRAY_BIN" "$tmp" "$log" || {
+      log_error "VLESS 客户端参数不被当前 Xray 接受：$(grep -m1 -E 'Failed|failed|error' "$log" | cut -c1-300)"; return 1;
     }
   fi
 )

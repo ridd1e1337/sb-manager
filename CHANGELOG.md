@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.77
+
+- Fix Xray configuration checks on Xray 26.x: the core now infers the config
+  format from the file extension and rejected the manager's extensionless
+  candidate files, so VLESS node changes and `sb xray config` failed. Checks
+  now test a `config.json` copy in a private temporary directory (BusyBox
+  `mktemp` has no `--suffix`), and client-profile failures report Xray's
+  reason.
+
 ## 0.1.0-alpha.76
 
 - Add Xray outbound management: native outbounds of any protocol with
