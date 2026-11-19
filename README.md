@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。也可按需安装最新 Xray-core，生成兼容节点配置并显式切换服务。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.69`
+当前版本：`0.1.0-alpha.71`
 
 ## 第一步：安装
 
@@ -117,6 +117,24 @@ sb caddy rollback
 `sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box、Xray 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
 Xray-core 通过 `sb xray install` 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 下载当前最新版，校验官方摘要后保存在独立版本目录。`sb xray update` 和更新策略会跟随最新 Release；`sb xray status` 显示程序和服务状态。`sb xray config` 根据同一份状态生成 Xray 配置，`sb xray enable` 会停止占用相同节点端口的 sing-box 并启动 Xray，`sb xray disable` 恢复 sing-box。Xray 支持 VMess、普通 Shadowsocks、Trojan、VLESS、SOCKS、HTTP 和 mixed 节点；AnyTLS、Hysteria2、TUIC、Naive、ShadowTLS、Snell 等继续使用 sing-box。
+
+面板 `8 → 13` 可管理 Xray；添加 VLESS 时可选择输入 Xray JSON 或 `@文件路径`。
+面板 `15 → 9` 提供 OpenList 网站安装、更新和 Caddy/Nginx 配置，也可执行：
+
+```bash
+sb openlist setup files.example.com caddy
+# 使用 Nginx 时选择：
+sb openlist setup files.example.com nginx
+```
+
+网站程序需已安装并运行。首次配置会安装 OpenList 官方最新版，并显式建立管理员；
+OpenList 使用独立低权限用户，默认只监听 `127.0.0.1:5244`。
+Caddy 通过域名解析申请 HTTPS；Nginx 复用本项目证书，没有证书时使用已配置的
+Cloudflare 凭据准备 DNS 并申请证书。初始管理员信息保存在
+`/etc/sb-manager/secrets/openlist-admin.txt`，数据保存在 `/var/lib/sb-openlist`。
+站点配置先保存备份，再校验、原子安装和平滑重载，失败尝试恢复；已有域名拒绝覆盖。
+`sb openlist detach DOMAIN` 移除本项目站点入口，保留 OpenList 数据。
+当前功能只部署普通 HTTPS 网站；Xray Reality 前置和网站端口迁移尚未自动化。
 
 节点使用独立端口时，Caddy 可直接使用官方 stable APT 包。Debian/Ubuntu systemd 上执行 `sb caddy apt`，将现有标准包接入 `sb update` 和每日任务；仍可正常使用 `apt update && apt upgrade`。该命令只登记已恢复的标准包，不自动拆除 L4、修改网站或开放端口。更新会核对官方源与 SHA256、用候选程序校验网站配置，再通过 APT 安装；失败尝试恢复原包。已登记的标准包不会自动装回 L4。
 

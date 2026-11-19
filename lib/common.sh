@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.69}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.71}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -35,6 +35,14 @@ SBM_XRAY_SERVICE="${SBM_XRAY_SERVICE:-sb-xray.service}"
 SBM_XRAY_CONFIG="${SBM_XRAY_CONFIG:-${SBM_GENERATED_DIR}/xray-config.json}"
 SBM_XRAY_LOG="${SBM_XRAY_LOG:-$SBM_LOG_DIR/xray.log}"
 SBM_XRAY_ERROR_LOG="${SBM_XRAY_ERROR_LOG:-$SBM_LOG_DIR/xray.err.log}"
+SBM_OPENLIST_BIN="${SBM_OPENLIST_BIN:-${SBM_BIN_DIR}/openlist}"
+SBM_OPENLIST_SERVICE="${SBM_OPENLIST_SERVICE:-sb-openlist.service}"
+SBM_OPENLIST_DATA="${SBM_OPENLIST_DATA:-/var/lib/sb-openlist}"
+SBM_OPENLIST_USER="${SBM_OPENLIST_USER:-sb-openlist}"
+SBM_OPENLIST_LOG_DIR="${SBM_OPENLIST_LOG_DIR:-/var/log/sb-openlist}"
+SBM_OPENLIST_PORT="${SBM_OPENLIST_PORT:-5244}"
+SBM_OPENLIST_LOG="${SBM_OPENLIST_LOG:-$SBM_OPENLIST_LOG_DIR/openlist.log}"
+SBM_OPENLIST_ERROR_LOG="${SBM_OPENLIST_ERROR_LOG:-$SBM_OPENLIST_LOG_DIR/openlist.err.log}"
 SBM_TUNNEL_SERVICE="${SBM_TUNNEL_SERVICE:-sb-cloudflared.service}"
 SBM_SERVICE_USER="${SBM_SERVICE_USER:-sbmanager}"
 SBM_INIT_SYSTEM="${SBM_INIT_SYSTEM:-auto}"

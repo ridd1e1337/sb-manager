@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.69",
+  "manager_version": "0.1.0-alpha.71",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -297,3 +297,13 @@ Its random API path is in `secrets/substore.json`; app and mutable data reside
 under `var/substore`. Full backups include those directories. Restore operations
 snapshot component payloads for rollback; ordinary node snapshots avoid copying
 large unrelated component data.
+
+## OpenList website records
+
+Optional `openlist.sites` records contain `domain`, `server` (`caddy` or `nginx`),
+`binary`, `config` and loopback `port`. These are the source of truth for managed
+website ownership, certificate reloads and explicit detach. Site changes use
+protected filesystem journals before updating this state; they do not restart
+sing-box. OpenList itself owns its SQLite/configuration data under
+`/var/lib/sb-openlist`; this independent application's data is not included in
+the manager's full backup. Initial admin output is stored as a protected secret.

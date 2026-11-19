@@ -241,6 +241,7 @@ service_log_files() {
   local unit=$1 native
   native=$(service_native_name "$unit")
   case "$native" in
+    sb-openlist) printf '%s\n%s\n' "$SBM_OPENLIST_LOG" "$SBM_OPENLIST_ERROR_LOG" ;;
     sb-sing-box) printf '%s\n%s\n' "$SBM_SINGBOX_LOG" "$SBM_SINGBOX_ERROR_LOG" ;;
     sb-cloudflared) printf '%s\n%s\n' "$SBM_TUNNEL_LOG" "$SBM_TUNNEL_ERROR_LOG" ;;
     sb-nginx-stream) printf '%s\n%s\n' "$SBM_NGINX_STREAM_LOG" "$SBM_NGINX_STREAM_ERROR_LOG" ;;

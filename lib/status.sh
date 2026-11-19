@@ -59,13 +59,14 @@ status_nodes_json() {
 }
 
 status_collect_json_unlocked() {
-  local sb_ver xray_ver cf_ver nodes certs issues enabled_count service_state xray_state tunnel_mode nginx_enabled nginx_state tunnel_state
+  local sb_ver xray_ver cf_ver openlist_ver nodes certs issues enabled_count service_state xray_state openlist_state tunnel_mode nginx_enabled nginx_state tunnel_state
   local ufw_state fail2ban_state traffic_count traffic_state pending=''
   traffic_usage_init_unlocked
   nodes=$(status_nodes_json)
   certs=$(status_certificates_json)
   issues=$(health_collect_json)
   sb_ver=$(core_current_version || true); xray_ver=$(xray_current_version || true); cf_ver=$(cloudflared_current_version || true)
+  openlist_ver=$(openlist_current_version || true)
   enabled_count=$(state_enabled_count)
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state=test
   elif ! state_runtime_required; then service_state=standby
@@ -73,6 +74,7 @@ status_collect_json_unlocked() {
   tunnel_mode=$(jq -r '.tunnel.mode' "$SBM_STATE")
   if [[ "$tunnel_mode" == none ]]; then tunnel_state=off; else tunnel_state=$(status_service_state "$SBM_TUNNEL_SERVICE"); fi
   xray_state=$(status_service_state "$SBM_XRAY_SERVICE")
+  openlist_state=$(status_service_state "$SBM_OPENLIST_SERVICE")
   nginx_enabled=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE")
   if [[ "$nginx_enabled" == true ]]; then nginx_state=$(status_service_state "$(mux_service)"); else nginx_state=off; fi
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
@@ -88,6 +90,7 @@ status_collect_json_unlocked() {
   if [[ -s "$SBM_VAR/updates/sing-box.json" ]]; then pending=$(jq -r '.latest // ""' "$SBM_VAR/updates/sing-box.json" 2>/dev/null || true); fi
   jq -n --arg now "$(now_iso)" --arg version "$SBM_VERSION" --arg init "$(init_system_label)" \
     --arg sb_ver "$sb_ver" --arg xray_ver "$xray_ver" --arg service_state "$service_state" --arg xray_state "$xray_state" --arg cf_ver "$cf_ver" \
+    --arg openlist_ver "$openlist_ver" --arg openlist_state "$openlist_state" \
     --arg tunnel_mode "$tunnel_mode" --arg tunnel_state "$tunnel_state" --arg nginx_state "$nginx_state" \
     --arg mux_backend "$(mux_backend)" \
     --argjson nginx_port "$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")" --arg traffic_state "$traffic_state" \
@@ -102,6 +105,7 @@ status_collect_json_unlocked() {
      components:{
        sing_box:{version:(if $sb_ver=="" then null else $sb_ver end),state:$service_state,pending_version:(if $pending=="" then null else $pending end)},
        xray:{version:(if $xray_ver=="" then null else $xray_ver end),state:$xray_state},
+       openlist:{version:(if $openlist_ver=="" then null else $openlist_ver end),state:$openlist_state},
        cloudflared:{version:(if $cf_ver=="" then null else $cf_ver end),mode:$tunnel_mode,state:$tunnel_state},
        nginx_stream:{state:$nginx_state,port:$nginx_port,backend:$mux_backend},traffic:{state:$traffic_state,configured_nodes:$traffic_count,shared_groups:$groups,shaping:$shaping},substore:$substore,
        ufw:{state:$ufw_state},fail2ban:{state:$fail2ban_state},notifications:$notify,health:($health + {resources_current:$resources})},
@@ -123,6 +127,7 @@ status_show() {
   printf '服务管理      : %s\n' "$(jq -r '.manager.init_system' <<<"$data")"
   printf 'sing-box     : %s (%s)\n' "$(jq -r '.components.sing_box.version // "未安装"' <<<"$data")" "$(jq -r '.components.sing_box.state' <<<"$data")"
   printf 'Xray-core    : %s (%s)\n' "$(jq -r '.components.xray.version // "未安装"' <<<"$data")" "$(jq -r '.components.xray.state' <<<"$data")"
+  printf 'OpenList     : %s (%s)\n' "$(jq -r '.components.openlist.version // "未安装"' <<<"$data")" "$(jq -r '.components.openlist.state' <<<"$data")"
   printf 'cloudflared  : %s (Tunnel: %s/%s)\n' "$(jq -r '.components.cloudflared.version // "未安装"' <<<"$data")" "$(jq -r '.components.cloudflared.mode' <<<"$data")" "$(jq -r '.components.cloudflared.state' <<<"$data")"
   printf 'TCP/SNI 复用 : %s (%s/TCP, %s)\n' "$(jq -r '.components.nginx_stream.state' <<<"$data")" "$(jq -r '.components.nginx_stream.port' <<<"$data")" "$(jq -r '.components.nginx_stream.backend' <<<"$data")"
   printf '安全组件      : UFW %s，Fail2ban %s\n' "$(jq -r '.components.ufw.state' <<<"$data")" "$(jq -r '.components.fail2ban.state' <<<"$data")"

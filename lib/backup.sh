@@ -77,6 +77,9 @@ _restore_backup() {
     state_normalize_v2_file "$stage/etc/state.json"
   fi
   state_validate "$stage/etc/state.json"
+  if [[ $(jq -Sc '.openlist.sites // [] | sort_by(.domain)' "$stage/etc/state.json") != "$(jq -Sc '.openlist.sites // [] | sort_by(.domain)' "$SBM_STATE")" ]]; then
+    die '备份的 OpenList 站点记录与当前不同；请先对齐网站入口。管理器备份不会替换宿主机网站或 OpenList 数据库。'
+  fi
   if [[ $(jq -Sc '.caddy // null' "$stage/etc/state.json") != "$(jq -Sc '.caddy // null' "$SBM_STATE")" ]]; then
     die '备份的 Caddy 程序管理状态与当前不同，请先通过 sb caddy rollback 对齐版本；备份不会覆盖宿主机包管理数据库。'
   fi

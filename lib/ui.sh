@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -513,7 +513,7 @@ ui_add_node() {
     '10. Snell v5/v6' \
     '11. SOCKS5 / HTTP / mixed 认证代理' \
     '0. 返回'
-  ui_menu_choice choice '选择协议' 12
+  ui_menu_choice choice '选择协议' 11
   case "$choice" in
     1)
       prompt_value name '节点名称' 'VMess WS Cloudflare'; prompt_value domain '固定 Tunnel 域名（Quick Tunnel 可留空）' ''; prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
@@ -585,13 +585,14 @@ ui_add_node() {
       ui_add_node_and_deliver tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
       ;;
     7)
+      local xray_custom xray_inbound xray_outbound
+      local -a vless_args=()
       prompt_value name '节点名称' 'VLESS'
       printf '1. TLS（需要域名）\n2. Reality（无需域名，推荐）\n'; ui_menu_choice security_choice '选择安全层' 2
       case "$security_choice" in
         1)
           security=tls; ui_select_certificate_domain domain || { ui_cancel; return; }
           prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-          ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security"
           ;;
         2)
           security=reality; prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
@@ -599,10 +600,19 @@ ui_add_node() {
           if ! ui_use_recommended; then
             prompt_value domain 'Reality SNI' "$domain"; prompt_value handshake_server 'Reality 握手域名' "$domain"; prompt_value handshake_port 'Reality 握手端口' '443'
           fi
-          ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" --handshake-server "$handshake_server" --handshake-port "$handshake_port"
+          vless_args+=(--handshake-server "$handshake_server" --handshake-port "$handshake_port")
           ;;
-        *) log_error '选择无效';;
+        *) log_error '选择无效'; return;;
       esac
+      prompt_value xray_custom '自定义 Xray 参数？y/N' 'N'
+      if [[ "$xray_custom" =~ ^[Yy]$ ]]; then
+        printf '入站参数仅在启用 Xray 时生效。可配置 streamSettings、TLS、Reality、WS、gRPC、XHTTP 等字段。\n'
+        printf '输入单行 JSON 或 @文件路径；出站扩展当前仅保存，客户端需另行配置。\n'
+        prompt_value xray_inbound 'Xray 入站 JSON 或 @文件路径' '{}'
+        prompt_value xray_outbound 'Xray 客户端出站 JSON 或 @文件路径' '{}'
+        vless_args+=(--xray-inbound-json "$xray_inbound" --xray-outbound-json "$xray_outbound")
+      fi
+      ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" "${vless_args[@]}"
       ;;
     8)
       prompt_value name '节点名称' 'NaiveProxy'; ui_select_certificate_domain domain || { ui_cancel; return; }
@@ -755,8 +765,8 @@ ui_tunnel_menu() {
 
 ui_update_menu() {
   local c p v path
-  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本与 Caddy 更新\n11. 更新脚本与 Caddy\n12. 每日自动更新\n0. 返回\n'
-  ui_menu_choice c '选择操作' 12
+  printf '1. 检查 sing-box 更新\n2. 更新 sing-box 最新版\n3. 指定 sing-box 版本\n4. 回滚 sing-box\n5. 设置 sing-box 核心自动更新策略\n6. 安装/更新 cloudflared\n7. 更新 acme.sh\n8. 导出 sing-box 1.14 JSON Schema\n9. 查看核心 build tags 与能力\n10. 检查脚本与 Caddy 更新\n11. 更新脚本与 Caddy\n12. 每日自动更新\n13. Xray-core 管理\n0. 返回\n'
+  ui_menu_choice c '选择操作' 13
   case "$c" in
     1) core_check_update || true;; 2) core_update latest;; 3) prompt_value v '版本号，如 1.14.0-rc.1' ''; core_update "$v";; 4) core_rollback;;
     5) printf 'manual / notify / patch / stable\n'; prompt_value p '策略' "$(jq -r '.settings.core_update_policy' "$SBM_STATE")"; core_set_policy "$p";; 6) cloudflared_update;; 7) acme_update;;
@@ -765,6 +775,29 @@ ui_update_menu() {
     10) manager_update --check;;
     11) manager_update; if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then exit 203; else exec "$SBM_BIN_DIR/sb"; fi;;
     12) ui_open_submenu ui_manager_auto_menu;;
+    13) ui_open_submenu ui_xray_menu;;
+  esac
+}
+
+ui_xray_menu() {
+  local choice policy
+  xray_status
+  printf '\n启用 Xray 会停止 sing-box 并接管兼容节点；停用 Xray 会恢复 sing-box。\n'
+  printf '1. 安装 Xray 最新版\n2. 更新 Xray\n3. 生成并校验 Xray 配置\n4. 启用 Xray\n5. 停用 Xray\n6. 设置 Xray 更新策略\n0. 返回\n'
+  ui_menu_choice choice '选择 Xray 操作' 6
+  case "$choice" in
+    1) xray_install;;
+    2) xray_update;;
+    3)
+      [[ -x "$SBM_XRAY_BIN" ]] || { log_error '请先安装 Xray。'; return 1; }
+      with_lock xray_render_validate || return 1
+      log_ok "Xray 配置已生成：$SBM_XRAY_CONFIG";;
+    4) xray_enable;;
+    5) xray_disable;;
+    6)
+      printf 'manual / notify / patch / stable\n'
+      prompt_value policy '更新策略' "$(jq -r '.settings.xray_update_policy // "notify"' "$SBM_STATE")"
+      xray_set_policy "$policy";;
   esac
 }
 
@@ -1044,8 +1077,8 @@ ui_firewall_menu() {
 ui_vps_menu() {
   local choice
   printf 'VPS 与网站运维：集中管理主机基础环境、防火墙、SSH 防护、网站入口和网络调优。\n'
-  printf '1. 新 VPS 一键初始化\n2. 查看基础环境状态\n3. 防火墙与 SSH 防护\n4. 网站与节点共用 443\n5. 网络性能与调优\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护\n8. 缓存与日志\n0. 返回\n'
-  ui_menu_choice choice '选择服务器功能' 8
+  printf '1. 新 VPS 一键初始化\n2. 查看基础环境状态\n3. 防火墙与 SSH 防护\n4. 网站与节点共用 443\n5. 网络性能与调优\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护\n8. 缓存与日志\n9. OpenList 网站\n0. 返回\n'
+  ui_menu_choice choice '选择服务器功能' 9
   case "$choice" in
     1) ui_open_submenu ui_vps_init_menu;;
     2) vps_init_status;;
@@ -1055,6 +1088,7 @@ ui_vps_menu() {
     6) vps_system_support;;
     7) ui_open_submenu ui_caddy_menu;;
     8) ui_open_submenu ui_maintenance_menu;;
+    9) ui_open_submenu ui_openlist_menu;;
   esac
 }
 
@@ -1069,6 +1103,24 @@ ui_caddy_menu() {
     3) caddy_cli update --check;;
     4) caddy_cli update;;
     5) caddy_cli rollback;;
+  esac
+}
+
+ui_openlist_menu() {
+  local choice domain server
+  openlist_status
+  printf '\n1. 安装 OpenList\n2. 更新 OpenList\n3. 用 Caddy 配置网站\n4. 用 Nginx 配置网站\n5. 移除网站入口\n0. 返回\n'
+  ui_menu_choice choice '选择 OpenList 操作' 5
+  case "$choice" in
+    1) openlist_install;;
+    2) openlist_update;;
+    3|4)
+      prompt_value domain 'OpenList 公网域名' '' || return 1
+      if [[ "$choice" == 3 ]]; then server=caddy; else server=nginx; fi
+      openlist_setup "$domain" "$server";;
+    5)
+      prompt_value domain '要移除的 OpenList 域名' '' || return 1
+      confirm "移除 $domain 的网站入口并保留数据？" N && openlist_detach "$domain";;
   esac
 }
 

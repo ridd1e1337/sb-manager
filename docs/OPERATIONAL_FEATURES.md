@@ -271,6 +271,37 @@ VLESS 节点可通过 `--xray-inbound-json` 或 `@FILE` 追加 3x-ui 风格的
 `streamSettings`。管理器保留生成的用户和监听身份，只把自定义传输、安全层和
 伪装字段合并到 Xray 入站；Xray 原生配置检查负责确认字段与当前核心兼容。
 
+## OpenList 网站配置（alpha.71）
+
+面板 `15 → 9` 可安装、更新 OpenList，并选择 Caddy 或 Nginx 配置域名。
+命令为 `sb openlist install|update|status`、`sb openlist setup DOMAIN caddy|nginx`
+和 `sb openlist detach DOMAIN`。网站服务需已安装、运行并使用标准配置路径。
+支持 Debian/Ubuntu 的 systemd 和 Alpine 的 OpenRC；检测到自定义启动配置、
+已接入网站分流、域名冲突或其他程序占用网站端口时会停止操作。
+
+安装从 OpenListTeam/OpenList 最新正式 Release 下载匹配架构的程序，核对
+GitHub 提供的 SHA-256 摘要后保存。独立 `sb-openlist` 用户运行服务，默认只监听
+`127.0.0.1:5244`，关闭 OpenList 自带文件日志及 FTP/SFTP/S3/MCP 入口。
+首次上线前显式初始化管理员，输出保存至 `/etc/sb-manager/secrets/openlist-admin.txt`，
+权限为 `0600`；更新不重置密码。数据目录为 `/var/lib/sb-openlist`，管理本机 SQLite。
+更新前停止服务并备份 SQLite、配置、程序链接和服务文件；失败恢复并重启旧服务。
+缓存下载结束即删除，文件日志和专属 journal 纳入一天维护策略；保留当前/上一版程序
+及两份安装恢复记录。旧 systemd 的系统日志仍沿用宿主机策略。
+
+Caddy 自动申请 HTTPS，域名需已解析至服务器。Nginx 使用本项目已有证书，缺少时
+通过已配置的 Cloudflare 凭据自动准备 DNS 和申请证书；续期后平滑重载 Nginx。
+站点写入 Nginx 主配置同目录的隐藏片段，并在 http 块显式 include，兼容 Debian 的
+conf.d 与 Alpine 的 http.d。两种网站程序都先保存配置、校验候选、原子安装和平滑
+重载，再确认本机 HTTPS 入口；失败恢复本次变更，已有站点域名拒绝覆盖。
+配置记录保存在 `/var/lib/sb-manager/backups/openlist/`，文件权限受保护。
+
+普通卸载移除受管网站入口、停止服务，保留 OpenList 数据；彻底卸载会删除默认路径
+中的 OpenList 数据和日志。完整 `sb backup` 仍只备份管理器数据；OpenList 的数据库
+及上传文件需单独备份其数据目录。本功能只部署普通 HTTPS 网站，Xray Reality 前置
+和网站端口迁移尚未自动化。
+
+面板 `8 → 13` 也已接入 Xray 管理；VLESS 向导支持输入原生 JSON 或 `@FILE`。
+Xray 配置在候选文件校验成功后原子替换，失败保留现有配置。
 
 ## 缓存与日志的一天保留策略
 

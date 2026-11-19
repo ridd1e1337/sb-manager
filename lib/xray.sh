@@ -232,11 +232,15 @@ EOF_UNIT
   esac
 }
 
-xray_render_validate() {
-  mkdir -p "$SBM_GENERATED_DIR"
-  xray_render_config "$SBM_STATE" "$SBM_XRAY_CONFIG" || return 1
-  xray_validate_config "$SBM_XRAY_BIN" "$SBM_XRAY_CONFIG"
-}
+xray_render_validate() (
+  local output=${1:-$SBM_XRAY_CONFIG} candidate
+  mkdir -p "$(dirname "$output")" || return 1
+  candidate=$(mktemp "$(dirname "$output")/.xray-config.XXXXXX") || return 1
+  trap 'rm -f -- "$candidate"' EXIT
+  xray_render_config "$SBM_STATE" "$candidate" || return 1
+  xray_validate_config "$SBM_XRAY_BIN" "$candidate" || return 1
+  mv -f "$candidate" "$output"
+)
 
 xray_install() {
   require_root

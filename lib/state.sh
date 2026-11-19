@@ -545,6 +545,11 @@ state_validate() {
       and (.protocol | IN("vmess-ws-cf", "shadowsocks", "anytls", "hysteria2", "trojan", "tuic", "vless", "naive", "shadowtls", "snell", "socks", "http", "mixed"))
       and (.defaults | type == "object"))
     and (.certificates | type == "array")
+    and (if .openlist==null then true else
+      (.openlist | type=="object" and (.sites|type=="array") and
+        ((.sites|map(.domain)|unique|length)==(.sites|length)) and all(.sites[];
+          (.domain|nonempty) and (.server|IN("nginx","caddy")) and
+          (.binary|web_path) and (.config|web_path) and (.port|port))) end)
     and all(.certificates[];
       type == "object"
       and (.domain | nonempty)

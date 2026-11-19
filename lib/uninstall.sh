@@ -26,7 +26,7 @@ delete_service_account() {
 
 uninstall_manager() {
   require_root
-  local purge=${1:-0} assume_yes=${2:-0} message backend
+  local purge=${1:-0} assume_yes=${2:-0} message backend openlist_owned=false
   case "$purge" in 0|1) ;; *) die '卸载模式无效。' ;; esac
 
   if [[ "$purge" == 1 ]]; then
@@ -36,10 +36,14 @@ uninstall_manager() {
   fi
   if [[ "$assume_yes" != 1 ]]; then confirm "$message" N || return 0; fi
   manager_update_lock || die '脚本更新正在进行，暂不能卸载；请等待更新完成。'
+  if [[ -L "$SBM_OPENLIST_BIN" && $(readlink -f "$SBM_OPENLIST_BIN") == "$SBM_CORE_DIR/openlist/"* ]]; then
+    openlist_owned=true
+  fi
 
   if [[ -s "$SBM_STATE" ]] && website_mux_managed; then
     website_mux_detach || die '无法恢复现有网站入口，卸载已取消。'
   fi
+  openlist_detach_all || die '无法安全移除 OpenList 站点，卸载已取消，请检查配置。'
 
   if [[ -f "$SBM_SHAPING_DIR/baseline.json" ]]; then
     with_lock shaping_restore || die "无法恢复 tc 队列；卸载已取消，请检查 $SBM_SHAPING_DIR。"
@@ -78,6 +82,8 @@ uninstall_manager() {
     service_stop "$SBM_SERVICE" || true
     service_disable "$SBM_XRAY_SERVICE" || true
     service_stop "$SBM_XRAY_SERVICE" || true
+    service_disable "$SBM_OPENLIST_SERVICE" || true
+    service_stop "$SBM_OPENLIST_SERVICE" || true
     service_disable "$SBM_NGINX_STREAM_SERVICE" || true
     service_stop "$SBM_NGINX_STREAM_SERVICE" || true
     service_disable "$SBM_SUBSCRIPTION_SERVICE" || true
@@ -87,7 +93,7 @@ uninstall_manager() {
     if [[ "$backend" == systemd ]]; then
       systemctl disable --now sb-manager-update.timer sb-core-update.timer sb-acme-renew.timer sb-quick-tunnel-refresh.timer sb-traffic-sync.timer sb-health-check.timer >/dev/null 2>&1 || true
       systemctl disable --now sb-maintenance.timer >/dev/null 2>&1 || true
-      systemctl reset-failed "$SBM_SERVICE" "$SBM_XRAY_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" "$SBM_TRAFFIC_SERVICE" >/dev/null 2>&1 || true
+      systemctl reset-failed "$SBM_SERVICE" "$SBM_XRAY_SERVICE" "$SBM_OPENLIST_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" "$SBM_TRAFFIC_SERVICE" >/dev/null 2>&1 || true
     fi
   fi
 
@@ -96,6 +102,7 @@ uninstall_manager() {
   rm -f \
     "$SBM_SYSTEMD_DIR/$SBM_SERVICE" \
     "$SBM_SYSTEMD_DIR/$SBM_XRAY_SERVICE" \
+    "$SBM_SYSTEMD_DIR/$SBM_OPENLIST_SERVICE" \
     "$SBM_SYSTEMD_DIR/$SBM_TUNNEL_SERVICE" \
     "$SBM_SYSTEMD_DIR/$SBM_NGINX_STREAM_SERVICE" \
     "$SBM_SYSTEMD_DIR/sb-core-update.service" \
@@ -116,6 +123,7 @@ uninstall_manager() {
     "$SBM_SYSTEMD_DIR/sb-maintenance.timer" \
     "$SBM_OPENRC_DIR/sb-sing-box" \
     "$SBM_OPENRC_DIR/sb-xray" \
+    "$SBM_OPENRC_DIR/sb-openlist" \
     "$SBM_OPENRC_DIR/sb-cloudflared" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_NGINX_STREAM_SERVICE")" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_SUBSCRIPTION_SERVICE")" \
@@ -132,6 +140,7 @@ uninstall_manager() {
   service_reload_manager || true
 
   remove_manager_owned_link "$SBM_SING_BOX_BIN"
+  remove_manager_owned_link "$SBM_OPENLIST_BIN"
   remove_manager_owned_link "$SBM_CLOUDFLARED_BIN"
   remove_manager_owned_link "$SBM_BIN_DIR/sb"
   rm -f -- "$SBM_NGINX_STREAM_OPENRC_BIN"
@@ -139,11 +148,15 @@ uninstall_manager() {
   rm -rf -- "$SBM_LIB" "$SBM_RUN"
 
   if [[ "$purge" == 1 ]]; then
+    if [[ "$openlist_owned" == true && "$SBM_OPENLIST_DATA" == /var/lib/sb-openlist && "$SBM_OPENLIST_LOG_DIR" == /var/log/sb-openlist ]]; then
+      rm -rf -- "$SBM_OPENLIST_DATA" "$SBM_OPENLIST_LOG_DIR"
+    fi
     rm -rf -- "$SBM_ETC" "$SBM_VAR" "$SBM_LOG_DIR"
     delete_service_account
     log_ok 'sb-manager、全部配置、证书、密钥、核心、日志和备份已彻底删除。'
   else
     log_ok "程序已卸载；数据保留在 $SBM_ETC 和 $SBM_VAR。"
+    [[ ! -d "$SBM_OPENLIST_DATA" ]] || log_info "OpenList 数据保留在 $SBM_OPENLIST_DATA。"
     log_info '重新运行一键安装命令可恢复程序并继续使用原有数据。'
   fi
   SBM_UNINSTALLED=1

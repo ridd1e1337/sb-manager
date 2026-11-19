@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.71
+
+- Add OpenList installation, updates and Caddy/Nginx website setup to the CLI
+  and VPS panel. Verify official release SHA-256 digests, initialize the admin
+  before exposure, use a dedicated unprivileged account and loopback listener,
+  and restore SQLite, configuration and the previous binary on failed updates.
+- Add candidate validation, atomic website edits, graceful reload, HTTPS
+  readiness and rollback. Refuse existing domains and conflicting listeners;
+  prepare missing Nginx certificates with configured Cloudflare credentials
+  and reload after renewal. Detaching removes only the managed site content.
+- Include OpenList in status and daily log/cache maintenance, retaining two
+  installation recovery records and the current/previous binaries. Ordinary
+  installation does not change firewalls or migrate Reality's 443 listener.
+- Add Xray management and optional VLESS JSON fields to the interactive panel;
+  install Xray configuration atomically only after native validation succeeds.
+
 ## 0.1.0-alpha.69
 
 - Clarify the Xray VLESS customisation flow and document 3x-ui style transport

@@ -35,7 +35,7 @@ EOF_JOURNAL
     chmod 0644 "$temporary" && mv -f "$temporary" "$SBM_JOURNAL_CONFIG" || return 1
     systemctl try-restart systemd-journald@sb-manager.service >/dev/null 2>&1 || true
   else rm -f "$temporary"; fi
-  for unit in "$SBM_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" \
+  for unit in "$SBM_SERVICE" "$SBM_XRAY_SERVICE" "$SBM_OPENLIST_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" \
     "$SBM_SUBSCRIPTION_SERVICE" "${SBM_SUBSTORE_SERVICE:-sb-substore.service}" "$SBM_TRAFFIC_SERVICE" \
     "$SBM_HEALTH_SERVICE" sb-core-update.service sb-manager-update.service sb-acme-renew.service \
     sb-quick-tunnel-refresh.service sb-traffic-sync.service sb-maintenance.service; do
@@ -79,10 +79,11 @@ _maintenance_run() {
   if maintenance_safe_cache_root; then
     while IFS= read -r -d '' path; do
       name=${path##*/}
-      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|xray.*|acme.*|cloudflared.*) rm -rf -- "$path" || return 1;; esac
+      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|xray.*|openlist.*|acme.*|cloudflared.*) rm -rf -- "$path" || return 1;; esac
     done < <(find "$SBM_CACHE" -mindepth 1 -maxdepth 1 -mmin +1380 -print0)
   fi
-  if [[ -d "$SBM_LOG_DIR" && ! -L "$SBM_LOG_DIR" && "$SBM_LOG_DIR" != / && "$SBM_LOG_DIR" != /var/log ]]; then
+  for directory in "$SBM_LOG_DIR" "$SBM_OPENLIST_LOG_DIR"; do
+    [[ -d "$directory" && ! -L "$directory" && "$directory" != / && "$directory" != /var/log ]] || continue
     while IFS= read -r -d '' path; do
       [[ ! -L "$path" ]] || continue
       inode=$(stat -c '%d:%i' "$path") || return 1
@@ -101,9 +102,9 @@ _maintenance_run() {
       jq --arg path "$path" --arg inode "$inode" --argjson epoch "$epoch" \
         '.[$path]={inode:$inode,epoch:$epoch}' "$epochs" >"$temporary" || return 1
       chmod 0600 "$temporary" && mv -f "$temporary" "$epochs" || return 1
-    done < <(find "$SBM_LOG_DIR" -maxdepth 1 -type f \( -name '*.log' -o -name '*.err' \) -print0)
-    find "$SBM_LOG_DIR" -maxdepth 1 -type f \( -name '*.gz' -o -name '*.log.[0-9]*' -o -name '*.err.[0-9]*' \) -mmin +1380 -delete || return 1
-  fi
+    done < <(find "$directory" -maxdepth 1 -type f \( -name '*.log' -o -name '*.err' \) -print0)
+    find "$directory" -maxdepth 1 -type f \( -name '*.gz' -o -name '*.log.[0-9]*' -o -name '*.err.[0-9]*' \) -mmin +1380 -delete || return 1
+  done
   for directory in "$SBM_RUN" "$SBM_VAR/updates" "$SBM_WEBSITE_MUX_DIR"; do
     [[ -d "$directory" && ! -L "$directory" && "$directory" != / ]] || continue
     find "$directory" -maxdepth 1 -type f -name '*.log' -mmin +1380 -delete || return 1
@@ -111,6 +112,10 @@ _maintenance_run() {
       (( $(stat -c %s "$path") <= 5242880 )) || maintenance_truncate_log "$path" || return 1
     done < <(find "$directory" -maxdepth 1 -type f -name '*.log' -print0)
   done
+  if [[ -d "$SBM_BACKUPS/openlist" && ! -L "$SBM_BACKUPS/openlist" ]]; then
+    find "$SBM_BACKUPS/openlist" -mindepth 2 -maxdepth 2 -type f -name '*.log' -mmin +1380 -delete || return 1
+    if declare -F openlist_prune >/dev/null 2>&1; then openlist_prune || return 1; fi
+  fi
   if [[ -f "$SBM_JOURNAL_CONFIG" ]] && maintenance_namespace_supported \
     && systemctl is-active --quiet systemd-journald@sb-manager.service; then
     journalctl --namespace=sb-manager --rotate --vacuum-time=23h --vacuum-size=16M >/dev/null 2>&1 || return 1
