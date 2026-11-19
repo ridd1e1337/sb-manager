@@ -44,6 +44,7 @@ source "$SBM_LIB/lib/traffic.sh"
 source "$SBM_LIB/lib/traffic_groups.sh"
 source "$SBM_LIB/lib/shaping.sh"
 source "$SBM_LIB/lib/expiry.sh"
+source "$SBM_LIB/lib/user_limits.sh"
 source "$SBM_LIB/lib/firewall.sh"
 source "$SBM_LIB/lib/vps.sh"
 source "$SBM_LIB/lib/notification.sh"
@@ -97,10 +98,21 @@ sb_help_full() {
                  [--wildcard-sni off|authed|all] [--snell-version 5|6] [--snell-mode MODE]
                  [--sing-box-inbound-json JSON|@FILE] [--sing-box-outbound-json JSON|@FILE]
                  [--xray-inbound-json JSON|@FILE] [--xray-outbound-json JSON|@FILE]
+                 VLESS: [--transport raw|ws|grpc|httpupgrade|xhttp|kcp|hysteria] [--security none|tls|reality]
+                 [--host H] [--service-name N] [--xhttp-mode MODE] [--tls-server-name SNI] [--fingerprint FP]
+                 [--alpn a,b] [--pinned-cert-sha256 HEX[,HEX]] [--verify-name NAME[,NAME]]
+                 [--vless-encryption E --vless-decryption D] [--packet-encoding xudp|packetaddr|none]
+                 [--fallback-dest PORT|HOST:PORT|none] [--fallbacks JSON|@FILE|none]
+                 [--sniffing on|route-only|off] [--sniff-dest http,tls,quic,fakedns]
+                 [--tcp-fast-open true|false] [--accept-proxy-protocol true|false] [--sockopt-json JSON|@FILE]
+                 [--transport-json JSON|@FILE] [--tls-json JSON|@FILE]
                  [--realm-id ID] [--realm-ip-version 0|4|6] [--realm-port-mapping|--no-realm-port-mapping]
   sb user list <NODE_ID>
   sb user add <NODE_ID> <USER_ID> [NAME]
   sb user enable|disable|delete|rotate <NODE_ID> <USER_ID>
+  sb user limit <NODE_ID> <USER_ID> [--quota SIZE|unlimited] [--reset-day 1-28|none]
+                 [--days N|--expire-at UTC|--no-expiry] [--ip-limit N|unlimited] [--clear]
+  sb user stats [NODE_ID] [--json] | reset-usage <NODE_ID> <USER_ID> | tick
   sb share <ID> [--user USER_ID] [--qr]
   sb share all
   sb export outbounds
@@ -160,7 +172,7 @@ sb_help_full() {
   sb probe NODE_ID                探测节点 DNS、监听和 TLS/UDP 可达性
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
-  sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>
+  sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT
   sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN
   sb reality status|setup DOMAIN [nginx|caddy] [--node ID] [--init-vps]|detach
   sb vps reality DOMAIN [nginx|caddy] [--node ID]  一键部署 OpenList、Reality 与基础防护
@@ -434,6 +446,13 @@ main() {
         disable) (($# == 2)) || die '用法：sb user disable NODE_ID USER_ID'; node_user_disable "$1" "$2" ;;
         delete) (($# == 2)) || die '用法：sb user delete NODE_ID USER_ID'; node_user_delete "$1" "$2" ;;
         rotate) (($# == 2)) || die '用法：sb user rotate NODE_ID USER_ID'; node_rotate "$1" "$2" ;;
+        limit) user_limit_cli "$@" ;;
+        stats)
+          local stats_node='' stats_json=0
+          while (($#)); do case "$1" in --json) stats_json=1; shift;; *) [[ -z "$stats_node" ]] || usage_die '用法：sb user stats [NODE_ID] [--json]'; stats_node=$1; shift;; esac; done
+          user_stats "$stats_node" "$stats_json" ;;
+        reset-usage) (($# == 2)) || die '用法：sb user reset-usage NODE_ID USER_ID'; user_usage_reset "$1" "$2" ;;
+        tick) (($# == 0)) || die '用法：sb user tick'; user_limits_tick ;;
         *) usage_die "未知 user 操作：$action" ;;
       esac
       ;;
@@ -655,7 +674,8 @@ main() {
         enable) (($# == 2)) || usage_die '用法：sb xray enable'; xray_enable ;;
         disable) (($# == 2)) || usage_die '用法：sb xray disable'; xray_disable ;;
         policy) (($# == 3)) || usage_die '用法：sb xray policy <manual|notify|patch|stable>'; xray_set_policy "$3" ;;
-        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>' ;;
+        api-port) (($# == 3)) || usage_die '用法：sb xray api-port PORT'; xray_set_api_port "$3" ;;
+        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT' ;;
       esac
       ;;
     openlist)

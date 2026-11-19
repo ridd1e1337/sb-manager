@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.73`
+当前版本：`0.1.0-alpha.74`
 
 ## 第一步：安装
 
@@ -88,6 +88,32 @@ sb node add vless --id edge --name 'VLESS WS' --address edge.example.com \
   --domain edge.example.com --port 443 --security tls \
   --xray-inbound-json '{"streamSettings":{"network":"ws","wsSettings":{"path":"/xray"}}}'
 ```
+
+VLESS 常用参数可直接设置，无需手写 JSON：
+
+```bash
+sb node set edge --transport xhttp --security tls --path /x --xhttp-mode auto
+sb node set edge --transport raw --security tls --fallback-dest 8080 --sniffing route-only
+sb node set edge --pinned-cert-sha256 <证书SHA256>   # 自签证书；Xray 已移除 allowInsecure
+```
+
+回落仅支持 RAW + TLS；Reality 使用目标网站。客户端配置由服务端有效配置推导，
+导出格式无法完整表达的字段会跳过该节点并说明原因。
+
+### 用户流量、到期与在线 IP
+
+```bash
+sb user add edge alice
+sb user limit edge alice --quota 100G --reset-day 1 --days 30 --ip-limit 2
+sb user stats [edge] [--json]
+sb user reset-usage edge alice
+```
+
+到期时间适用于所有多用户协议。流量配额与在线 IP 上限依赖 Xray 仅监听
+`127.0.0.1:10085` 的 Stats API（`sb xray api-port PORT` 可修改），因此仅用于
+VLESS。超限用户被暂停但保留凭据：配额在下个重置日或调高后恢复，到期在续期后
+恢复，在线 IP 超限暂停 10 分钟后重试。检查随流量周期任务运行（systemd 5 分钟、
+OpenRC 15 分钟），也可执行 `sb user tick`。面板 `3 → 节点 → 12` 可管理用户。
 
 新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。单用户 Snell 的单节点和批量分享都优先显示 Surge 原生配置；v5 使用兼容的 `version=4`，v6 需要支持该版本的 Surge。多用户模式使用 sing-box 配置。
 

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.74
+
+- Add per-user limits: `sb user limit` sets expiry for every multi-user
+  protocol and, for VLESS on Xray, monthly or lifetime traffic quotas and
+  online-IP limits. Counters come from a loopback-only Xray Stats API; users
+  over a limit are suspended with credentials kept and resume automatically
+  after renewal, cycle reset or the IP cooldown. Add `sb user stats`,
+  `reset-usage`, `tick`, `sb xray api-port` and a panel user menu. Usage
+  ledgers are included in backups.
+- Add VLESS fallbacks (RAW + TLS only, with matching ALPN), inbound sniffing
+  and server sockopt flags (`--fallback-dest`, `--fallbacks`, `--sniffing`,
+  `--sniff-dest`, `--tcp-fast-open`, `--accept-proxy-protocol`,
+  `--sockopt-json`).
+- Replace the removed Xray `allowInsecure` with certificate pinning
+  (`--pinned-cert-sha256`, `--verify-name`; URI `pcs`/`vcn`) and emit the
+  current Reality client field `password`.
+- Drop the nonstandard `support-x25519mlkem768` URI parameter.
+
 ## 0.1.0-alpha.73
 
 - Treat the native Xray VLESS inbound/outbound objects as the single source of

@@ -181,7 +181,7 @@ _node_add() {
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
       --security) security=${2:?}; shift 2;;
       --flow) (($# >= 2)) || usage_die '缺少 flow 值；可显式传空字符串。'; flow=$2; shift 2;;
-      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json)
+      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol)
         (($# >= 2)) || usage_die "缺少参数值：$1"
         vless_options+=("$1" "$2"); shift 2;;
       --handshake-server) handshake_server=${2:?}; shift 2;; --handshake-port) handshake_port=${2:?}; shift 2;;
@@ -605,7 +605,7 @@ node_set() {
   if [[ $(jq -r '.protocol // ""' <<<"$node") == vless ]]; then
     local arg
     for arg in "$@"; do
-      case "$arg" in --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--xray-inbound-json|--xray-outbound-json)
+      case "$arg" in --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
         node_vless_configure "$id" "$@"; return $?;; esac
     done
   fi
@@ -672,7 +672,8 @@ _node_user_set_enabled() {
   state_user_exists "$node_id" "$user_id" || die "用户不存在：$node_id/$user_id"
   candidate=$(state_candidate)
   jq --arg nid "$node_id" --arg uid "$user_id" --argjson value "$value" '
-    (.nodes[] | select(.id==$nid) | .users[] | select(.id==$uid) | .enabled)=$value
+    (.nodes[] | select(.id==$nid) | .users[] | select(.id==$uid)) |=
+      (.enabled=$value | if .limits!=null then .limits.suspended=null | .limits.suspended_until=null | .limits.resume_enabled=false else . end)
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "user-$value-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
@@ -689,6 +690,9 @@ _node_user_delete() {
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "user-delete-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate" "$(state_user_secret_path "$node_id" "$user_id")"
+  if [[ -s "$SBM_USER_USAGE" ]] && declare -F user_usage_update_unlocked >/dev/null 2>&1; then
+    user_usage_update_unlocked 'del(.users[$key])' --arg key "$node_id:$user_id" || log_warn '用户流量账本清理失败。'
+  fi
   log_ok "已删除用户：$node_id/$user_id"
 }
 node_user_delete() { with_state_transaction user-delete _node_user_delete "$@"; }

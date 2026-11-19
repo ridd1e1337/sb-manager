@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.73",
+  "manager_version": "0.1.0-alpha.74",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -79,7 +79,9 @@ Simplified example:
         "download_rate_bps": 100000000
       },
       "users": [
-        {"id": "default", "name": "AnyTLS", "enabled": true}
+        {"id": "default", "name": "AnyTLS", "enabled": true,
+         "limits": {"quota_bytes": null, "reset_day": null, "expires_at": 1798761600,
+                    "ip_limit": null, "suspended": null, "suspended_until": null, "resume_enabled": false}}
       ],
       "singbox": {
         "inbound": {"tcp_fast_open": true},
@@ -89,6 +91,16 @@ Simplified example:
   ]
 }
 ```
+
+`users[].limits` is optional. `expires_at` (epoch seconds) works for every
+protocol; `quota_bytes`, `reset_day` (1-28, null = lifetime) and `ip_limit` are
+accepted only on VLESS nodes because the counters come from the Xray Stats API.
+`suspended` is `null`, `quota`, `expired` or `ip`; while suspended the user has
+`enabled: false` and `resume_enabled` stores the state to restore. A node whose
+users are all suspended stays enabled but is not rendered. Per-user counters live
+in `/var/lib/sb-manager/user-usage.json` (keys `<node-id>:<user-id>`, also used as
+the Xray client `email`). `settings.xray_api_port` (default 10085) is the
+loopback Stats API port and must not equal any node port.
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
 

@@ -44,11 +44,11 @@ def uri_tls($c):
   if $c.security=="none" then {} elif $c.security=="tls" then
     ($c.stream.tlsSettings // {} | only(["serverName","fingerprint","alpn","allowInsecure","echConfigList","verifyPeerCertByName","pinnedPeerCertSha256","cipherSuites"]; "VLESS URI TLS")) as $t |
     {sni:$t.serverName,fp:$t.fingerprint,alpn:(if $t.alpn==null then null else $t.alpn|join(",") end),
-     allowInsecure:(if $t.allowInsecure==true then "1" else null end),ech:$t.echConfigList,vcn:$t.verifyPeerCertByName,
-     pcs:(if $t.pinnedPeerCertSha256==null then null else $t.pinnedPeerCertSha256|join(",") end),cs:$t.cipherSuites} | compact
+     ech:$t.echConfigList,vcn:$t.verifyPeerCertByName,
+     pcs:(if $t.pinnedPeerCertSha256==null then null elif ($t.pinnedPeerCertSha256|type)=="array" then $t.pinnedPeerCertSha256|join(",") else $t.pinnedPeerCertSha256 end),cs:$t.cipherSuites} | compact
   elif $c.security=="reality" then
     ($c.stream.realitySettings // {} | only(["serverName","fingerprint","publicKey","password","shortId","spiderX","mldsa65Verify","show"]; "VLESS URI Reality")) as $r |
-    {sni:$r.serverName,fp:$r.fingerprint,pbk:($r.publicKey // $r.password),sid:($r.shortId // ""),spx:$r.spiderX,pqv:$r.mldsa65Verify,"support-x25519mlkem768":"true"} | compact
+    {sni:$r.serverName,fp:$r.fingerprint,pbk:($r.password // $r.publicKey),sid:($r.shortId // ""),spx:$r.spiderX,pqv:$r.mldsa65Verify} | compact
   else unsupported("VLESS URI 不支持此 security") end;
 def uri_transport($c):
   if $c.network=="raw" then
@@ -93,7 +93,7 @@ def singbox_tls($c):
   elif $c.security=="reality" then
     ($c.stream.realitySettings // {} | only(["serverName","fingerprint","publicKey","password","shortId","spiderX","show"]; "sing-box Reality")) as $r |
     if ($r.spiderX // "")!="" and $r.spiderX!="/" then unsupported("sing-box 无法表达自定义 Reality spiderX；请使用原生 Xray JSON") else
-    {tls:{enabled:true,server_name:($r.serverName // ""),utls:{enabled:true,fingerprint:($r.fingerprint // "chrome")},reality:{enabled:true,public_key:($r.publicKey // $r.password),short_id:($r.shortId // "")}}} end
+    {tls:{enabled:true,server_name:($r.serverName // ""),utls:{enabled:true,fingerprint:($r.fingerprint // "chrome")},reality:{enabled:true,public_key:($r.password // $r.publicKey),short_id:($r.shortId // "")}}} end
   else unsupported("sing-box 不支持此 security") end;
 def singbox_transport($c):
   if $c.network=="raw" then
@@ -129,7 +129,7 @@ def mihomo_tls($c):
     ($c.stream.realitySettings // {} | only(["serverName","fingerprint","publicKey","password","shortId","spiderX","show"]; "mihomo Reality")) as $r |
     if ($r.spiderX // "")!="" and $r.spiderX!="/" then unsupported("mihomo 无法表达自定义 Reality spiderX；请使用原生 Xray JSON") else
     {tls:true,servername:($r.serverName // ""),"client-fingerprint":($r.fingerprint // "chrome"),
-     "reality-opts":{"public-key":($r.publicKey // $r.password),"short-id":($r.shortId // ""),"support-x25519mlkem768":true}} end
+     "reality-opts":{"public-key":($r.password // $r.publicKey),"short-id":($r.shortId // ""),"support-x25519mlkem768":true}} end
   else unsupported("mihomo 不支持此 security") end;
 def xmux:
   mapped({maxConcurrency:"max-concurrency",maxConnections:"max-connections",cMaxReuseTimes:"c-max-reuse-times",hMaxRequestTimes:"h-max-request-times",hMaxReusableSecs:"h-max-reusable-secs",hKeepAlivePeriod:"h-keep-alive-period"};"mihomo XHTTP xmux") |

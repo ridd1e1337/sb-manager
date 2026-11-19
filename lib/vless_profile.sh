@@ -176,7 +176,7 @@ vless_profile_pair_check() {
       req(($cs.realitySettings.privateKey==null and $cs.realitySettings.mldsa65Seed==null and
            $cs.realitySettings.target==null and $cs.realitySettings.dest==null and $cs.realitySettings.serverNames==null and $cs.realitySettings.shortIds==null);
           "客户端 Reality 不能包含服务端私钥、目标或列表字段") |
-      req(($cs.realitySettings.publicKey // "")==$public;"Reality 客户端公钥与服务端私钥不匹配") |
+      req(($cs.realitySettings.password // $cs.realitySettings.publicKey // "")==$public;"Reality 客户端公钥与服务端私钥不匹配") |
       req(any($ss.realitySettings.serverNames[]?; ascii_downcase==($cs.realitySettings.serverName // ""|ascii_downcase));"Reality 客户端 SNI 不在服务端 serverNames 中") |
       req(any($ss.realitySettings.shortIds[]?; ascii_downcase==($cs.realitySettings.shortId // ""|ascii_downcase));"Reality 客户端 shortId 不在服务端 shortIds 中") |
       req($verify=="" or ($cs.realitySettings.mldsa65Verify // "")==$verify;"Reality 后量子验证公钥不匹配")
@@ -256,7 +256,7 @@ vless_xray_client_outbound() {
         | if ($ss.network|IN("ws","httpupgrade")) then .streamSettings.tlsSettings.alpn=["http/1.1"]
           elif $ss.network=="grpc" then .streamSettings.tlsSettings.alpn=["h2"] else . end
       elif $ss.security=="reality" then
-        .streamSettings.realitySettings={serverName:($ss.realitySettings.serverNames[0] // $node.domain),fingerprint:"chrome",publicKey:$public,shortId:($ss.realitySettings.shortIds[0] // ""),spiderX:"/"}
+        .streamSettings.realitySettings={serverName:($ss.realitySettings.serverNames[0] // $node.domain),fingerprint:"chrome",password:$public,shortId:($ss.realitySettings.shortIds[0] // ""),spiderX:"/"}
         | if $verify!="" then .streamSettings.realitySettings.mldsa65Verify=$verify else . end
       else . end
   ') || return 1
@@ -269,11 +269,12 @@ vless_xray_client_outbound() {
     | .tag=$base.tag | .protocol="vless"
   ' <<<"$client") || return 1
   stream=$(vless_stream_normalize "$(jq -c '.streamSettings' <<<"$client")") || return 1
-  # Accept the current password name and the widely-used publicKey alias,
-  # then keep one canonical key for sharing and client-format adapters.
+  # Accept the legacy publicKey alias, then emit upstream's current name.
   stream=$(jq 'if .security=="reality" then
-      if (.realitySettings.password // "")!="" then .realitySettings.publicKey=.realitySettings.password else . end
-      | del(.realitySettings.password)
+      if (.realitySettings.publicKey // "")!="" and (.realitySettings.password // "")=="" then .realitySettings.password=.realitySettings.publicKey else . end
+      | del(.realitySettings.publicKey)
+    elif .security=="tls" then
+      if (.tlsSettings.allowInsecure // false)==true then error("Xray 已移除 allowInsecure；自签证书请使用 pinnedPeerCertSha256") else .tlsSettings |= del(.allowInsecure) end
     else . end' <<<"$stream") || return 1
   client=$(jq --argjson stream "$stream" '.streamSettings=$stream' <<<"$client") || return 1
   vless_profile_pair_check "$inbound" "$client" "$public" "$verify" || return 1

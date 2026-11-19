@@ -368,6 +368,7 @@ traffic_tick_unlocked() {
   local active table_present=0
   if declare -F node_expiry_tick_unlocked >/dev/null 2>&1; then node_expiry_tick_unlocked || return 1; fi
   if declare -F shaping_reconcile_unlocked >/dev/null 2>&1; then shaping_reconcile_unlocked || return 1; fi
+  if declare -F user_limits_tick_unlocked >/dev/null 2>&1; then user_limits_tick_unlocked || log_warn '用户限额检查失败，将在下次周期重试。'; fi
   traffic_checkpoint_unlocked
   traffic_reset_due_unlocked
   active=$(traffic_active_count)

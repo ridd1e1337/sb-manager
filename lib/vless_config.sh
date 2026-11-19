@@ -13,10 +13,10 @@ vless_config_apply() {
     (($# >= 2)) || { log_error "缺少参数值：$1"; return 1; }
     key=$1; value=$2; shift 2
     case "$key" in
-      --xray-inbound-json|--xray-outbound-json|--transport-json|--tls-json)
+      --xray-inbound-json|--xray-outbound-json|--transport-json|--tls-json|--sockopt-json)
         value=$(node_json_argument "$value") || return 1
         node_validate_json_object "$key" "$value" || return 1;;
-      --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--packet-encoding|--vless-encryption|--vless-decryption|--handshake-server|--handshake-port|--domain|--address|--name|--port|--listen|--frontend-address|--frontend-port|--frontend-sni) ;;
+      --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--handshake-server|--handshake-port|--domain|--address|--name|--port|--listen|--frontend-address|--frontend-port|--frontend-sni|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol) ;;
       *) log_error "未知 VLESS 参数：$key"; return 1;;
     esac
     options[$key]=$value
@@ -113,7 +113,7 @@ vless_config_apply() {
     [[ "$security" != none ]] || { log_error 'none 安全层不能设置 TLS 参数。'; return 1; }
     node=$(jq --arg key "${security}Settings" --argjson object "${options[--tls-json]}" '.xray.inbound.streamSettings[$key]=$object' <<<"$node") || return 1
   fi
-  for key in --tls-server-name --fingerprint --alpn --allow-insecure; do
+  for key in --tls-server-name --fingerprint --alpn --allow-insecure --pinned-cert-sha256 --verify-name; do
     [[ -v options[$key] ]] || continue
     value=${options[$key]}
     if [[ "$client_security" == none ]]; then
@@ -128,9 +128,20 @@ vless_config_apply() {
         [[ "$client_security" == tls ]] || { [[ -z "$value" ]] && continue; log_error 'Reality ALPN 由握手目标提供，不能当作 TLS ALPN 设置。'; return 1; }
         node=$(jq --arg value "$value" --arg security "$security" '($value|split(",")|map(gsub("^ +| +$"; ""))|map(select(length>0))) as $alpn | if ($alpn|length)==0 then del(.xray.inbound.streamSettings.tlsSettings.alpn,.xray.outbound.streamSettings.tlsSettings.alpn) else .xray.outbound.streamSettings.tlsSettings.alpn=$alpn | if $security=="tls" then .xray.inbound.streamSettings.tlsSettings.alpn=$alpn else . end end' <<<"$node") || return 1;;
       --allow-insecure)
-        [[ "$value" == true || "$value" == false ]] || { log_error 'allow-insecure 只能是 true 或 false。'; return 1; }
-        [[ "$client_security" == tls ]] || { [[ "$value" == false ]] && continue; log_error 'Reality 不使用 allowInsecure。'; return 1; }
-        node=$(jq --argjson value "$value" '.xray.outbound.streamSettings.tlsSettings.allowInsecure=$value' <<<"$node") || return 1;;
+        # Upstream removed allowInsecure; self-signed servers are pinned instead.
+        [[ "$value" == false || -z "$value" ]] || { log_error 'Xray 已移除 allowInsecure；自签证书请使用 --pinned-cert-sha256。'; return 1; }
+        node=$(jq 'del(.xray.outbound.streamSettings.tlsSettings.allowInsecure)' <<<"$node") || return 1;;
+      --pinned-cert-sha256|--verify-name)
+        [[ "$client_security" == tls ]] || { [[ -z "$value" ]] && continue; log_error "$key 仅用于 TLS。"; return 1; }
+        if [[ "$key" == --pinned-cert-sha256 ]]; then
+          json=pinnedPeerCertSha256
+          value=${value//:/}; value=${value,,}; value=${value// /}
+          [[ -z "$value" || "$value" =~ ^[0-9a-f]{64}(,[0-9a-f]{64})*$ ]] || { log_error '证书指纹须为 SHA-256 十六进制，多个用逗号分隔。'; return 1; }
+        else
+          json=verifyPeerCertByName
+          [[ -z "$value" || "$value" =~ ^[A-Za-z0-9.*-]+(,[A-Za-z0-9.*-]+)*$ ]] || { log_error '证书校验名称格式无效。'; return 1; }
+        fi
+        node=$(jq --arg field "$json" --arg value "$value" 'if $value=="" then del(.xray.outbound.streamSettings.tlsSettings[$field]) else .xray.outbound.streamSettings.tlsSettings[$field]=$value end' <<<"$node") || return 1;;
     esac
   done
   for key in --vless-encryption --vless-decryption; do
@@ -160,6 +171,46 @@ vless_config_apply() {
       *) node=$(jq --arg key "${key#--}" --arg value "$value" '.[($key|gsub("-";"_"))]=$value' <<<"$node") || return 1;;
     esac
   done
+  if [[ -v options[--sockopt-json] ]]; then
+    node=$(jq --argjson value "${options[--sockopt-json]}" 'if $value=={} then del(.xray.inbound.streamSettings.sockopt) else .xray.inbound.streamSettings.sockopt=$value end' <<<"$node") || return 1
+  fi
+  for key in --tcp-fast-open --accept-proxy-protocol; do
+    [[ -v options[$key] ]] || continue
+    value=${options[$key]}
+    [[ "$value" == true || "$value" == false ]] || { log_error "$key 只能是 true 或 false。"; return 1; }
+    if [[ "$key" == --tcp-fast-open ]]; then json=tcpFastOpen; else json=acceptProxyProtocol; fi
+    node=$(jq --arg field "$json" --argjson value "$value" '
+      if $value then .xray.inbound.streamSettings.sockopt[$field]=true
+      else del(.xray.inbound.streamSettings.sockopt[$field]) end
+      | if (.xray.inbound.streamSettings.sockopt // null)=={} then del(.xray.inbound.streamSettings.sockopt) else . end' <<<"$node") || return 1
+  done
+  if [[ -v options[--sniffing] ]]; then
+    case "${options[--sniffing]}" in
+      off) node=$(jq 'del(.xray.inbound.sniffing)' <<<"$node") || return 1;;
+      on|route-only)
+        node=$(jq --argjson route "$([[ ${options[--sniffing]} == route-only ]] && echo true || echo false)" '
+          .xray.inbound.sniffing=((.xray.inbound.sniffing // {}) + {enabled:true,routeOnly:$route})
+          | .xray.inbound.sniffing.destOverride //= ["http","tls","quic"]' <<<"$node") || return 1;;
+      *) log_error 'sniffing 只能是 on、route-only 或 off。'; return 1;;
+    esac
+  fi
+  if [[ -v options[--sniff-dest] ]]; then
+    value=${options[--sniff-dest]// /}
+    [[ "$value" =~ ^(http|tls|quic|fakedns)(,(http|tls|quic|fakedns))*$ ]] || { log_error 'sniff-dest 只能组合 http、tls、quic、fakedns。'; return 1; }
+    node=$(jq --arg value "$value" '.xray.inbound.sniffing=((.xray.inbound.sniffing // {enabled:true}) + {destOverride:($value|split(",")|unique)})' <<<"$node") || return 1
+  fi
+  if [[ -v options[--fallback-dest] ]]; then
+    value=${options[--fallback-dest]}
+    if [[ -z "$value" || "$value" == none ]]; then options[--fallbacks]='[]'
+    else options[--fallbacks]=$(jq -cn --arg dest "$value" '[{dest:(if $dest|test("^[0-9]+$") then ($dest|tonumber) else $dest end)}]') || return 1; fi
+  fi
+  if [[ -v options[--fallbacks] ]]; then
+    value=${options[--fallbacks]}
+    [[ "$value" != none ]] || value='[]'
+    value=$(node_json_argument "$value") || return 1
+    vless_fallbacks_validate "$value" || return 1
+    node=$(jq --argjson value "$value" 'if ($value|length)==0 then del(.xray.inbound.settings.fallbacks) else .xray.inbound.settings.fallbacks=$value end' <<<"$node") || return 1
+  fi
   # Explicit empty flow is meaningful. Re-select the safe default when the
   # operator changes transport/security but did not prescribe a flow.
   flow=$(jq -r '.flow // ""' <<<"$node") || return 1
@@ -170,7 +221,34 @@ vless_config_apply() {
   fi
   case "$flow" in ''|xtls-rprx-vision) ;; *) log_error 'flow 只能为空或 xtls-rprx-vision。'; return 1;; esac
   node=$(jq --arg flow "$flow" '.flow=(if $flow=="" then null else $flow end)' <<<"$node") || return 1
+  vless_server_options_check "$node" || return 1
   printf '%s\n' "$node"
+}
+
+vless_fallbacks_validate() {
+  jq -e '
+    type=="array" and length<=32 and all(.[];
+      type=="object" and (keys - ["name","alpn","path","dest","xver"] | length)==0
+      and (.dest|type=="number" and floor==. and .>=1 and .<=65535 or (type=="string" and length>0 and length<=256))
+      and ((.name // "")|type=="string") and ((.alpn // "")|IN("","h2","http/1.1"))
+      and ((.path // "")|type=="string" and (.=="" or startswith("/")))
+      and ((.xver // 0)|IN(0,1,2)))
+  ' <<<"$1" >/dev/null || { log_error '回落须为数组，每项只含 name/alpn/path/dest/xver，dest 必填，path 以 / 开头，xver 为 0-2。'; return 1; }
+}
+
+# Server-only options are checked against the effective inbound because
+# imported native JSON can enable them without the structured flags.
+vless_server_options_check() {
+  local node=$1 network security
+  network=$(vless_node_network "$node") || return 1
+  security=$(jq -r '.xray.inbound.streamSettings.security // .security // "none"' <<<"$node") || return 1
+  if jq -e '(.xray.inbound.settings.fallbacks // [])|length>0' <<<"$node" >/dev/null; then
+    [[ "$network" == raw && "$security" == tls ]] || { log_error 'Xray 回落仅支持 RAW + TLS；Reality 请使用目标网站。'; return 1; }
+    vless_fallbacks_validate "$(jq -c '.xray.inbound.settings.fallbacks' <<<"$node")" || return 1
+  fi
+  jq -e '(.xray.inbound.sniffing // {}) | type=="object" and ((.destOverride // [])|all(.[]; IN("http","tls","quic","fakedns")))' <<<"$node" >/dev/null || {
+    log_error 'sniffing.destOverride 只能包含 http、tls、quic、fakedns。'; return 1;
+  }
 }
 
 _node_vless_configure() {

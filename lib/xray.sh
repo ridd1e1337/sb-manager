@@ -114,7 +114,8 @@ xray_inbound_for_node() {
   [[ $(jq -r '.protocol' <<<"$node") == vless ]] || { log_error 'Xray 运行时仅接管 VLESS。'; return 1; }
   id=$(jq -r '.id' <<<"$node"); domain=$(jq -r '.domain' <<<"$node")
   flow=$(jq -r '.flow // ""' <<<"$node"); security=$(jq -r '.security' <<<"$node")
-  users=$(jq --arg flow "$flow" '[.[] | {id:.uuid,email:.name,level:0} + (if $flow=="" then {} else {flow:$flow} end)]' <<<"$credentials") || return 1
+  # email is the per-user Stats API key; keep it unique across nodes.
+  users=$(jq --arg flow "$flow" --arg node "$id" '[.[] | {id:.uuid,email:($node+":"+.id),level:0} + (if $flow=="" then {} else {flow:$flow} end)]' <<<"$credentials") || return 1
   rendered=$(jq -n --arg tag "in-$id" --arg listen "$(jq -r '.listen // "::"' <<<"$node")" \
     --argjson port "$(jq -r '.port' <<<"$node")" --argjson clients "$users" \
     '{tag:$tag,listen:$listen,port:$port,protocol:"vless",settings:{clients:$clients,decryption:"none"},streamSettings:{network:"raw"}}') || return 1
@@ -130,7 +131,11 @@ xray_inbound_for_node() {
   rendered=$(xray_apply_override "$rendered" "$(xray_node_override "$node" inbound)") || return 1
   local stream
   stream=$(vless_stream_normalize "$(jq -c '.streamSettings' <<<"$rendered")") || return 1
-  jq --argjson stream "$stream" '.streamSettings=$stream' <<<"$rendered"
+  # Fallbacks need an explicit HTTP/1.1 ALPN; add h2 only for h2 fallbacks.
+  jq --argjson stream "$stream" '.streamSettings=$stream
+    | if ((.settings.fallbacks // [])|length)>0 and .streamSettings.security=="tls" and .streamSettings.tlsSettings.alpn==null then
+        .streamSettings.tlsSettings.alpn=(if any(.settings.fallbacks[]; .alpn=="h2") then ["h2","http/1.1"] else ["http/1.1"] end)
+      else . end' <<<"$rendered"
 }
 
 xray_render_config() {
@@ -144,7 +149,13 @@ xray_render_config() {
     inbound=$(xray_inbound_for_node "$node" "$credentials" "$secret") || return 1
     inbounds=$(jq -c --argjson inbound "$inbound" '. + [$inbound]' <<<"$inbounds") || return 1
   done < <(state_xray_nodes "$state")
-  jq -n --argjson inbounds "$inbounds" '{log:{loglevel:"warning"},inbounds:$inbounds,outbounds:[{tag:"direct",protocol:"freedom"}]}' >"$output" || return 1
+  # Loopback-only Stats API for per-user traffic and online-IP limits.
+  jq -n --argjson inbounds "$inbounds" --arg api "127.0.0.1:$(jq -r '.settings.xray_api_port // 10085' "$state")" '{
+    log:{loglevel:"warning"},
+    api:{tag:"api",listen:$api,services:["StatsService"]},
+    stats:{},
+    policy:{levels:{"0":{statsUserUplink:true,statsUserDownlink:true,statsUserOnline:true}}},
+    inbounds:$inbounds,outbounds:[{tag:"direct",protocol:"freedom"}]}' >"$output" || return 1
   chmod 0640 "$output" && set_group_if_exists "$SBM_SERVICE_USER" "$output"
 }
 
@@ -206,6 +217,8 @@ xray_service_reconcile() {
   fi
   [[ -x "$SBM_XRAY_BIN" && -s "$SBM_XRAY_CONFIG" ]] || { log_error 'Xray 程序或 VLESS 配置缺失。'; return 1; }
   if [[ "$restart" == 0 ]] && service_active "$SBM_XRAY_SERVICE"; then return 0; fi
+  # Restarting drops in-memory counters; fold them into the ledger first.
+  if declare -F user_usage_collect_unlocked >/dev/null 2>&1; then user_usage_collect_unlocked || true; fi
   xray_write_service "$(init_system)" && service_reload_manager && service_enable "$SBM_XRAY_SERVICE" || return 1
   service_restart "$SBM_XRAY_SERVICE" && service_wait_active "$SBM_XRAY_SERVICE" 20 2 || {
     service_failure_report "$SBM_XRAY_SERVICE"; return 1;
@@ -284,6 +297,17 @@ _xray_set_engine() {
   if [[ "$engine" == xray ]]; then log_ok 'VLESS 已交给 Xray；其他协议由 sing-box 运行。'
   else log_ok 'VLESS 已暂停；其他协议继续由 sing-box 运行。'; fi
 }
+_xray_set_api_port() {
+  local port=$1 candidate
+  validate_port "$port" || { log_error "无效端口：$port"; return 1; }
+  candidate=$(state_candidate) || return 1
+  jq --argjson port "$((10#$port))" '.settings.xray_api_port=$port' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+  if ! apply_candidate_state "$candidate" xray-api-port; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  log_ok "Xray 统计 API 仅监听 127.0.0.1:$port"
+}
+xray_set_api_port() { require_root; with_state_transaction xray-api-port _xray_set_api_port "$1"; }
+
 xray_enable() { require_root; with_state_transaction xray-enable _xray_set_engine xray; }
 xray_disable() { require_root; with_state_transaction xray-disable _xray_set_engine disabled; }
 

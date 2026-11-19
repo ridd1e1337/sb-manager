@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_vless_edit|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_vless_edit|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -590,9 +590,15 @@ ui_vless_collect() {
     if [[ "$security" == tls ]]; then
       alpn=$(jq -r '(.xray.outbound.streamSettings.tlsSettings.alpn // []) | join(",")' <<<"$node") || return 1
       ui_prompt_optional alpn 'ALPN，逗号分隔' "$alpn" || return 1
-      insecure=$(jq -r '.xray.outbound.streamSettings.tlsSettings.allowInsecure // false' <<<"$node") || return 1
-      prompt_value insecure '跳过证书验证 true/false' "$insecure" || return 1
-      __vless_args+=(--alpn "$alpn" --allow-insecure "$insecure")
+      insecure=$(jq -r '.xray.outbound.streamSettings.tlsSettings.pinnedPeerCertSha256 // "" | if type=="array" then join(",") else . end' <<<"$node") || return 1
+      printf '自签或私有 CA 证书请填写证书 SHA-256 指纹（Xray 已移除跳过验证）；输入 auto 读取本机证书。\n'
+      ui_prompt_optional insecure '证书 SHA-256 指纹' "$insecure" || return 1
+      if [[ "$insecure" == auto ]]; then
+        insecure=$(openssl x509 -noout -fingerprint -sha256 -in "$SBM_CERTS/$domain/fullchain.pem" 2>/dev/null | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f') || insecure=''
+        [[ -n "$insecure" ]] || { log_error "无法读取 $domain 的本机证书。"; return 1; }
+        printf '证书指纹：%s\n' "$insecure"
+      fi
+      __vless_args+=(--alpn "$alpn" --allow-insecure false --pinned-cert-sha256 "$insecure")
     fi
   fi
   printf '\n1. 保留 VLESS 加密设置\n2. 不启用 VLESS 加密\n3. 自动生成 X25519 加密参数\n4. 自动生成 ML-KEM-768 加密参数\n5. 手动输入配对加密参数\n0. 返回\n'
@@ -666,9 +672,38 @@ ui_vless_edit() {
     log_info '共用 443 的节点采用固定 Vision Reality 参数；请通过 Reality 网站菜单管理。'
     return 0
   fi
-  printf '1. 编辑传输、安全层与加密\n2. 更新原生 Xray JSON\n0. 返回\n'
-  ui_menu_choice choice 'VLESS 参数' 2 || return 1
+  printf '1. 编辑传输、安全层与加密\n2. 更新原生 Xray JSON\n3. 回落（RAW + TLS）\n4. 流量嗅探\n5. Socket 选项\n0. 返回\n'
+  ui_menu_choice choice 'VLESS 参数' 5 || return 1
   case "$choice" in
+    3)
+      printf '当前回落：%s\n' "$(jq -c '.xray.inbound.settings.fallbacks // []' <<<"$node")"
+      printf '1. 单一回落目标（端口或 地址:端口）\n2. 原生 fallbacks JSON 数组\n3. 清除回落\n0. 返回\n'
+      ui_menu_choice choice '回落' 3 || return 1
+      case "$choice" in
+        1) prompt_value inbound '回落目标，如 80 或 127.0.0.1:8080' '80' || return 1; vless_args+=(--fallback-dest "$inbound");;
+        2) prompt_value inbound 'fallbacks JSON 或 @文件路径' '[]' || return 1; vless_args+=(--fallbacks "$inbound");;
+        3) vless_args+=(--fallbacks none);;
+        *) return 0;;
+      esac;;
+    4)
+      printf '当前嗅探：%s\n' "$(jq -c '.xray.inbound.sniffing // {enabled:false}' <<<"$node")"
+      printf '1. 启用并改写目标\n2. 仅用于路由（routeOnly）\n3. 关闭\n0. 返回\n'
+      ui_menu_choice choice '嗅探' 3 || return 1
+      case "$choice" in 1) vless_args+=(--sniffing on);; 2) vless_args+=(--sniffing route-only);; 3) vless_args+=(--sniffing off);; *) return 0;; esac
+      if ((choice != 3)); then
+        prompt_value inbound '嗅探协议 http,tls,quic,fakedns' 'http,tls,quic' || return 1
+        vless_args+=(--sniff-dest "$inbound")
+      fi;;
+    5)
+      printf '当前 sockopt：%s\n' "$(jq -c '.xray.inbound.streamSettings.sockopt // {}' <<<"$node")"
+      printf '1. TCP Fast Open 开/关\n2. 接收 PROXY protocol 开/关\n3. 原生 sockopt JSON\n0. 返回\n'
+      ui_menu_choice choice 'Socket 选项' 3 || return 1
+      case "$choice" in
+        1) prompt_value inbound 'TCP Fast Open true/false' true || return 1; vless_args+=(--tcp-fast-open "$inbound");;
+        2) prompt_value inbound '接收 PROXY protocol true/false' false || return 1; vless_args+=(--accept-proxy-protocol "$inbound");;
+        3) prompt_value inbound 'sockopt JSON 或 @文件路径，{} 清除' '{}' || return 1; vless_args+=(--sockopt-json "$inbound");;
+        *) return 0;;
+      esac;;
     1) ui_vless_collect vless_args vless_domain vless_transport "$node" || return 1;;
     2)
       printf '输入单行 JSON 或 @文件路径；留空保留，{} 清除。XDrive 等特殊传输需完整成对配置。\n'
@@ -680,6 +715,51 @@ ui_vless_edit() {
     *) return 0;;
   esac
   node_vless_configure "$id" "${vless_args[@]}"
+}
+
+ui_user_menu() {
+  local id=$1 choice user_id name value protocol
+  local -a args=()
+  protocol=$(state_get_node "$id" | jq -r '.protocol') || return 1
+  user_stats "$id" || return 1
+  printf '\n1. 添加用户\n2. 启用用户\n3. 停用用户\n4. 删除用户\n5. 轮换用户凭据\n6. 设置到期时间\n'
+  if [[ "$protocol" == vless ]]; then printf '7. 设置流量配额\n8. 设置在线 IP 上限\n9. 清零本周期流量\n'; fi
+  printf '10. 清除全部限额\n0. 返回\n'
+  ui_menu_choice choice '用户操作' 10 || return 0
+  [[ "$choice" != 0 ]] || return 0
+  if [[ "$choice" != 1 ]]; then
+    prompt_value user_id '用户 ID' "$(state_get_node "$id" | jq -r '.users[0].id')" || return 1
+  fi
+  case "$choice" in
+    1)
+      prompt_value user_id '新用户 ID（小写字母、数字、._-）' '' || return 1
+      prompt_value name '显示名称' "$user_id" || return 1
+      node_user_add "$id" "$user_id" "$name";;
+    2) node_user_enable "$id" "$user_id";;
+    3) node_user_disable "$id" "$user_id";;
+    4) confirm "确认删除用户 $id/$user_id？" N && node_user_delete "$id" "$user_id";;
+    5) node_rotate "$id" "$user_id";;
+    6)
+      prompt_value value '有效天数（从当前到期日或今天起算），none 取消到期' 30 || return 1
+      if [[ "$value" == none ]]; then args=(--no-expiry); else args=(--days "$value"); fi
+      user_limit_cli "$id" "$user_id" "${args[@]}";;
+    7)
+      [[ "$protocol" == vless ]] || return 0
+      prompt_value value '流量配额，如 100G；unlimited 取消' 100G || return 1
+      args=(--quota "$value")
+      if [[ "$value" != unlimited ]]; then
+        prompt_value name '每月重置日 1-28，none 表示不重置' 1 || return 1
+        args+=(--reset-day "$name")
+      fi
+      user_limit_cli "$id" "$user_id" "${args[@]}";;
+    8)
+      [[ "$protocol" == vless ]] || return 0
+      printf '超出上限会暂停该用户 10 分钟后自动重试；检查随流量周期任务运行。\n'
+      prompt_value value '同时在线 IP 数；unlimited 取消' 2 || return 1
+      user_limit_cli "$id" "$user_id" --ip-limit "$value";;
+    9) [[ "$protocol" == vless ]] && user_usage_reset "$id" "$user_id";;
+    10) user_limit_cli "$id" "$user_id" --clear;;
+  esac
 }
 
 ui_add_node() {
@@ -827,7 +907,7 @@ ui_add_node() {
 }
 
 ui_manage_nodes() {
-  local id=${1:-} action value remark region purpose line tags node max_action=11
+  local id=${1:-} action value remark region purpose line tags node max_action=13
   if [[ -z "$id" ]]; then
     ui_select_node id || { ui_page_back; return; }
     if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then ui_open_submenu ui_manage_nodes "$id"; return; fi
@@ -836,7 +916,8 @@ ui_manage_nodes() {
   node=$(state_get_node "$id")
   node_show "$id"
   printf '\n1. 显示导入内容\n2. 启用节点\n3. 停用节点\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除节点\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n'
-  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then printf '12. VLESS 传输与加密参数\n'; max_action=12; fi
+  printf '12. 用户、流量与限额\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then printf '13. VLESS 传输、回落与加密参数\n'; else max_action=12; fi
   printf '0. 返回\n'
   ui_menu_choice action '选择操作' "$max_action"
   case "$action" in
@@ -856,7 +937,8 @@ ui_manage_nodes() {
     9) confirm "确认删除 $id？" N && node_delete "$id";;
     10) prompt_value value '续期天数（从当前到期日或今天起算）' '30'; node_expiry_cli "$id" --days "$value";;
     11) node_expiry_cli "$id" --clear;;
-    12) [[ $(jq -r '.protocol' <<<"$node") != vless ]] || ui_open_submenu ui_vless_edit "$id";;
+    12) ui_open_submenu ui_user_menu "$id";;
+    13) [[ $(jq -r '.protocol' <<<"$node") != vless ]] || ui_open_submenu ui_vless_edit "$id";;
   esac
 }
 

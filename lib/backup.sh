@@ -19,6 +19,7 @@ _backup_create() (
   [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$stage/etc/config.json" || return 1
   [[ ! -d "$SBM_SUBSCRIPTIONS" ]] || cp -a "$SBM_SUBSCRIPTIONS" "$stage/var/subscriptions" || return 1
   [[ ! -f "$SBM_TRAFFIC_USAGE" ]] || cp -a "$SBM_TRAFFIC_USAGE" "$stage/var/traffic-usage.json" || return 1
+  [[ ! -f "$SBM_USER_USAGE" ]] || cp -a "$SBM_USER_USAGE" "$stage/var/user-usage.json" || return 1
   [[ ! -d "$SBM_WEBSITE_MUX_DIR" ]] || cp -a "$SBM_WEBSITE_MUX_DIR" "$stage/var/website-mux" || return 1
   if declare -F substore_backup_payload >/dev/null 2>&1; then substore_backup_payload "$stage/var/substore" || return 1; fi
   {
@@ -120,6 +121,11 @@ _restore_backup() (
     jq -n --arg now "$(now_iso)" '{schema_version:1,updated_at:$now,nodes:{}}' >"$SBM_TRAFFIC_USAGE.restore"
     chmod 0600 "$SBM_TRAFFIC_USAGE.restore"
   fi
+  rm -f "$SBM_USER_USAGE.restore"
+  if [[ -f "$stage/var/user-usage.json" ]]; then
+    user_usage_validate "$stage/var/user-usage.json" || { rm -rf "$stage"; die '备份中的用户流量账本无效。'; }
+    install -m 0600 "$stage/var/user-usage.json" "$SBM_USER_USAGE.restore"
+  fi
   state_init_dirs
   if [[ -d "$stage/var/substore" ]]; then
     [[ -f "$stage/var/substore/app/manifest.json" && -f "$stage/var/substore/app/sub-store.bundle.js" && -d "$stage/var/substore/data" ]] || die 'Sub-Store 备份不完整。'
@@ -140,6 +146,7 @@ _restore_backup() (
   manager_auto_reconcile || { rm -f "$candidate"; return 1; }
   rm -f "$candidate"
   mv -f "$SBM_TRAFFIC_USAGE.restore" "$SBM_TRAFFIC_USAGE"
+  [[ ! -f "$SBM_USER_USAGE.restore" ]] || mv -f "$SBM_USER_USAGE.restore" "$SBM_USER_USAGE"
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then
     traffic_reconcile_unlocked 0 || return 1
   fi

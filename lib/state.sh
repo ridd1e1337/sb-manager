@@ -354,6 +354,7 @@ state_validate() {
   if declare -F tunnel_routes_validate >/dev/null 2>&1; then tunnel_routes_validate "$f" || die 'Tunnel 路由状态无效。'; fi
   if declare -F traffic_groups_validate >/dev/null 2>&1; then traffic_groups_validate "$f" || die '共享配额状态无效。'; fi
   if declare -F node_expiry_validate_state >/dev/null 2>&1; then node_expiry_validate_state "$f" || die '到期策略状态无效。'; fi
+  if declare -F user_limits_validate_state >/dev/null 2>&1; then user_limits_validate_state "$f" || die '用户限额状态无效。'; fi
   jq -e '
     def string: type == "string";
     def nonempty: string and length > 0;
@@ -599,18 +600,19 @@ state_candidate() {
 state_node_exists() { jq -e --arg id "$1" '.nodes[]? | select(.id==$id)' "$SBM_STATE" >/dev/null; }
 state_get_node() { jq -c --arg id "$1" '.nodes[]? | select(.id==$id)' "$SBM_STATE"; }
 state_list_nodes() { jq -c '.nodes[]?' "$SBM_STATE"; }
-state_enabled_nodes() { jq -c '.nodes[]? | select(.enabled==true)' "$1"; }
+# A node whose users are all suspended by limits stays enabled but is not served.
+state_enabled_nodes() { jq -c '.nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true))' "$1"; }
 state_enabled_count() {
   local state=${1:-$SBM_STATE}
   jq '[.nodes[]? | select(.enabled==true)] | length' "$state"
 }
 state_singbox_nodes() {
   jq -c '(.settings.vless_engine // "sing-box") as $engine
-    | .nodes[]? | select(.enabled==true and (.protocol!="vless" or $engine=="sing-box"))' "${1:-$SBM_STATE}"
+    | .nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true) and (.protocol!="vless" or $engine=="sing-box"))' "${1:-$SBM_STATE}"
 }
 
 state_xray_nodes() {
-  jq -c 'select(.settings.vless_engine=="xray") | .nodes[]? | select(.enabled==true and .protocol=="vless")' "${1:-$SBM_STATE}"
+  jq -c 'select(.settings.vless_engine=="xray") | .nodes[]? | select(.enabled==true and .protocol=="vless" and any(.users[]?; .enabled==true))' "${1:-$SBM_STATE}"
 }
 
 state_node_engine() {

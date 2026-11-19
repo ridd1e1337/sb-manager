@@ -130,7 +130,7 @@ validate_state_semantics() {
     (( count == 0 )) || die "节点 $id 存在重复用户 ID。"
     if [[ $(jq -r '.enabled' <<<"$node") == true ]]; then
       enabled_users=$(jq '[.users[] | select(.enabled==true)] | length' <<<"$node")
-      (( enabled_users > 0 )) || die "启用节点 $id 至少需要一个启用用户。"
+      (( enabled_users > 0 )) || jq -e 'all(.users[]; .limits.suspended!=null or .enabled)' <<<"$node" >/dev/null || die "启用节点 $id 至少需要一个启用用户。"
       while IFS= read -r kind; do
         key="$kind:$port"
         [[ -z ${occupied[$key]+x} ]] || die "端口冲突：$id 与 ${occupied[$key]} 同时占用 ${port}/${kind^^}。"

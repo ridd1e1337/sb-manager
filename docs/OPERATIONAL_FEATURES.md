@@ -278,6 +278,22 @@ raw|ws|grpc|httpupgrade|xhttp|kcp|hysteria --security none|tls|reality` 及
 sing-box、mihomo 时，无法完整表达的字段会跳过该节点并提示原因；完整原生配置
 可用 Xray 客户端导出。公网 `security none` 必须启用 VLESS Encryption。
 
+## VLESS 回落、嗅探、证书固定与用户限额（alpha.74）
+
+`--fallback-dest`/`--fallbacks` 写入原生 `settings.fallbacks`，仅允许 RAW + TLS；
+未显式设置 ALPN 时自动使用 `http/1.1`（含 h2 回落时为 `h2,http/1.1`）。
+`--sniffing on|route-only|off`、`--sniff-dest` 写入入站 sniffing；
+`--tcp-fast-open`、`--accept-proxy-protocol`、`--sockopt-json` 写入服务端 sockopt，
+客户端导出不会携带服务端 sockopt。Xray 已移除 allowInsecure，`--allow-insecure true`
+与包含它的客户端 JSON 被拒绝，改用 `--pinned-cert-sha256`（面板输入 auto 读取本机
+证书）和 `--verify-name`；URI 导出为 `pcs`/`vcn`，sing-box 与 mihomo 无等价字段时
+跳过节点。Reality 客户端使用上游当前字段 `password`，旧 `publicKey` 仍可导入。
+
+Xray 配置固定启用仅回环的 Stats API 与 `statsUserUplink/Downlink/Online`。
+流量周期任务读取并清零计数器、累加到用户账本，再按到期、配额、在线 IP 暂停或
+恢复用户；Xray 重启前先收集计数器。暂停与恢复都经过完整候选校验和回滚，启用
+通知时发送事件。手动启用或停用用户会清除自动暂停标记。
+
 ## OpenList 与 Reality 共用 443（alpha.72）
 
 ```bash
