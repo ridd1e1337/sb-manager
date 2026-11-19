@@ -91,6 +91,8 @@ uninstall_manager() {
     service_stop "$SBM_NGINX_STREAM_SERVICE" || true
     service_disable "$SBM_SUBSCRIPTION_SERVICE" || true
     service_stop "$SBM_SUBSCRIPTION_SERVICE" || true
+    service_disable "${SBM_TELEGRAM_BOT_SERVICE:-sb-telegram-bot.service}" || true
+    service_stop "${SBM_TELEGRAM_BOT_SERVICE:-sb-telegram-bot.service}" || true
     service_disable "$SBM_TRAFFIC_SERVICE" || true
     service_stop "$SBM_TRAFFIC_SERVICE" || true
     if [[ "$backend" == systemd ]]; then
@@ -117,6 +119,7 @@ uninstall_manager() {
     "$SBM_SYSTEMD_DIR/sb-quick-tunnel-refresh.service" \
     "$SBM_SYSTEMD_DIR/sb-quick-tunnel-refresh.timer" \
     "$SBM_SYSTEMD_DIR/$SBM_SUBSCRIPTION_SERVICE" \
+    "$SBM_SYSTEMD_DIR/${SBM_TELEGRAM_BOT_SERVICE:-sb-telegram-bot.service}" \
     "$SBM_SYSTEMD_DIR/$SBM_TRAFFIC_SERVICE" \
     "$SBM_SYSTEMD_DIR/sb-traffic-sync.service" \
     "$SBM_SYSTEMD_DIR/sb-traffic-sync.timer" \
@@ -130,6 +133,7 @@ uninstall_manager() {
     "$SBM_OPENRC_DIR/sb-cloudflared" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_NGINX_STREAM_SERVICE")" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_SUBSCRIPTION_SERVICE")" \
+    "$SBM_OPENRC_DIR/$(service_native_name "${SBM_TELEGRAM_BOT_SERVICE:-sb-telegram-bot.service}")" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_TRAFFIC_SERVICE")" \
     "$SBM_PERIODIC_DIR/daily/sb-core-update" \
     "$SBM_PERIODIC_DIR/daily/sb-acme-renew" \

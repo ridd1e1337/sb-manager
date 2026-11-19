@@ -77,23 +77,32 @@ user_limits_xray_api() {
 user_usage_collect_unlocked() {
   local output stats
   user_limits_xray_ready || return 0
-  output=$(user_limits_xray_api statsquery -pattern 'user>>>' -reset) || { log_warn '无法读取 Xray 用户流量统计。'; return 0; }
+  # Verified against Xray 26.11: {"stat":[{"name":"user>>>E>>>traffic>>>uplink","value":N}]};
+  # zero counters omit "value". Inbound/outbound counters use the same shape.
+  output=$(user_limits_xray_api statsquery -pattern '' -reset) || { log_warn '无法读取 Xray 流量统计。'; return 0; }
   stats=$(jq -c '
-    [(.stat // [])[] | (.name|split(">>>")) as $p
-      | select(($p|length)==4 and $p[0]=="user" and $p[2]=="traffic")
-      | {key:$p[1],dir:$p[3],value:((.value // 0)|tonumber)}]
-    | group_by(.key) | map({key:.[0].key,value:{
-        up:([.[]|select(.dir=="uplink").value]|add // 0),
-        down:([.[]|select(.dir=="downlink").value]|add // 0)}}) | from_entries
-  ' <<<"$output" 2>/dev/null) || { log_warn 'Xray 用户流量统计格式无法识别。'; return 0; }
-  [[ "$stats" != '{}' ]] || return 0
+    def bucket($kind):
+      [(.stat // [])[] | (.name|split(">>>")) as $p
+        | select(($p|length)==4 and $p[0]==$kind and $p[2]=="traffic")
+        | {key:$p[1],dir:$p[3],value:((.value // 0)|tonumber)}]
+      | group_by(.key) | map({key:.[0].key,value:{
+          up:([.[]|select(.dir=="uplink").value]|add // 0),
+          down:([.[]|select(.dir=="downlink").value]|add // 0)}}) | from_entries;
+    {users:bucket("user"),inbounds:bucket("inbound"),outbounds:bucket("outbound")}
+  ' <<<"$output" 2>/dev/null) || { log_warn 'Xray 流量统计格式无法识别。'; return 0; }
+  jq -e 'any(.[][]; .up>0 or .down>0)' <<<"$stats" >/dev/null || return 0
   user_usage_update_unlocked '
-    reduce ($stats|to_entries[]) as $e (.;
+    reduce ($stats.users|to_entries[]) as $e (.;
       .users[$e.key] = ((.users[$e.key] // {}) as $u | $u + {
         upload_bytes:(($u.upload_bytes // 0)+$e.value.up),
         download_bytes:(($u.download_bytes // 0)+$e.value.down),
         total_upload_bytes:(($u.total_upload_bytes // 0)+$e.value.up),
         total_download_bytes:(($u.total_download_bytes // 0)+$e.value.down)}))
+    | reduce ("inbounds","outbounds") as $kind (.;
+        reduce ($stats[$kind]|to_entries[]) as $e (.;
+          .[$kind][$e.key] = ((.[$kind][$e.key] // {}) as $t | {
+            upload_bytes:(($t.upload_bytes // 0)+$e.value.up),
+            download_bytes:(($t.download_bytes // 0)+$e.value.down)})))
   ' --argjson stats "$stats"
 }
 
@@ -254,6 +263,13 @@ _user_limit_set() {
     && { [[ ${set[quota_bytes]:-null} != null ]] || [[ ${set[ip_limit]:-null} != null ]]; }; then
     die '请先运行 sb xray enable，用户流量统计由 Xray 提供。'
   fi
+  if [[ ${set[ip_limit]:-null} != null ]] && jq -e '
+      ((.listen // "::")|IN("127.0.0.1","::1","localhost"))
+      and ((.xray.inbound.streamSettings.sockopt.acceptProxyProtocol // false)|not)
+      and ((.xray.inbound.streamSettings.sockopt.trustedXForwardedFor // [])|length==0)' <<<"$node" >/dev/null; then
+    # Xray never records loopback sources as online IPs.
+    log_warn '该节点只监听本机，经反向代理接入时 Xray 看不到客户端 IP，在线 IP 限制不会生效；请让代理发送 PROXY protocol 并执行 --accept-proxy-protocol true，或配置 sockopt.trustedXForwardedFor。'
+  fi
   local patch='{}' key
   for key in quota_bytes reset_day expires_at ip_limit; do
     [[ -v set[$key] ]] || continue
@@ -341,3 +357,28 @@ user_stats() {
       printf '%-14s %-12s %-6s %-11s %-11s %-12s %-8s %s\n' "$node" "$user" "$status" "$up" "$down" "$quota" "$ips" "$expiry"
     done
 }
+
+xray_traffic_json() {
+  [[ -s "$SBM_USER_USAGE" ]] || { printf '{"inbounds":{},"outbounds":{}}\n'; return 0; }
+  jq '{updated_at,inbounds:(.inbounds // {}),outbounds:(.outbounds // {})}' "$SBM_USER_USAGE"
+}
+
+xray_traffic() {
+  local json=${1:-0} rows
+  if [[ $EUID -eq 0 ]]; then with_lock user_usage_collect_unlocked || true; fi
+  rows=$(xray_traffic_json) || return 1
+  if [[ "$json" == 1 ]]; then printf '%s\n' "$rows"; return; fi
+  printf '%-10s %-28s %-12s %s\n' 类型 标签 上行 下行
+  jq -r '(.inbounds|to_entries[]|["入站",.key,.value.upload_bytes,.value.download_bytes]),
+         (.outbounds|to_entries[]|["出站",.key,.value.upload_bytes,.value.download_bytes]) | @tsv' <<<"$rows" |
+    while IFS=$'\t' read -r kind tag up down; do
+      printf '%-10s %-28s %-12s %s\n' "$kind" "$tag" "$(traffic_format_bytes "$up")" "$(traffic_format_bytes "$down")"
+    done
+}
+
+_xray_traffic_reset() {
+  user_usage_collect_unlocked || true
+  user_usage_update_unlocked '.inbounds={} | .outbounds={}' || return 1
+  log_ok '已清零 Xray 入站/出站累计流量。'
+}
+xray_traffic_reset() { require_root; with_lock _xray_traffic_reset; }

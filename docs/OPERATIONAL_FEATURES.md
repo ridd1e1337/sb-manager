@@ -294,6 +294,23 @@ Xray 配置固定启用仅回环的 Stats API 与 `statsUserUplink/Downlink/Onli
 恢复用户；Xray 重启前先收集计数器。暂停与恢复都经过完整候选校验和回滚，启用
 通知时发送事件。手动启用或停用用户会清除自动暂停标记。
 
+## Xray 出站路由、流量与 Telegram 机器人（alpha.76）
+
+Xray 配置固定包含 `direct`（freedom，默认拒绝私有目标）与 `block`（blackhole），
+其后是自定义出站；`via` 渲染为 `streamSettings.sockopt.dialerProxy`。leastPing/
+leastLoad 负载均衡自动生成 `burstObservatory`（generate_204，1 分钟）。默认出口
+渲染为最后一条 `network: tcp,udp` 规则。所有变更经完整 `xray run -test`。
+同一次 Stats API 读取同时记录 `inbound>>>`/`outbound>>>` 计数，`sb xray traffic`
+查看、`reset` 清零。
+
+在线 IP 统计会忽略 127.0.0.1/::1 来源（Xray 上游行为）；节点只监听本机时需要
+PROXY protocol（`--accept-proxy-protocol true`）或 `sockopt.trustedXForwardedFor`
+才能看到真实客户端 IP，设置 IP 上限时会给出提示。
+
+Telegram 机器人作为 root 服务长轮询 getUpdates，令牌经 curl 标准输入配置传递，不进
+命令行参数；只处理配置的 chat 中 `admins` 用户发送的命令，参数正则校验后以数组
+调用 `sb`，输出截断至 3800 字符。切换到其他通知渠道时机器人自动停用。
+
 ## 用户订阅（alpha.75）
 
 `--user NODE_ID:USER_ID` 订阅总是动态的，元数据记录 `node_id`/`user_id`，内容写入

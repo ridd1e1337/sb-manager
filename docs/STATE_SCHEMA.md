@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.75",
+  "manager_version": "0.1.0-alpha.76",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -101,6 +101,12 @@ users are all suspended stays enabled but is not rendered. Per-user counters liv
 in `/var/lib/sb-manager/user-usage.json` (keys `<node-id>:<user-id>`, also used as
 the Xray client `email`). `settings.xray_api_port` (default 10085) is the
 loopback Stats API port and must not equal any node port.
+
+`xray_routing` holds `outbounds[{tag,protocol,via}]`, `balancers[{tag,selectors,
+strategy,fallback}]`, `rules[{node?,user?,domain?,ip?,network?,port?,outbound|balancer}]`
+and `default`. The outbound objects themselves are in `secrets/xray-outbounds.json`.
+Reserved tags: `direct`, `block`, `api`. `notifications.bot` is
+`{enabled, admins:[telegram user ids]}` and requires the Telegram provider.
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
 

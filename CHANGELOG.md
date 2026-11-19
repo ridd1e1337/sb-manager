@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.76
+
+- Add Xray outbound management: native outbounds of any protocol with
+  chaining (`--via` → `dialerProxy`), WARP via Xray WireGuard in userspace
+  mode (`sb xray warp --register` or credential import), balancers with
+  random/roundRobin/leastPing/leastLoad and automatic burstObservatory,
+  routing rules by node, user, domain, IP, network or port, and a default
+  exit. Outbound credentials stay in a 0600 secrets file.
+- Add Xray per-inbound and per-outbound traffic counters (`sb xray traffic`).
+- Add a Telegram command bot (`sb notify bot enable --admin ID`) restricted to
+  the configured chat and an admin allowlist, with a fixed validated command
+  set for status, users, traffic, enable/disable, renewal, quota, IP limit,
+  usage reset and per-user subscriptions.
+- Verify stats, online-IP and routing behaviour against Xray 26.11.9; warn
+  that loopback-only listeners cannot enforce online-IP limits without
+  PROXY protocol or trusted X-Forwarded-For.
+
 ## 0.1.0-alpha.75
 
 - Add per-user live subscriptions (`sb subscription create ... --user

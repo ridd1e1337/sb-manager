@@ -43,9 +43,11 @@ _notification_configure() {
     .notifications.enabled=true
     | .notifications.provider=$provider
     | .notifications.traffic_thresholds=$thresholds
+    | if $provider!="telegram" and (.notifications.bot.enabled // false) then .notifications.bot.enabled=false else . end
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" notification-configure; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
+  if declare -F telegram_bot_reconcile >/dev/null 2>&1; then telegram_bot_reconcile || log_warn 'Telegram 机器人服务未能同步。'; fi
   log_ok "通知已启用：$provider；流量阈值 $(jq -r 'join("% / ")' <<<"$thresholds_json")%。"
 }
 

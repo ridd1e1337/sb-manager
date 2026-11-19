@@ -149,13 +149,16 @@ xray_render_config() {
     inbound=$(xray_inbound_for_node "$node" "$credentials" "$secret") || return 1
     inbounds=$(jq -c --argjson inbound "$inbound" '. + [$inbound]' <<<"$inbounds") || return 1
   done < <(state_xray_nodes "$state")
+  local routing='{"outbounds":[{"tag":"direct","protocol":"freedom"}]}'
+  if declare -F xray_routing_render >/dev/null 2>&1; then routing=$(xray_routing_render "$state") || return 1; fi
   # Loopback-only Stats API for per-user traffic and online-IP limits.
-  jq -n --argjson inbounds "$inbounds" --arg api "127.0.0.1:$(jq -r '.settings.xray_api_port // 10085' "$state")" '{
+  jq -n --argjson inbounds "$inbounds" --argjson routing "$routing" --arg api "127.0.0.1:$(jq -r '.settings.xray_api_port // 10085' "$state")" '{
     log:{loglevel:"warning"},
     api:{tag:"api",listen:$api,services:["StatsService"]},
     stats:{},
-    policy:{levels:{"0":{statsUserUplink:true,statsUserDownlink:true,statsUserOnline:true}}},
-    inbounds:$inbounds,outbounds:[{tag:"direct",protocol:"freedom"}]}' >"$output" || return 1
+    policy:{levels:{"0":{statsUserUplink:true,statsUserDownlink:true,statsUserOnline:true}},
+      system:{statsInboundUplink:true,statsInboundDownlink:true,statsOutboundUplink:true,statsOutboundDownlink:true}},
+    inbounds:$inbounds} + $routing' >"$output" || return 1
   chmod 0640 "$output" && set_group_if_exists "$SBM_SERVICE_USER" "$output"
 }
 

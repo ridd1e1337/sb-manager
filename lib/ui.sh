@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_vless_edit|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_vless_edit|ui_user_menu|ui_xray_routing_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -1041,8 +1041,8 @@ ui_xray_menu() {
   local choice policy
   xray_status
   printf '\nXray 负责 VLESS，其他协议由 sing-box 运行；停用 Xray 仅暂停 VLESS。\n'
-  printf '1. 安装 Xray 最新版\n2. 更新 Xray\n3. 生成并校验 Xray 配置\n4. 启用 Xray\n5. 停用 Xray\n6. 设置 Xray 更新策略\n0. 返回\n'
-  ui_menu_choice choice '选择 Xray 操作' 6
+  printf '1. 安装 Xray 最新版\n2. 更新 Xray\n3. 生成并校验 Xray 配置\n4. 启用 Xray\n5. 停用 Xray\n6. 设置 Xray 更新策略\n7. 入站/出站流量统计\n8. 出站、WARP、负载均衡与路由\n0. 返回\n'
+  ui_menu_choice choice '选择 Xray 操作' 8
   case "$choice" in
     1) xray_install;;
     2) xray_update;;
@@ -1056,6 +1056,50 @@ ui_xray_menu() {
       printf 'manual / notify / patch / stable\n'
       prompt_value policy '更新策略' "$(jq -r '.settings.xray_update_policy // "notify"' "$SBM_STATE")"
       xray_set_policy "$policy";;
+    7) xray_traffic;;
+    8) ui_open_submenu ui_xray_routing_menu;;
+  esac
+}
+
+ui_xray_routing_menu() {
+  local choice tag value via strategy fallback
+  local -a args=()
+  xray_routing_show
+  printf '\n1. 添加原生出站（SOCKS/HTTP/VLESS/Trojan/Shadowsocks 等 JSON）\n2. 添加 WARP（自动注册）\n3. 导入已有 WARP/WireGuard 参数\n4. 删除出站\n'
+  printf '5. 设置负载均衡\n6. 删除负载均衡\n7. 添加分流规则\n8. 删除分流规则\n9. 设置默认出口\n0. 返回\n'
+  ui_menu_choice choice '路由操作' 9 || return 0
+  case "$choice" in
+    1)
+      prompt_value tag '出站标签' '' || return 1
+      prompt_value value 'Xray outbound JSON 或 @文件路径' '' || return 1
+      ui_prompt_optional via '链式：经由哪个出站（留空直连）' '' || return 1
+      xray_routing_cli outbound add "$tag" --json "$value" ${via:+--via "$via"};;
+    2) xray_warp_cli --register;;
+    3)
+      prompt_secret value 'WireGuard 私钥' || return 1
+      args=(--private-key "$value")
+      prompt_value value 'IPv4 地址（如 172.16.0.2）' '172.16.0.2' || return 1; args+=(--address-v4 "$value")
+      ui_prompt_optional value 'IPv6 地址' '' || return 1; [[ -z "$value" ]] || args+=(--address-v6 "$value")
+      ui_prompt_optional value 'reserved（如 1,2,3）' '' || return 1; [[ -z "$value" ]] || args+=(--reserved "$value")
+      xray_warp_cli "${args[@]}";;
+    4) prompt_value tag '出站标签' '' || return 1; xray_routing_cli outbound remove "$tag";;
+    5)
+      prompt_value tag '负载均衡标签' pool || return 1
+      prompt_value value '成员出站（逗号分隔）' '' || return 1
+      prompt_value strategy '策略 random/roundRobin/leastPing/leastLoad' leastPing || return 1
+      ui_prompt_optional fallback '全部不可用时回退出站' direct || return 1
+      xray_routing_cli balancer set "$tag" --selectors "$value" --strategy "$strategy" ${fallback:+--fallback "$fallback"};;
+    6) prompt_value tag '负载均衡标签' '' || return 1; xray_routing_cli balancer remove "$tag";;
+    7)
+      printf '匹配条件可组合：节点、用户、域名（domain:/full:/keyword:/regexp:）、IP CIDR。\n'
+      ui_prompt_optional value '节点 ID' '' || return 1; [[ -z "$value" ]] || args+=(--node "$value")
+      ui_prompt_optional value '用户 NODE_ID:USER_ID' '' || return 1; [[ -z "$value" ]] || args+=(--user "$value")
+      ui_prompt_optional value '域名' '' || return 1; [[ -z "$value" ]] || args+=(--domain "$value")
+      ui_prompt_optional value 'IP CIDR' '' || return 1; [[ -z "$value" ]] || args+=(--ip "$value")
+      prompt_value value '出口：出站标签、block 或 balancer:标签' direct || return 1
+      xray_routing_cli route add "${args[@]}" --to "$value";;
+    8) prompt_value value '规则序号' '' || return 1; xray_routing_cli route remove "$value";;
+    9) prompt_value value '默认出口 direct/标签/balancer:标签' direct || return 1; xray_routing_cli route default "$value";;
   esac
 }
 

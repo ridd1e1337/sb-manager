@@ -355,6 +355,8 @@ state_validate() {
   if declare -F traffic_groups_validate >/dev/null 2>&1; then traffic_groups_validate "$f" || die '共享配额状态无效。'; fi
   if declare -F node_expiry_validate_state >/dev/null 2>&1; then node_expiry_validate_state "$f" || die '到期策略状态无效。'; fi
   if declare -F user_limits_validate_state >/dev/null 2>&1; then user_limits_validate_state "$f" || die '用户限额状态无效。'; fi
+  if declare -F xray_routing_validate_state >/dev/null 2>&1; then xray_routing_validate_state "$f" || die 'Xray 路由状态无效。'; fi
+  if declare -F telegram_bot_validate_state >/dev/null 2>&1; then telegram_bot_validate_state "$f" || die 'Telegram 机器人状态无效。'; fi
   jq -e '
     def string: type == "string";
     def nonempty: string and length > 0;

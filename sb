@@ -45,6 +45,8 @@ source "$SBM_LIB/lib/traffic_groups.sh"
 source "$SBM_LIB/lib/shaping.sh"
 source "$SBM_LIB/lib/expiry.sh"
 source "$SBM_LIB/lib/user_limits.sh"
+source "$SBM_LIB/lib/xray_routing.sh"
+source "$SBM_LIB/lib/telegram_bot.sh"
 source "$SBM_LIB/lib/firewall.sh"
 source "$SBM_LIB/lib/vps.sh"
 source "$SBM_LIB/lib/notification.sh"
@@ -148,6 +150,7 @@ sb_help_full() {
   sb traffic disable|remove NODE_ID
   sb traffic reset NODE_ID|all [--yes]
   sb notify status|configure|disable|test|check
+  sb notify bot enable --admin TG_USER_ID[,ID] | disable | status   Telegram 命令机器人
   sb health status|check|enable|disable [WARN_DAYS]
   sb health configure --disk-free N --memory-max N [...]
   sb config validate|diff [--json]
@@ -173,6 +176,13 @@ sb_help_full() {
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
   sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT
+  sb xray traffic [--json|reset]  Xray 入站/出站累计流量
+  sb xray routing [--json]         查看 Xray 出站、负载均衡与路由
+  sb xray outbound add TAG --json JSON|@FILE [--via TAG] | remove TAG
+  sb xray warp [--tag warp] --register | --private-key KEY --address-v4 IP [--address-v6 IP] [--reserved a,b,c]
+  sb xray balancer set TAG --selectors a,b [--strategy random|roundRobin|leastPing|leastLoad] [--fallback TAG] | remove TAG
+  sb xray route add [--node ID] [--user NODE:USER] [--domain domain:x] [--ip CIDR] [--network tcp|udp] [--port P] --to TAG|balancer:TAG
+  sb xray route remove INDEX | default direct|TAG|balancer:TAG
   sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN
   sb reality status|setup DOMAIN [nginx|caddy] [--node ID] [--init-vps]|detach
   sb vps reality DOMAIN [nginx|caddy] [--node ID]  一键部署 OpenList、Reality 与基础防护
@@ -623,7 +633,8 @@ main() {
         disable) (($# == 0)) || usage_die '用法：sb notify disable'; notification_disable ;;
         test) (($# == 0)) || usage_die '用法：sb notify test'; notification_test ;;
         check) (($# == 0)) || usage_die '用法：sb notify check'; with_lock notification_traffic_check_unlocked ;;
-        *) usage_die '用法：sb notify status|configure|disable|test|check';;
+        bot) telegram_bot_cli "$@" ;;
+        *) usage_die '用法：sb notify status|configure|disable|test|check|bot';;
       esac
       ;;
     health)
@@ -675,7 +686,16 @@ main() {
         disable) (($# == 2)) || usage_die '用法：sb xray disable'; xray_disable ;;
         policy) (($# == 3)) || usage_die '用法：sb xray policy <manual|notify|patch|stable>'; xray_set_policy "$3" ;;
         api-port) (($# == 3)) || usage_die '用法：sb xray api-port PORT'; xray_set_api_port "$3" ;;
-        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT' ;;
+        routing) xray_routing_cli show "${3:-}" ;;
+        outbound|balancer|route) shift 1; xray_routing_cli "$@" ;;
+        warp) shift 2; xray_warp_cli "$@" ;;
+        traffic)
+          case "${3:-}" in
+            ''|--json) xray_traffic "$([[ ${3:-} == --json ]] && echo 1 || echo 0)" ;;
+            reset) xray_traffic_reset ;;
+            *) usage_die '用法：sb xray traffic [--json|reset]' ;;
+          esac ;;
+        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT|traffic [--json|reset]' ;;
       esac
       ;;
     openlist)

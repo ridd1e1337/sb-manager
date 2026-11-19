@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.75`
+当前版本：`0.1.0-alpha.76`
 
 ## 第一步：安装
 
@@ -118,6 +118,35 @@ OpenRC 15 分钟），也可执行 `sb user tick`。面板 `3 → 节点 → 12`
 `sb subscription create never mihomo --user edge:alice` 生成只含该用户的动态订阅，
 响应带 `Subscription-Userinfo`（上传、下载、配额、到期），用户暂停后订阅不再返回
 节点配置；用量随周期任务刷新。
+
+### Xray 出站、WARP、负载均衡与分流
+
+```bash
+sb xray warp --register                       # 注册 WARP（或 --private-key/--address-v4 导入）
+sb xray outbound add hk --json @hk-socks.json --via warp   # 原生出站，可链式经由其他出站
+sb xray balancer set pool --selectors warp,hk --strategy leastPing --fallback direct
+sb xray route add --user edge:alice --to hk
+sb xray route add --domain domain:openai.com --to balancer:pool
+sb xray route default balancer:pool
+sb xray routing                               # 查看
+sb xray traffic                               # 入站/出站累计流量
+```
+
+出站对象保存在 `secrets/xray-outbounds.json`（0600），状态文件只记录结构。WARP 使用
+Xray 原生 WireGuard 用户态模式（`noKernelTun`），不改动主机网卡和路由。未安装
+geosite/geoip 数据库，域名规则使用 `domain:`/`full:`/`keyword:`/`regexp:`，IP 规则使用 CIDR。
+面板 `8 → 13 → 8` 可管理。
+
+### Telegram 命令机器人
+
+先 `sb notify configure telegram ...`，再 `sb notify bot enable --admin 你的TG用户ID`。
+机器人只响应已配置 chat 中白名单用户的固定命令：`/status /nodes /users /traffic
+/enable /disable /renew /quota /iplimit /resetusage /sub`，参数逐项校验后调用 `sb`。
+
+### Web 面板与多服务器
+
+Web 面板和多服务器 Agent 由配套项目
+[sb-manager-web](https://github.com/ridd1e1337/sb-manager-web) 提供，只通过 `sb` CLI 操作本项目。
 
 新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。单用户 Snell 的单节点和批量分享都优先显示 Surge 原生配置；v5 使用兼容的 `version=4`，v6 需要支持该版本的 Surge。多用户模式使用 sing-box 配置。
 
