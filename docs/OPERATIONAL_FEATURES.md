@@ -248,10 +248,12 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 
 ## Xray 与 sing-box 分工（alpha.72）
 
-新安装默认 `settings.vless_engine=xray`：全部 VLESS 由 Xray 运行，其余协议由
-sing-box 运行。旧状态缺少该字段时根据受管 Xray 服务是否已运行/启用推导引擎，
-其余旧配置保留 `sing-box`；执行 `sb xray enable` 后切换 VLESS。仅安装过 Xray
-程序而没有启用服务不会触发迁移。`sb xray disable` 将引擎设为
+从 alpha.79 起 `settings.vless_engine` 只能是 `xray` 或 `disabled`：全部 VLESS 由
+Xray 运行，sing-box 不渲染 VLESS 入站，也不生成 Reality 密钥。旧状态中的
+`sing-box` 或缺失值在状态迁移时改为 `xray`，随后的渲染按需安装官方 Xray，
+先重启 sing-box 释放端口再启动 Xray；节点凭据与 Reality 密钥（同为 X25519）
+保持不变。`sb mux` 的 sing-box 后端只做 TCP/SNI 转发，不解析 VLESS。
+`sb xray disable` 将引擎设为
 `disabled` 并暂停 VLESS，其余协议保持工作。共用 443 的 Reality 节点需先解除
 网站入口才能停用，以免网站随代理节点停机。
 

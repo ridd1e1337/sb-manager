@@ -150,9 +150,6 @@ core_validate_build_tags() {
   if jq -e '.nodes[]? | select(.enabled==true and (.protocol=="hysteria2" or .protocol=="tuic"))' "$state" >/dev/null; then
     grep -Eq '(^|[,[:space:]])with_quic([,[:space:]]|$)' <<<"$output" || { log_error '当前配置需要 with_quic 构建标签。'; return 1; }
   fi
-  if jq -e '(.settings.vless_engine // "sing-box")=="sing-box" and any(.nodes[]?; .enabled==true and .protocol=="vless" and .security=="reality")' "$state" >/dev/null; then
-    grep -Eq '(^|[,[:space:]])with_utls([,[:space:]]|$)' <<<"$output" || { log_error '当前 Reality 配置需要 with_utls 构建标签。'; return 1; }
-  fi
   if jq -e '.nodes[]? | select(.enabled==true and .protocol=="snell")' "$state" >/dev/null; then
     version_ge "$(extract_semver "$output")" 1.14.0-rc.1 || { log_error '当前 Snell 配置需要 sing-box 1.14.0-rc.1 或更高版本核心。'; return 1; }
   fi

@@ -327,7 +327,7 @@ xray_enable() { require_root; with_state_transaction xray-enable _xray_set_engin
 xray_disable() { require_root; with_state_transaction xray-disable _xray_set_engine disabled; }
 
 xray_status() {
-  printf 'VLESS 引擎：%s\n' "$(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE")"
+  printf 'VLESS 引擎：%s\n' "$(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE")"
   if [[ ! -x "$SBM_XRAY_BIN" ]]; then printf 'Xray：未安装\n'; return 0; fi
   printf 'Xray：%s\n服务：%s\n配置：%s\n' "$(xray_current_version || printf '未知版本')" "$(status_service_state "$SBM_XRAY_SERVICE")" "$SBM_XRAY_CONFIG"
 }

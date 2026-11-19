@@ -295,7 +295,7 @@ vless_profile_validate() (
     credential=$(state_get_user_secret "$(jq -r '.id' <<<"$node")" "$id") || return 1
   fi
   outbound=$(vless_xray_client_outbound "$node" "$credential" "$secret") || return 1
-  if [[ -x "$SBM_XRAY_BIN" && $(jq -r '.settings.vless_engine // "sing-box"' "$state") == xray ]]; then
+  if [[ -x "$SBM_XRAY_BIN" && $(jq -r '.settings.vless_engine // "xray"' "$state") == xray ]]; then
     tmp=$(mktemp "$SBM_RUN/vless-client.XXXXXX") || return 1
     log=$(mktemp "$SBM_RUN/vless-client-check.XXXXXX.log") || { rm -f "$tmp"; return 1; }
     trap 'rm -f -- "$tmp" "$log"' EXIT

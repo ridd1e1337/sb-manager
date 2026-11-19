@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.78`
+当前版本：`0.1.0-alpha.79`
 
 ## 第一步：安装
 
@@ -176,8 +176,9 @@ sb caddy rollback
 `sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box、Xray 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
 Xray-core 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 安装并核对摘要。
-`sb xray enable` 将 VLESS 交给 Xray，其他协议继续使用 sing-box；`sb xray disable`
-仅暂停 VLESS。新安装默认使用此分工，旧配置在显式启用前保留原来的 VLESS 引擎。
+全部 VLESS 节点只由 Xray 运行，sing-box 不承载任何 VLESS 入站；其他协议由 sing-box
+运行。`sb xray disable` 仅暂停 VLESS，`sb xray enable` 恢复。旧版由 sing-box 运行的
+VLESS 节点在升级时自动迁移到 Xray（自动安装官方 Xray），UUID、Reality 密钥和分享链接不变。
 旧版已启用的 Xray 会依据服务状态保留分工。两个核心独立生成和校验配置，
 配置未变化的服务不会因另一核心的节点变化重启。
 

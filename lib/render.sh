@@ -186,7 +186,7 @@ render_inbound_for_node() {
     hysteria2) rendered=$(protocol_hy2_render "$node" "$credentials" "$node_secret") ;;
     trojan) rendered=$(protocol_trojan_render "$node" "$credentials") ;;
     tuic) rendered=$(protocol_tuic_render "$node" "$credentials") ;;
-    vless) rendered=$(protocol_vless_render "$node" "$credentials" "$node_secret") ;;
+    vless) log_error 'VLESS 只由 Xray 运行，sing-box 不渲染 VLESS 入站。'; return 1 ;;
     socks|http|mixed) rendered=$(protocol_proxy_render "$node" "$credentials") ;;
     naive) rendered=$(protocol_naive_render "$node" "$credentials") ;;
     shadowtls) rendered=$(protocol_shadowtls_render "$node" "$credentials" "$node_secret") ;;

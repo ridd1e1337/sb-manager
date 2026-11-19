@@ -64,7 +64,7 @@ user_usage_update_unlocked() {
 
 user_limits_xray_ready() {
   [[ "$SBM_SKIP_INIT" != 1 && -x "$SBM_XRAY_BIN" ]] || return 1
-  [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray ]] || return 1
+  [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") == xray ]] || return 1
   service_active "$SBM_XRAY_SERVICE" 2>/dev/null
 }
 
@@ -259,7 +259,7 @@ _user_limit_set() {
   if [[ "$protocol" != vless ]] && { [[ ${set[quota_bytes]:-null} != null ]] || [[ ${set[ip_limit]:-null} != null ]]; }; then
     die '流量配额与在线 IP 限制需要 Xray 统计，仅支持 VLESS；其他协议可使用到期时间或节点级流量控制（sb traffic set）。'
   fi
-  if [[ "$protocol" == vless && $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") != xray ]] \
+  if [[ "$protocol" == vless && $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") != xray ]] \
     && { [[ ${set[quota_bytes]:-null} != null ]] || [[ ${set[ip_limit]:-null} != null ]]; }; then
     die '请先运行 sb xray enable，用户流量统计由 Xray 提供。'
   fi

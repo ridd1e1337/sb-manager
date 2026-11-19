@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.79
+
+- sing-box no longer runs any VLESS node: `settings.vless_engine` accepts only
+  `xray` or `disabled`, the sing-box VLESS inbound renderer and sing-box
+  Reality key generation are removed, and Reality keys always come from
+  official Xray (installed on demand).
+- Legacy `sing-box` or missing engines migrate to Xray during state
+  normalization; the next render installs Xray, restarts sing-box first to
+  release ports, then starts Xray. UUIDs, Reality keys and share links are
+  unchanged. `sb mux` with the sing-box backend still only forwards TCP by SNI.
+
 ## 0.1.0-alpha.78
 
 - Fix `sb xray warp --register`: decode the WARP `client_id` as raw bytes for

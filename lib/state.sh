@@ -183,22 +183,11 @@ state_migrate() {
 }
 
 state_normalize_v2_file() {
-  local file=$1 tmp legacy_engine=sing-box xray_unit
-  # Older releases enabled Xray through its service without recording the
-  # engine in state. Preserve that explicit activation on the first upgrade;
-  # a downloaded binary by itself must never move existing VLESS listeners.
-  if jq -e '.settings.vless_engine == null' "$file" >/dev/null; then
-    xray_unit=$(SBM_SKIP_INIT=0 service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
-    if [[ -f "$xray_unit" ]] && grep -Eq 'sb-manager .*Xray-core service' "$xray_unit"; then
-      # --no-start suppresses mutations, but these two service queries are
-      # read-only and must still recognize an existing enabled Xray service.
-      if SBM_SKIP_INIT=0 service_active "$SBM_XRAY_SERVICE" || SBM_SKIP_INIT=0 service_enabled "$SBM_XRAY_SERVICE"; then
-        legacy_engine=xray
-      fi
-    fi
-  fi
+  local file=$1 tmp
   tmp=$(mktemp "$(dirname "$file")/.state-normalize.XXXXXX")
-  jq --argjson manager_update_minute "$((RANDOM % 180))" --arg legacy_engine "$legacy_engine" '
+  # sing-box never runs VLESS. Legacy "sing-box" or missing engines migrate to
+  # Xray; the next render installs official Xray and keeps node credentials.
+  jq --argjson manager_update_minute "$((RANDOM % 180))" '
     .settings.default_server_address_source //= (if .settings.default_server_address=="" then "auto" else "manual" end)
     | if .settings.manager_auto_update==null then .settings.manager_auto_update=true else . end
     | .settings.manager_update_minute //= $manager_update_minute
@@ -210,7 +199,7 @@ state_normalize_v2_file() {
     | .settings.dns_optimistic_timeout //= "3d"
     | .settings.dns_timeout //= "10s"
     | .settings.xray_update_policy //= "notify"
-    | .settings.vless_engine //= $legacy_engine
+    | .settings.vless_engine=(if .settings.vless_engine=="disabled" then "disabled" else "xray" end)
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
     | .realm //= {enabled:false,listen:"::",port:9443,public_url:"",tls_domain:"",user_name:"default",max_realms:0}
     | .realm.enabled //= false
@@ -487,7 +476,7 @@ state_validate() {
       and (.manager_update_minute | type == "number" and floor==. and .>=0 and .<180)
       and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable"))
       and (.xray_update_policy | IN("manual", "notify", "patch", "stable"))
-      and (.vless_engine | IN("sing-box", "xray", "disabled")))
+      and (.vless_engine | IN("xray", "disabled")))
     and (.tunnel | type == "object"
       and (.mode | IN("none", "fixed", "quick", "managed"))
       and ((.node_id | type) == "string" or (.node_id | type) == "null")
@@ -609,8 +598,7 @@ state_enabled_count() {
   jq '[.nodes[]? | select(.enabled==true)] | length' "$state"
 }
 state_singbox_nodes() {
-  jq -c '(.settings.vless_engine // "sing-box") as $engine
-    | .nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true) and (.protocol!="vless" or $engine=="sing-box"))' "${1:-$SBM_STATE}"
+  jq -c '.nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true) and .protocol!="vless")' "${1:-$SBM_STATE}"
 }
 
 state_xray_nodes() {
@@ -619,14 +607,13 @@ state_xray_nodes() {
 
 state_node_engine() {
   local node=$1 state=${2:-$SBM_STATE}
-  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then jq -r '.settings.vless_engine // "sing-box"' "$state"
+  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then jq -r '.settings.vless_engine // "xray"' "$state"
   else printf 'sing-box\n'; fi
 }
 
 # This historical helper describes sing-box service demand, not both cores.
 state_runtime_required() {
-  jq -e '(.settings.vless_engine // "sing-box") as $engine
-    | any(.nodes[]?; .enabled==true and (.protocol!="vless" or $engine=="sing-box"))
+  jq -e 'any(.nodes[]?; .enabled==true and .protocol!="vless")
       or .api.enabled==true or .realm.enabled==true
       or (.nginx_stream.enabled==true and (.nginx_stream.backend // "sing-box")=="sing-box")' "${1:-$SBM_STATE}" >/dev/null
 }
@@ -660,7 +647,7 @@ runtime_services_reconcile() {
     service_stop "$SBM_XRAY_SERVICE" || return 1
     if service_active "$SBM_XRAY_SERVICE"; then log_error 'Xray 未能停止，保留恢复记录。'; return 1; fi
   fi
-  if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray ]]; then
+  if [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") == xray ]]; then
     singbox_service_reconcile "$singbox_changed" && xray_service_reconcile "$xray_changed"
   else
     xray_service_reconcile "$xray_changed" && singbox_service_reconcile "$singbox_changed"

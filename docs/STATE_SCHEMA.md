@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.78",
+  "manager_version": "0.1.0-alpha.79",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -133,9 +133,8 @@ Last-attempt state and logs live under `var/updates/`, not in topology state.
 `settings.xray_update_policy` is `manual`, `notify`, `patch`, or `stable` and
 defaults to `notify`. Xray-core is an optional service provider managed by
 `sb xray`; downloaded binaries and generated configuration remain outside
-topology state. `settings.vless_engine` is `xray`, `sing-box`, or `disabled`. New installs use
-`xray`; old records without this field infer `xray` only when the managed Xray
-service is already active/enabled, otherwise they retain `sing-box`. Xray renders only
+topology state. `settings.vless_engine` is `xray` or `disabled`. Legacy `sing-box` or missing
+values normalize to `xray`; sing-box never renders VLESS. Xray renders only
 VLESS; sing-box renders the other enabled nodes. `disabled` pauses VLESS without
 moving it into another engine. Both candidate configs validate before installation,
 and unchanged services keep running. The state schema version remains 2.

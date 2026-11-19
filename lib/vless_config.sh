@@ -260,7 +260,7 @@ _node_vless_configure() {
   node=$(vless_config_apply "$previous" "$@") || return 1
   domain=$(jq -r '.domain // ""' <<<"$node"); security=$(jq -r '.security' <<<"$node")
   if [[ "$security" != none ]]; then validate_domain "$domain" || { log_error 'TLS/Reality 需要有效域名。'; return 1; }; fi
-  if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") != xray ]]; then
+  if [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") != xray ]]; then
     log_error '请先运行 sb xray enable，把 VLESS 接入 Xray 后再设置 Xray 参数。'; return 1
   fi
   [[ -x "$SBM_XRAY_BIN" ]] || _xray_install || return 1

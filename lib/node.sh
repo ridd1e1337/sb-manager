@@ -298,7 +298,7 @@ _node_add() {
         validate_domain "$handshake_server" || validate_ipv4 "$handshake_server" || validate_ipv6 "$handshake_server" || die 'Reality 握手目标必须是域名或 IP。'
         validate_port "$handshake_port" || die '无效 Reality 握手端口。'
       fi
-      if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray && ! -x "$SBM_XRAY_BIN" ]]; then _xray_install >&2 || return 1; fi
+      if [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") == xray && ! -x "$SBM_XRAY_BIN" ]]; then _xray_install >&2 || return 1; fi
       secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') || return 1
       [[ "$security" != reality ]] || reality_secret=$(protocol_vless_generate_reality_secret) || return 1
       ;;

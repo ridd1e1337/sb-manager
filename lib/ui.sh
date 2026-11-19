@@ -244,7 +244,7 @@ ui_header() {
   fi
   printf '%s╭──────────────────── sb-manager ────────────────────╮%s\n' "$C_CYAN" "$C_RESET"
   printf '  版本 %-18s sing-box %-16s\n' "$SBM_VERSION" "$(core_current_version || echo '-')"
-  if [[ -x "$SBM_XRAY_BIN" ]]; then printf '  Xray %-16s VLESS %-16s\n' "$(xray_current_version || echo '-')" "$(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE")"; fi
+  if [[ -x "$SBM_XRAY_BIN" ]]; then printf '  Xray %-16s VLESS %-16s\n' "$(xray_current_version || echo '-')" "$(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE")"; fi
   printf '  服务管理 %-16s\n' "$(init_system_label)"
   tunnel_state=$(jq -r '.tunnel.mode | if .=="none" then "未启用" elif .=="quick" then "临时域名" elif .=="fixed" then "固定域名" else "多域名路由" end' "$SBM_STATE")
   printf '  sing-box %-14s CF Tunnel %-18s\n' "$service_state" "$tunnel_state"
