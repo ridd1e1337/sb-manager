@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.69
+
+- Clarify the Xray VLESS customisation flow and document 3x-ui style transport
+  settings through the protected Xray JSON extension.
+
 ## 0.1.0-alpha.68
 
 - Remove the automatic recommended-node creation path from the installer,

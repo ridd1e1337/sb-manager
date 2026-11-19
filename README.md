@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。也可按需安装最新 Xray-core，生成兼容节点配置并显式切换服务。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.68`
+当前版本：`0.1.0-alpha.69`
 
 ## 第一步：安装
 
@@ -114,7 +114,6 @@ sb update
 sb caddy rollback
 ```
 
-`sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box 与 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 `sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box、Xray 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
 Xray-core 通过 `sb xray install` 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 下载当前最新版，校验官方摘要后保存在独立版本目录。`sb xray update` 和更新策略会跟随最新 Release；`sb xray status` 显示程序和服务状态。`sb xray config` 根据同一份状态生成 Xray 配置，`sb xray enable` 会停止占用相同节点端口的 sing-box 并启动 Xray，`sb xray disable` 恢复 sing-box。Xray 支持 VMess、普通 Shadowsocks、Trojan、VLESS、SOCKS、HTTP 和 mixed 节点；AnyTLS、Hysteria2、TUIC、Naive、ShadowTLS、Snell 等继续使用 sing-box。
