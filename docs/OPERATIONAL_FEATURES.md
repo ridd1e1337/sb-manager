@@ -294,6 +294,14 @@ Xray 配置固定启用仅回环的 Stats API 与 `statsUserUplink/Downlink/Onli
 恢复用户；Xray 重启前先收集计数器。暂停与恢复都经过完整候选校验和回滚，启用
 通知时发送事件。手动启用或停用用户会清除自动暂停标记。
 
+## 用户订阅（alpha.75）
+
+`--user NODE_ID:USER_ID` 订阅总是动态的，元数据记录 `node_id`/`user_id`，内容写入
+`<digest>.user.json`，只包含该用户。服务端从中读取 `userinfo` 并返回
+`Subscription-Userinfo: upload=…; download=…; total=…; expire=…`（0 表示不限）。
+用户停用、到期或流量用尽时各格式返回 422 及原因，但仍携带用量头。状态事务和
+用户限额周期任务都会刷新用户订阅。
+
 ## OpenList 与 Reality 共用 443（alpha.72）
 
 ```bash

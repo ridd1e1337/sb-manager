@@ -186,14 +186,22 @@ user_limits_notify_changes() {
 
 user_limits_tick_unlocked() {
   local online candidate
-  jq -e 'any(.nodes[]?.users[]?; .limits!=null)' "$SBM_STATE" >/dev/null || { user_usage_collect_unlocked || true; return 0; }
+  if ! jq -e 'any(.nodes[]?.users[]?; .limits!=null)' "$SBM_STATE" >/dev/null; then
+    user_usage_collect_unlocked || true
+    if declare -F subscription_refresh_user_bundles >/dev/null 2>&1; then subscription_refresh_user_bundles || true; fi
+    return 0
+  fi
   user_usage_init_unlocked || return 1
   user_usage_collect_unlocked || true
   user_usage_rollover_unlocked || return 1
   online=$(user_limits_online_map) || online='{}'
   candidate=$(state_candidate) || return 1
   user_limits_eval_file "$SBM_STATE" "$candidate" "$online" || { rm -f "$candidate"; return 1; }
-  if jq -e --slurpfile current "$SBM_STATE" '. == $current[0]' "$candidate" >/dev/null; then rm -f "$candidate"; return 0; fi
+  if jq -e --slurpfile current "$SBM_STATE" '. == $current[0]' "$candidate" >/dev/null; then
+    rm -f "$candidate"
+    if declare -F subscription_refresh_user_bundles >/dev/null 2>&1; then subscription_refresh_user_bundles || true; fi
+    return 0
+  fi
   local before
   before=$(mktemp "$SBM_RUN/user-limits-before.XXXXXX") || { rm -f "$candidate"; return 1; }
   cp "$SBM_STATE" "$before" || { rm -f "$candidate" "$before"; return 1; }

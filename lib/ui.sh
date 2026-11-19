@@ -724,8 +724,8 @@ ui_user_menu() {
   user_stats "$id" || return 1
   printf '\n1. 添加用户\n2. 启用用户\n3. 停用用户\n4. 删除用户\n5. 轮换用户凭据\n6. 设置到期时间\n'
   if [[ "$protocol" == vless ]]; then printf '7. 设置流量配额\n8. 设置在线 IP 上限\n9. 清零本周期流量\n'; fi
-  printf '10. 清除全部限额\n0. 返回\n'
-  ui_menu_choice choice '用户操作' 10 || return 0
+  printf '10. 清除全部限额\n11. 生成该用户的动态订阅（含用量与到期信息）\n0. 返回\n'
+  ui_menu_choice choice '用户操作' 11 || return 0
   [[ "$choice" != 0 ]] || return 0
   if [[ "$choice" != 1 ]]; then
     prompt_value user_id '用户 ID' "$(state_get_node "$id" | jq -r '.users[0].id')" || return 1
@@ -759,6 +759,11 @@ ui_user_menu() {
       user_limit_cli "$id" "$user_id" --ip-limit "$value";;
     9) [[ "$protocol" == vless ]] && user_usage_reset "$id" "$user_id";;
     10) user_limit_cli "$id" "$user_id" --clear;;
+    11)
+      printf '1. sing-box\n2. Xray\n3. mihomo\n'
+      ui_menu_choice value '订阅格式' 3 || return 0
+      case "$value" in 1) value=mixed;; 2) value=xray;; 3) value=mihomo;; *) return 0;; esac
+      subscription_create_cli never "$value" --live --user "$id:$user_id";;
   esac
 }
 

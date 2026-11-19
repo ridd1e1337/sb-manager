@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.75
+
+- Add per-user live subscriptions (`sb subscription create ... --user
+  NODE_ID:USER_ID`, panel user menu option 11). They contain only that user,
+  send `Subscription-Userinfo` with upload, download, quota and expiry, stop
+  serving node configuration while the user is suspended, and refresh usage on
+  the periodic tick. Revocation removes the user bundle.
+
 ## 0.1.0-alpha.74
 
 - Add per-user limits: `sb user limit` sets expiry for every multi-user

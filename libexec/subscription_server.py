@@ -51,6 +51,7 @@ class Handler(BaseHTTPRequestHandler):
         meta_path = self.root / f"{digest}.meta.json"
         status = 200
         excluded = 0
+        userinfo = None
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             live = meta.get("live") is True
@@ -65,9 +66,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             output_format = formats[0] or (mode if mode in {"xray", "mihomo"} else "sing-box")
             content_type = "text/plain; charset=utf-8" if output_format == "substore" else "application/json; charset=utf-8"
-            bundle_path = self.root / ("live.json" if live else f"{digest}.bundle.json")
+            user_scoped = isinstance(meta.get("user_id"), str)
+            if user_scoped:
+                bundle_path = self.root / f"{digest}.user.json"
+            else:
+                bundle_path = self.root / ("live.json" if live else f"{digest}.bundle.json")
             if bundle_path.is_file():
                 bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+                info = bundle.get("userinfo")
+                if isinstance(info, dict):
+                    userinfo = "; ".join(f"{key}={max(0, int(info.get(key) or 0))}"
+                                         for key in ("upload", "download", "total", "expire"))
                 report = bundle.get("compatibility", [])
                 if not isinstance(report, list):
                     raise ValueError("invalid compatibility report")
@@ -94,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
                                            "compatibility": [item for item in report if item.get("format") == report_format]}, ensure_ascii=False).encode("utf-8")
                     else:
                         data = json.dumps(profile, ensure_ascii=False).encode("utf-8")
+            elif user_scoped:
+                raise ValueError("missing user generation")
             elif not live:
                 # Existing snapshot tokens retain their original files. New
                 # formats require a new snapshot instead of returning the
@@ -120,6 +131,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if excluded:
             self.send_header("X-SB-Excluded-Entries", str(excluded))
+        if userinfo:
+            # De-facto header read by Clash/mihomo, sing-box clients and Sub-Store.
+            self.send_header("Subscription-Userinfo", userinfo)
         self.end_headers()
         if include_body:
             self.wfile.write(data)

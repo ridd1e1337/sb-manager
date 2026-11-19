@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.74`
+当前版本：`0.1.0-alpha.75`
 
 ## 第一步：安装
 
@@ -114,6 +114,10 @@ sb user reset-usage edge alice
 VLESS。超限用户被暂停但保留凭据：配额在下个重置日或调高后恢复，到期在续期后
 恢复，在线 IP 超限暂停 10 分钟后重试。检查随流量周期任务运行（systemd 5 分钟、
 OpenRC 15 分钟），也可执行 `sb user tick`。面板 `3 → 节点 → 12` 可管理用户。
+
+`sb subscription create never mihomo --user edge:alice` 生成只含该用户的动态订阅，
+响应带 `Subscription-Userinfo`（上传、下载、配额、到期），用户暂停后订阅不再返回
+节点配置；用量随周期任务刷新。
 
 新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。单用户 Snell 的单节点和批量分享都优先显示 Surge 原生配置；v5 使用兼容的 `version=4`，v6 需要支持该版本的 Surge。多用户模式使用 sing-box 配置。
 
