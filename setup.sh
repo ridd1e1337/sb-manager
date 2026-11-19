@@ -10,7 +10,6 @@ SETUP_OPENRC_DIR=${SBM_OPENRC_DIR:-/etc/init.d}
 SETUP_PERIODIC_DIR=${SBM_PERIODIC_DIR:-/etc/periodic}
 PROGRAM_BACKUP_ROOT=${SBM_BACKUPS:-${SBM_VAR:-/var/lib/sb-manager}/backups}
 NO_MENU=0
-QUICK_NODE=0
 NO_START=0
 CORE_VERSION=latest
 KEEP_CORE=0
@@ -133,7 +132,6 @@ usage() {
   cat <<'EOF_USAGE'
 用法：sudo ./setup.sh [选项]
   --no-menu             安装后不打开交互面板
-  --quick               安装后一键创建推荐节点（VLESS Reality，无需域名）并显示分享链接
   --no-start            不启动/启用 systemd 或 OpenRC 服务和定时任务
   --core-version VER    安装指定 sing-box 版本（默认 latest）
   --keep-core           更新管理器脚本时保留当前 sing-box 核心
@@ -147,7 +145,6 @@ EOF_USAGE
 while (($#)); do
   case "$1" in
     --no-menu) NO_MENU=1; shift ;;
-    --quick) QUICK_NODE=1; shift ;;
     --no-start) NO_START=1; shift ;;
     --core-version) CORE_VERSION=${2:?}; shift 2 ;;
     --keep-core) KEEP_CORE=1; shift ;;
@@ -160,10 +157,6 @@ while (($#)); do
   esac
 done
 
-if [[ "$QUICK_NODE" == 1 && "$NO_START" == 1 ]]; then
-  echo '--quick 需要启动 sing-box 服务，不能与 --no-start 同时使用。' >&2
-  exit 1
-fi
 if [[ "$INIT_VPS" == 1 && "$NO_START" == 1 ]]; then
   echo '--init-vps 会启用服务和 UFW，不能与 --no-start 同时使用。' >&2
   exit 1
@@ -666,7 +659,6 @@ printf '\n安装完成。\n'
 printf '  服务管理：%s\n' "$BACKEND"
 printf '  安装档位：%s\n' "$INSTALL_PROFILE"
 printf '  面板命令：sb\n'
-printf '  一键节点：sb quick --auto（无需域名，直接得到分享链接）\n'
 printf '  添加向导：sb quick（选择协议、准备证书并获取导入内容）\n'
 if manager_auto_enabled; then
   printf '  脚本与受管 Caddy 自动更新：开启，每天约 %s（服务器本地时间）\n' "$(manager_auto_time)"
@@ -694,14 +686,6 @@ if [[ "$INIT_VPS" == 1 ]]; then
     printf 'sing-box 管理器已安装；VPS 初始化未完成，请按上方提示处理后运行 sb vps init。\n' >&2
     exit 1
   fi
-fi
-if [[ "$QUICK_NODE" == 1 ]]; then
-  printf '\n'
-  if ! "$SBM_BIN_DIR/sb" quick --auto; then
-    printf 'sing-box 管理器已安装；推荐节点未创建，请按上方提示处理后运行 sb quick --auto。\n' >&2
-    exit 1
-  fi
-  exit 0
 fi
 # `curl ... | bash` leaves stdin on the pipe; reopen the controlling terminal
 # so the panel still opens after a one-line installation.

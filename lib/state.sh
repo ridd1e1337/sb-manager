@@ -234,6 +234,9 @@ state_normalize_v2_file() {
         | .singbox //= {inbound:{},outbound:{}}
         | .singbox.inbound //= {}
         | .singbox.outbound //= {}
+        | .xray //= {inbound:{},outbound:{}}
+        | .xray.inbound //= {}
+        | .xray.outbound //= {}
         | .traffic //= {}
         | .traffic.configured //= false
         | .traffic.enabled //= false
@@ -368,7 +371,9 @@ state_validate() {
       and (.created_at | timestamp)
       and ((.singbox // {}) | type == "object")
       and (((.singbox // {}).inbound // {}) | node_extension)
-      and (((.singbox // {}).outbound // {}) | node_extension);
+      and (((.singbox // {}).outbound // {}) | node_extension)
+      and (((.xray // {}).inbound // {}) | node_extension)
+      and (((.xray // {}).outbound // {}) | node_extension);
     def node_metadata:
       type == "object"
       and (.remark | string and length <= 512 and (explode | all(.[]; . >= 32 and . != 127)))

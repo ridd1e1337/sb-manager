@@ -109,45 +109,62 @@ xray_users_json() {
   jq '[.[] | if (.uuid // "") != "" then {id:.uuid,email:.name,level:0} elif (.password // "") != "" then {password:.password,email:.name,level:0} else {email:.name,level:0} end]' <<<"$credentials"
 }
 
+xray_node_override() {
+  local node=$1 direction=$2
+  jq -c --arg direction "$direction" 'if ((.xray // {})[$direction] // {}) | type == "object" then ((.xray // {})[$direction] // {}) else {} end' <<<"$node"
+}
+
+xray_apply_override() {
+  local rendered=$1 override=$2
+  jq --argjson override "$override" '
+    def protected: del(.protocol,.tag,.listen,.port,.settings.clients,.settings.accounts,.settings.password);
+    if ($override|type) != "object" or ($override|length)==0 then .
+    else . * ($override | protected)
+    end
+  ' <<<"$rendered"
+}
+
 xray_inbound_for_node() {
-  local node=$1 credentials=$2 node_secret=$3 protocol id listen port domain cert key
+  local node=$1 credentials=$2 node_secret=$3 protocol id listen port domain cert key rendered override
   protocol=$(jq -r '.protocol' <<<"$node"); id=$(jq -r '.id' <<<"$node")
   listen=$(jq -r '.listen // "::"' <<<"$node"); port=$(jq -r '.port' <<<"$node")
   case "$protocol" in
     vmess-ws-cf)
-      jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --arg path "$(jq -r '.ws_path' <<<"$node")" \
+      rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --arg path "$(jq -r '.ws_path' <<<"$node")" \
         --argjson users "$(xray_users_json "$credentials")" \
-        '{tag:$tag,listen:$listen,port:$port,protocol:"vmess",settings:{clients:$users},streamSettings:{network:"ws",wsSettings:{path:$path}}}' ;;
+        '{tag:$tag,listen:$listen,port:$port,protocol:"vmess",settings:{clients:$users},streamSettings:{network:"ws",wsSettings:{path:$path}}}');;
     shadowsocks)
-      jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --arg method "$(jq -r '.method' <<<"$node")" \
+      rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --arg method "$(jq -r '.method' <<<"$node")" \
         --arg password "$(jq -r '.[0].password // ""' <<<"$credentials")" \
-        '{tag:$tag,listen:$listen,port:$port,protocol:"shadowsocks",settings:{method:$method,password:$password,network:"tcp,udp"}}' ;;
+        '{tag:$tag,listen:$listen,port:$port,protocol:"shadowsocks",settings:{method:$method,password:$password,network:"tcp,udp"}}');;
     trojan)
       domain=$(jq -r '.domain' <<<"$node"); cert="$SBM_CERTS/$domain/fullchain.pem"; key="$SBM_CERTS/$domain/key.pem"
-      jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
+      rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
         --arg cert "$cert" --arg key "$key" \
-        '{tag:$tag,listen:$listen,port:$port,protocol:"trojan",settings:{clients:$clients},streamSettings:{network:"tcp",security:"tls",tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}}' ;;
+        '{tag:$tag,listen:$listen,port:$port,protocol:"trojan",settings:{clients:$clients},streamSettings:{network:"tcp",security:"tls",tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}}');;
     vless)
       domain=$(jq -r '.domain' <<<"$node")
       if [[ $(jq -r '.security' <<<"$node") == reality ]]; then
-        jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
+        rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
           --arg dest "$(jq -r '.handshake_server' <<<"$node"):$(jq -r '.handshake_port' <<<"$node")" \
           --arg server_name "$domain" --arg private "$(jq -r '.reality_private_key' <<<"$node_secret")" --arg short_id "$(jq -r '.reality_short_id' <<<"$node_secret")" \
-          '{tag:$tag,listen:$listen,port:$port,protocol:"vless",settings:{clients:$clients,decryption:"none"},streamSettings:{network:"tcp",security:"reality",realitySettings:{show:false,dest:$dest,xver:0,serverNames:[$server_name],privateKey:$private,shortIds:[$short_id]}}}'
+          '{tag:$tag,listen:$listen,port:$port,protocol:"vless",settings:{clients:$clients,decryption:"none"},streamSettings:{network:"tcp",security:"reality",realitySettings:{show:false,dest:$dest,xver:0,serverNames:[$server_name],privateKey:$private,shortIds:[$short_id]}}}')
       else
         cert="$SBM_CERTS/$domain/fullchain.pem"; key="$SBM_CERTS/$domain/key.pem"
-        jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
+        rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson clients "$(xray_users_json "$credentials")" \
           --arg cert "$cert" --arg key "$key" \
-          '{tag:$tag,listen:$listen,port:$port,protocol:"vless",settings:{clients:$clients,decryption:"none"},streamSettings:{network:"tcp",security:"tls",tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}}'
+          '{tag:$tag,listen:$listen,port:$port,protocol:"vless",settings:{clients:$clients,decryption:"none"},streamSettings:{network:"tcp",security:"tls",tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}}')
       fi ;;
     socks|mixed)
-      jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson accounts "$(jq '[.[]|{user:(.username // .name),pass:.password}]' <<<"$credentials")" \
-        '{tag:$tag,listen:$listen,port:$port,protocol:"socks",settings:{auth:"password",accounts:$accounts,udp:true}}' ;;
+      rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson accounts "$(jq '[.[]|{user:(.username // .name),pass:.password}]' <<<"$credentials")" \
+        '{tag:$tag,listen:$listen,port:$port,protocol:"socks",settings:{auth:"password",accounts:$accounts,udp:true}}');;
     http)
-      jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson accounts "$(jq '[.[]|{user:(.username // .name),pass:.password}]' <<<"$credentials")" \
-        '{tag:$tag,listen:$listen,port:$port,protocol:"http",settings:{accounts:$accounts}}' ;;
+      rendered=$(jq -n --arg tag "in-$id" --arg listen "$listen" --argjson port "$port" --argjson accounts "$(jq '[.[]|{user:(.username // .name),pass:.password}]' <<<"$credentials")" \
+        '{tag:$tag,listen:$listen,port:$port,protocol:"http",settings:{accounts:$accounts}}');;
     *) return 1 ;;
   esac
+  override=$(xray_node_override "$node" inbound)
+  xray_apply_override "$rendered" "$override"
 }
 
 xray_render_config() {

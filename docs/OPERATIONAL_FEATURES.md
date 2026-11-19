@@ -246,7 +246,7 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 切换程序；版本查询无法判断同一主版本下的插件构建差异。sing-box 和 cloudflared
 的更新策略保持独立。
 
-## Xray-core 可选运行时（alpha.67）
+## Xray-core 可选运行时（alpha.68）
 
 Xray-core 使用 XTLS 官方 Release，执行 `sb xray install` 安装最新版，执行
 `sb xray update` 更新，执行 `sb xray status` 查看版本和服务状态。安装程序

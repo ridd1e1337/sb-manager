@@ -76,7 +76,6 @@ sb_help_full() {
   sb vps systems                 查看各功能支持的 Linux 系统与当前环境
   sb node list [--json] [--tag TAG] [--region REGION] 列出节点
   sb quick                       添加节点向导
-  sb quick --auto [--address HOST] [--port N]  一键创建推荐节点（VLESS Reality，无需域名）并显示分享链接
   sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]
   sb node expiry ID [--days N|--at UTC_TIMESTAMP|--clear]
   sb node show <ID>
@@ -93,6 +92,7 @@ sb_help_full() {
                  [--congestion-control cubic|new_reno|bbr] [--strict-mode true|false]
                  [--wildcard-sni off|authed|all] [--snell-version 5|6] [--snell-mode MODE]
                  [--sing-box-inbound-json JSON|@FILE] [--sing-box-outbound-json JSON|@FILE]
+                 [--xray-inbound-json JSON|@FILE] [--xray-outbound-json JSON|@FILE]
                  [--realm-id ID] [--realm-ip-version 0|4|6] [--realm-port-mapping|--no-realm-port-mapping]
   sb user list <NODE_ID>
   sb user add <NODE_ID> <USER_ID> [NAME]
@@ -184,6 +184,7 @@ sb_help_full() {
   SOCKS5/HTTP/mixed: --listen 127.0.0.1|::1|0.0.0.0|::（默认本机，自动生成认证）
   sing-box 扩展：--sing-box-inbound-json JSON|@FILE --sing-box-outbound-json JSON|@FILE
                  可传入当前核心支持的任意扩展字段；type、tag、地址、端口、用户和凭据由管理器保护。
+  Xray VLESS：--xray-inbound-json JSON|@FILE 可自定义 streamSettings、TLS、Reality、WS、gRPC、HTTPUpgrade、XHTTP 等字段。
   通用:  --disabled --remark TEXT --region REGION --purpose PURPOSE --line LINE --tags a,b
 EOF_HELP
 }
@@ -199,7 +200,7 @@ sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
 
 常用：
   status        查看服务和节点状态
-  quick         一键创建推荐节点：sb quick --auto（无需域名）；不带参数为向导
+  quick         添加节点向导
   node          添加、修改、启停和删除节点
   share         显示节点分享链接、二维码或客户端配置
   user          管理多用户节点的用户
@@ -298,23 +299,6 @@ main() {
   export SBM_OUTPUT_JSON=$cli_json SBM_ASSUME_YES=$cli_yes SBM_DRY_RUN=$cli_dry_run SBM_QUIET=$cli_quiet
   if [[ ${NO_COLOR:-} != "" ]]; then C_RESET=''; C_BOLD=''; C_RED=''; C_GREEN=''; C_YELLOW=''; C_BLUE=''; C_CYAN=''; fi
   local cmd=${1:-menu}
-  local quick_auto=0 quick_address='' quick_port=''
-  if [[ "$cmd" == quick ]]; then
-    shift
-    while (($#)); do
-      case "$1" in
-        --auto) quick_auto=1; shift;;
-        --address) quick_address=${2:?缺少连接地址}; shift 2;;
-        --port) quick_port=${2:?缺少端口}; shift 2;;
-        -h|--help) sb_help quick; return 0;;
-        *) usage_die '用法：sb quick [--auto [--address HOST] [--port N]]';;
-      esac
-    done
-    (( quick_auto == 1 )) || [[ -z "$quick_address$quick_port" ]] || usage_die '--address 和 --port 需要与 --auto 一起使用。'
-    (( quick_auto == 1 )) || [[ -t 0 ]] || usage_die 'sb quick 需要交互终端；脚本调用请使用 sb quick --auto 或 sb node add。'
-    (( cli_dry_run == 0 )) || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
-    set -- quick
-  fi
   if [[ "$cmd" != menu && "$cmd" != help ]] && sb_help_is_topic "$cmd"; then
     case "${2:-}" in -h|--help|help) sb_help "$cmd"; return 0;; esac
     case "${3:-}" in -h|--help) sb_help "$cmd"; return 0;; esac
@@ -358,7 +342,6 @@ main() {
   case "$cmd" in
     menu) ui_main ;;
     quick)
-      if (( quick_auto )); then node_add_recommended "$quick_address" "$quick_port"; return 0; fi
       ui_menu_loop ui_add_node
       case ${SBM_UI_RESULT:-0} in 203) ui_reload;; 0|206) ui_main;; esac
       ;;

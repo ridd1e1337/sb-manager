@@ -56,9 +56,8 @@ the node ID across export failures, so retries cannot create duplicate nodes.
 
 The panel keeps common labels short while the single node wizard retains the
 complete protocol options behind a single "use recommended values" prompt.
-`sb quick` opens that wizard; `sb quick --auto`, installer `--quick` and main
-menu key `a` create a zero-input VLESS Reality node through the same
-`node_add` transaction and print its share content.
+`sb quick` opens that wizard; node creation goes through the explicit protocol
+and parameter flow.
 Full per-user client profiles include every required outbound and are validated
 before an atomic file replacement; the existing full-subscription export remains
 available. Advanced protocol parameters use the original creation wizard.

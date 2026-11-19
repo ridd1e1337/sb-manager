@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.67",
+  "manager_version": "0.1.0-alpha.68",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -236,6 +236,16 @@ objects, and checked by the installed core. The manager keeps `type`, `tag`,
 addresses, ports, users, and credentials authoritative. Compound protocol
 exports can use an optional `by_tag` object to target a generated member by its
 tag; otherwise an array extension applies to the primary member.
+
+`nodes[].xray.inbound` and `nodes[].xray.outbound` use the same protected JSON
+extension model for Xray-core. They are accepted with `--xray-inbound-json`
+and `--xray-outbound-json` (or `@FILE`). The Xray inbound extension is merged
+after the generated protocol object while keeping protocol, tag, listen port
+and credentials under manager control. This allows VLESS settings used by
+3x-ui, including custom `streamSettings` for TCP, WebSocket, gRPC,
+HTTPUpgrade or XHTTP, plus TLS/Reality fields, fingerprints, ALPN, destinations,
+server names and short IDs. Xray checks the resulting configuration before its
+optional service is started.
 
 Mutations hold the manager lock through candidate validation, rendering,
 installation, and service reconciliation. A failed operation restores the

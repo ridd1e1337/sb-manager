@@ -2,19 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。也可按需安装最新 Xray-core，生成兼容节点配置并显式切换服务。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.67`
-
-## 最快上手：一条命令得到节点
-
-不需要域名、证书或 Cloudflare：
-
-```bash
-curl -fsSL https://github.com/ridd1e1337/sb-manager/raw/refs/heads/main/install.sh | bash -s -- --quick
-```
-
-装完自动创建一个 VLESS Reality 节点（自动选端口和公网 IP），直接显示分享链接和二维码，复制到客户端即可。记得在云安全组放行输出里提示的 TCP 端口。已安装的机器运行 `sb quick --auto`，或在面板主菜单输入 `a`。
-
-需要其他协议或自定义参数，按下面步骤操作。
+当前版本：`0.1.0-alpha.68`
 
 ## 第一步：安装
 
@@ -54,7 +42,7 @@ sb
 
 常用流程：
 
-1. 选择“添加节点”，选择协议；地址、端口都有推荐值，直接回车即可。各协议的进阶选项合并成一个问题“其余选项使用推荐值？”，回车跳过，输入 `n` 再逐项设置。不确定选哪个协议就选 **12. 一键推荐**。
+1. 选择“添加节点”，选择协议；地址、端口都有推荐值，直接回车即可。各协议的进阶选项合并成一个问题“其余选项使用推荐值？”，回车跳过，输入 `n` 再逐项设置。
 2. 需要 TLS 的协议直接输入 Cloudflare 托管的域名；没有可用证书时，自动添加指向本机公网 IP 的 DNS 记录（关闭橙云），再申请证书。首次填写 API Token 和邮箱，之后自动复用。
 3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。Snell 会把 Surge 原生配置放在最上面，可直接复制到 Surge 的 `[Proxy]` 段。
 
@@ -88,6 +76,18 @@ sb node add trojan --id edge --domain edge.example.com --address edge.example.co
 ```
 
 参数也可以使用 `@/path/to/fields.json`。扩展会同时进入服务端 inbound 和 sing-box 客户端 outbound，实际字段由已安装核心校验；管理器继续接管协议类型、标签、地址、端口、用户和凭据。ShadowTLS 等复合协议可在 JSON 中使用 `by_tag` 按生成的 tag 指定扩展。修改已有节点使用相同参数：`sb node set NODE_ID --sing-box-inbound-json @FILE`。
+
+使用 Xray 时可追加 `--xray-inbound-json JSON|@FILE` 和
+`--xray-outbound-json JSON|@FILE`。VLESS 的 Xray 入站扩展可按 3x-ui 的方式
+自定义 `streamSettings`，包括 TCP、WebSocket、gRPC、HTTPUpgrade、XHTTP、TLS、
+Reality、fingerprint、ALPN、dest、serverNames 和 shortIds；管理器仍保护协议、
+标签、监听端口和凭据。示例：
+
+```bash
+sb node add vless --id edge --name 'VLESS WS' --address edge.example.com \
+  --domain edge.example.com --port 443 --security tls \
+  --xray-inbound-json '{"streamSettings":{"network":"ws","wsSettings":{"path":"/xray"}}}'
+```
 
 新建 Snell 节点的 PSK 和 userkey 会持续保留，普通脚本更新不会使客户端突然失效。只有执行 `sb node rotate`、`sb user rotate` 或把单用户节点改成多用户时，才需要重新导入客户端。单用户 Snell 的单节点和批量分享都优先显示 Surge 原生配置；v5 使用兼容的 `version=4`，v6 需要支持该版本的 Surge。多用户模式使用 sing-box 配置。
 

@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_quick_recommended_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -487,21 +487,6 @@ ui_add_node_and_deliver() {
   ui_page_back
 }
 
-ui_quick_recommended_node() {
-  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
-  local address port
-  address=$(ui_client_address_default '')
-  port=$(node_recommended_port)
-  printf '一键推荐节点：VLESS + Reality（无需域名、证书或 Cloudflare Token）\n'
-  if [[ -z "$address" ]]; then
-    log_warn '未探测到公网 IP，请手动填写客户端连接地址。'
-    ui_prompt_server_address address '' || { ui_page_back; return; }
-  fi
-  printf '连接地址：%s  端口：%s/TCP  伪装站点：%s\n' "$address" "$port" "$SBM_RECOMMENDED_REALITY_SNI"
-  ui_add_node_and_deliver vless --name 'VLESS Reality' --address "$address" --port "$port" --security reality \
-    --domain "$SBM_RECOMMENDED_REALITY_SNI" --handshake-server "$SBM_RECOMMENDED_REALITY_SNI" --handshake-port 443
-}
-
 # One question replaces the protocol-specific tuning prompts. Choosing n keeps
 # every advanced option available.
 ui_use_recommended() {
@@ -515,7 +500,6 @@ ui_add_node() {
   local choice domain address port name id obfs method security security_choice snell_obfs_choice snell_obfs_host snell_version_choice snell_mode_choice
   local hy2_obfs_choice hy2_min_packet_size hy2_max_packet_size hy2_disable_chrome hy2_bbr_profile hy2_brutal_debug hy2_realm_choice hy2_realm_id hy2_realm_ip hy2_realm_mapping
   local handshake_server handshake_port congestion_control network strict_mode wildcard_sni
-  printf '不知道选哪个：输入 12 一键创建推荐节点，全程自动。\n'
   printf '%s\n' \
     '1. VMess + WebSocket + Cloudflare Tunnel' \
     '2. Shadowsocks 2022' \
@@ -528,7 +512,6 @@ ui_add_node() {
     '9. ShadowTLS v3' \
     '10. Snell v5/v6' \
     '11. SOCKS5 / HTTP / mixed 认证代理' \
-    '12. 一键推荐：VLESS Reality（无需域名）' \
     '0. 返回'
   ui_menu_choice choice '选择协议' 12
   case "$choice" in
@@ -671,7 +654,6 @@ ui_add_node() {
       prompt_value name '节点名称' '认证代理'
       ui_add_node_and_deliver "$proxy_type" --listen "$proxy_listen" --address "$address" --port "$port" --name "$name"
       ;;
-    12) ui_quick_recommended_node;;
     0) return;; *) log_error '选择无效';;
   esac
 }
@@ -1400,7 +1382,7 @@ ui_main_options() {
   cat <<'EOF_MENU'
 节点与客户端
  1. 运行状态
- 2. 添加代理节点（a = 一键推荐）
+ 2. 添加代理节点
  3. 管理节点
  4. 节点分享与导出
  5. 完整 sing-box 客户端配置
@@ -1434,7 +1416,7 @@ ui_main() {
     printf 'Enter 返回；输入 r 留在当前页。\n'
     printf '填写时 Enter 保留当前值；q 取消；主菜单 0 / q 退出。\n'
     if [[ $(jq '.nodes|length' "$SBM_STATE") == 0 ]]; then
-      printf '还没有节点：输入 a 一键创建推荐节点（无需域名，全自动）；输入 2 自选协议。\n'
+      printf '还没有节点：输入 2 添加节点。\n'
     fi
     ui_main_options
     # Stay at the root on empty input without reopening a page or redrawing
@@ -1448,7 +1430,6 @@ ui_main() {
     SBM_UI_RESULT=0
     case "$choice" in
       1) page=status_summary;;
-      a|A) page=ui_quick_recommended_node;;
       2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;

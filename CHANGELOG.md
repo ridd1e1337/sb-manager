@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.68
+
+- Remove the automatic recommended-node creation path from the installer,
+  command help, and interactive panel. Node creation now always goes through
+  the explicit protocol and parameter flow.
+- Add protected Xray inbound/outbound JSON extensions to node creation and
+  editing. Xray VLESS can now carry 3x-ui style custom stream, TLS, Reality,
+  WebSocket, gRPC, HTTPUpgrade, XHTTP, ALPN, fingerprint, destination,
+  server-name, and short-ID settings while the manager retains ownership of
+  credentials and listener identity.
+- Normalize and validate the new Xray extension fields in state; no test
+  scripts, test environments, or test procedures were added.
+
 ## 0.1.0-alpha.67
 
 - Add optional Xray-core runtime support using the latest official
