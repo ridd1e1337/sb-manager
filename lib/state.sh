@@ -433,8 +433,10 @@ state_validate() {
         (.domain | nonempty) and (.server_address | string)
         and (.congestion_control | IN("cubic", "new_reno", "bbr"))
       elif .protocol == "vless" then
-        (.domain | nonempty) and (.server_address | string)
-        and (.security | IN("tls", "reality"))
+        (.domain | string) and (.server_address | string)
+        and (.security | IN("none", "tls", "reality"))
+        and (if .security=="none" then true else (.domain|nonempty) end)
+        and ((.xray.packet_encoding // "xudp") | IN("xudp","packetaddr","none"))
         and ((.flow | type) == "string" or (.flow | type) == "null")
         and (if .security=="reality" then (.handshake_server | nonempty) and (.handshake_port | port) else true end)
       elif .protocol == "naive" then

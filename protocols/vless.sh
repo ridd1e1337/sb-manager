@@ -36,29 +36,36 @@ protocol_vless_render() {
   fi
 }
 
-protocol_vless_share() {
-  local node=$1 secret=$2 node_secret=$3 address domain port uuid flow security uri
-  address=$(jq -r '.server_address' <<<"$node"); domain=$(jq -r '.domain' <<<"$node"); port=$(jq -r '.port' <<<"$node")
-  uuid=$(jq -r '.uuid' <<<"$secret"); flow=$(jq -r '.flow // ""' <<<"$node"); security=$(jq -r '.security' <<<"$node")
-  uri="vless://${uuid}@$(format_hostport "$address" "$port")?encryption=none&security=${security}&type=tcp&sni=$(urlencode "$domain")"
-  [[ -z "$flow" ]] || uri+="&flow=$(urlencode "$flow")"
-  if [[ "$security" == reality ]]; then
-    uri+="&pbk=$(urlencode "$(jq -r '.reality_public_key' <<<"$node_secret")")&sid=$(urlencode "$(jq -r '.reality_short_id' <<<"$node_secret")")&fp=chrome"
+# All client formats consume the same effective native Xray outbound. This
+# prevents a transport/security override from leaving a stale TCP share link.
+protocol_vless_export_result() {
+  local mode=$1 node=$2 secret=$3 node_secret=$4 outbound name packet
+  outbound=$(vless_xray_client_outbound "$node" "$secret" "$node_secret") || return 1
+  name=$(jq -r '.name' <<<"$node") || return 1
+  packet=$(jq -r '.xray.packet_encoding // ""' <<<"$node") || return 1
+  jq -c --arg mode "$mode" --arg name "$name" --arg packet_encoding "$packet" \
+    -f "$SBM_LIB/libexec/vless_export.jq" <<<"$outbound"
+}
+
+protocol_vless_export_value() {
+  local mode=$1 node=$2 secret=$3 node_secret=$4 result
+  result=$(protocol_vless_export_result "$mode" "$node" "$secret" "$node_secret") || return 1
+  if ! jq -e '.ok==true' <<<"$result" >/dev/null; then
+    log_warn "$(jq -r '.reason' <<<"$result")"
+    return 1
   fi
-  printf '%s#%s\n' "$uri" "$(urlencode "$(jq -r '.name' <<<"$node")")"
+  if [[ "$mode" == uri ]]; then jq -r '.value' <<<"$result"
+  else jq -c '.value' <<<"$result"; fi
+}
+
+protocol_vless_share() {
+  protocol_vless_export_value uri "$1" "$2" "$3"
 }
 
 protocol_vless_client_outbound() {
-  local node=$1 secret=$2 node_secret=$3 security domain flow base
-  security=$(jq -r '.security' <<<"$node"); domain=$(jq -r '.domain' <<<"$node"); flow=$(jq -r '.flow // ""' <<<"$node")
-  base=$(jq -n --arg tag "proxy-$(jq -r '.id' <<<"$node")" --arg server "$(jq -r '.server_address' <<<"$node")" \
-    --argjson port "$(jq -r '.port' <<<"$node")" --arg uuid "$(jq -r '.uuid' <<<"$secret")" --arg flow "$flow" \
-    '{type:"vless",tag:$tag,server:$server,server_port:$port,uuid:$uuid,flow:$flow,network:"tcp"}')
-  if [[ "$security" == reality ]]; then
-    jq --arg domain "$domain" --arg public "$(jq -r '.reality_public_key' <<<"$node_secret")" \
-      --arg short_id "$(jq -r '.reality_short_id' <<<"$node_secret")" \
-      '. + {tls:{enabled:true,server_name:$domain,utls:{enabled:true,fingerprint:"chrome"},reality:{enabled:true,public_key:$public,short_id:$short_id}}}' <<<"$base"
-  else
-    jq --arg domain "$domain" '. + {tls:{enabled:true,server_name:$domain}}' <<<"$base"
-  fi
+  protocol_vless_export_value singbox "$1" "$2" "$3"
+}
+
+protocol_vless_mihomo_outbound() {
+  protocol_vless_export_value mihomo "$1" "$2" "$3"
 }

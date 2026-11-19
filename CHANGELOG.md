@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.73
+
+- Treat the native Xray VLESS inbound/outbound objects as the single source of
+  truth. `sb node set` and the panel edit transport (RAW, WebSocket, gRPC,
+  HTTPUpgrade, XHTTP, mKCP, Hysteria, XDrive), security (none/TLS/Reality),
+  client SNI/fingerprint/ALPN, Flow, UDP packet encoding and VLESS Encryption
+  (X25519 or ML-KEM-768 via `xray vlessenc`) as one atomic candidate.
+- Derive the client outbound from the effective server inbound and reject
+  mismatched pairs (Reality public key/SNI/shortId, ML-DSA-65 verify, ECH,
+  ALPN, paths, Host, XHTTP mode, Vision constraints) before installation; with
+  Xray present the client outbound is also checked by `xray run -test`.
+- Export the same profile as VLESS URI, sing-box, mihomo and full Xray client
+  configurations. Formats that cannot express a field skip the node with a
+  reason instead of emitting a lossy configuration; the dynamic subscription
+  serves Xray and mihomo profiles plus a compatibility report.
+- Detect UDP listeners for mKCP, Hysteria and XHTTP/H3 when checking ports.
+
 ## 0.1.0-alpha.72
 
 - Run Xray and sing-box together: Xray owns VLESS, while sing-box owns all other

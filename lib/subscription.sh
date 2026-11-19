@@ -8,37 +8,47 @@ subscription_duration_seconds() {
   [[ "$unit" == h ]] && printf '%s\n' "$((number * 3600))" || printf '%s\n' "$((number * 86400))"
 }
 
+subscription_build_bundle() (
+  local output=$1 stage format
+  mkdir -p "$(dirname "$output")" || return 1
+  stage=$(mktemp -d "$(dirname "$output")/.bundle.XXXXXX") || return 1
+  trap 'rm -rf -- "$stage"' EXIT
+  export_substore_links "$stage/links" || return 1
+  export_vless_compatibility_json >"$stage/compatibility.json" || return 1
+  # Each profile has its own compatibility boundary. Failure of one client
+  # format must not roll back a valid server node or corrupt other formats.
+  for format in mixed tun; do
+    if ! export_client_config "$stage/$format.json" "$format" >/dev/null; then
+      printf 'null\n' >"$stage/$format.json" || return 1
+    fi
+  done
+  if ! export_xray_client_config "$stage/xray.json" >/dev/null; then printf 'null\n' >"$stage/xray.json" || return 1; fi
+  if ! export_mihomo_client_config "$stage/mihomo.json" >/dev/null; then printf 'null\n' >"$stage/mihomo.json" || return 1; fi
+  jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" \
+    --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" \
+    --slurpfile xray "$stage/xray.json" --slurpfile mihomo "$stage/mihomo.json" --slurpfile compatibility "$stage/compatibility.json" '
+      {schema_version:1,updated_at:$updated,substore:$links,compatibility:$compatibility[0],
+       profiles:{mixed:$mixed[0],tun:$tun[0],xray:$xray[0],mihomo:$mihomo[0]}} |
+      .errors=(.profiles|to_entries|map(select(.value==null)|{key:.key,value:"没有兼容节点，或此格式的客户端配置无法生成；请查看 compatibility。"})|from_entries)
+    ' >"$stage/bundle.json" || return 1
+  chmod 0640 "$stage/bundle.json" && set_group_if_exists "$SBM_SERVICE_USER" "$stage/bundle.json" || return 1
+  mv -f "$stage/bundle.json" "$output"
+)
+
 subscription_refresh_live() {
-  local extra_mode=${1:-} meta mode stage now modes=''
+  local extra_mode=${1:-} meta mode now needed=false
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || return 0
   now=$(date +%s)
   for meta in "$SBM_SUBSCRIPTIONS"/*.meta.json; do
     [[ -f "$meta" ]] || continue
     mode=$(jq -er --argjson now "$now" 'select(.live==true and (.expires_at_epoch==null or .expires_at_epoch>$now)) | .mode' "$meta") || continue
-    case "$mode" in mixed|tun) modes+=" $mode";; *) log_error '动态订阅模式无效。'; return 1;; esac
+    case "$mode" in mixed|tun|xray|mihomo) needed=true;; *) log_error '动态订阅模式无效。'; return 1;; esac
   done
-  modes+=" $extra_mode"
-  [[ "$modes" == *mixed* || "$modes" == *tun* ]] || return 0
-  mkdir -p "$SBM_SUBSCRIPTIONS" || return 1
-  stage=$(mktemp -d "$SBM_SUBSCRIPTIONS/.live.XXXXXX") || return 1
-  # Build one complete generation. HTTP workers only read this atomic bundle;
-  # they never need access to state, node secrets, or privileged commands.
-  local rc=0
-  (
-    export_substore_links "$stage/links" || exit 1
-    for mode in mixed tun; do
-      if [[ " $modes " == *" $mode "* ]]; then
-        export_client_config "$stage/$mode.json" "$mode" >/dev/null || exit 1
-      else printf 'null\n' >"$stage/$mode.json"; fi
-    done
-    jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" \
-      --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" \
-      '{schema_version:1,updated_at:$updated,substore:$links,profiles:{mixed:$mixed[0],tun:$tun[0]}}' >"$stage/live.json" || exit 1
-    chmod 0640 "$stage/live.json" && set_group_if_exists "$SBM_SERVICE_USER" "$stage/live.json" || exit 1
-    mv -f "$stage/live.json" "$SBM_SUBSCRIPTIONS/live.json"
-  ) || rc=$?
-  rm -rf "$stage"
-  return "$rc"
+  if [[ -n "$extra_mode" ]]; then
+    case "$extra_mode" in mixed|tun|xray|mihomo) needed=true;; *) return 1;; esac
+  fi
+  [[ "$needed" == true ]] || return 0
+  subscription_build_bundle "$SBM_SUBSCRIPTIONS/live.json"
 }
 
 subscription_write_service() {
@@ -119,35 +129,32 @@ subscription_reconcile() {
 }
 
 _subscription_create() {
-  local duration=${1:-7d} mode=${2:-mixed} live=${3:-false} base=${4:-} seconds now expires token digest profile substore_profile meta
-  [[ "$mode" == mixed || "$mode" == tun ]] || usage_die '客户端模式必须是 mixed 或 tun。'
+  local duration=${1:-7d} mode=${2:-mixed} live=${3:-false} base=${4:-} seconds now expires token digest profile substore_profile meta bundle
+  [[ "$mode" == mixed || "$mode" == tun || "$mode" == xray || "$mode" == mihomo ]] || usage_die '客户端模式必须是 mixed、tun、xray 或 mihomo。'
   [[ "$live" == true || "$live" == false ]] || return 1
   now=$(date +%s)
   if [[ "$duration" == never && "$live" == true ]]; then expires=null
   else seconds=$(subscription_duration_seconds "$duration") || return 1; expires=$((now + seconds)); fi
   token=$(random_password 36); digest=$(printf '%s' "$token" | sha256sum | awk '{print $1}')
   mkdir -p "$SBM_SUBSCRIPTIONS"
-  profile="$SBM_SUBSCRIPTIONS/$digest.profile.json"; substore_profile="$SBM_SUBSCRIPTIONS/$digest.substore.txt"; meta="$SBM_SUBSCRIPTIONS/$digest.meta.json"
+  profile="$SBM_SUBSCRIPTIONS/$digest.profile.json"; substore_profile="$SBM_SUBSCRIPTIONS/$digest.substore.txt"; meta="$SBM_SUBSCRIPTIONS/$digest.meta.json"; bundle="$SBM_SUBSCRIPTIONS/$digest.bundle.json"
   if ! (
     if [[ "$live" == true ]]; then subscription_refresh_live "$mode" || exit 1
     else
-      export_client_config "$profile" "$mode" || exit 1
-      export_substore_links "$substore_profile" || exit 1
-      chmod 0640 "$profile" "$substore_profile" || exit 1
-      set_group_if_exists "$SBM_SERVICE_USER" "$profile" || exit 1
-      set_group_if_exists "$SBM_SERVICE_USER" "$substore_profile" || exit 1
+      subscription_build_bundle "$bundle" || exit 1
     fi
     jq -n --arg id "${digest:0:12}" --arg mode "$mode" --argjson live "$live" --argjson created "$now" --argjson expires "$expires" \
       '{schema_version:1,id:$id,mode:$mode,live:$live,created_at_epoch:$created,expires_at_epoch:$expires}' >"$meta.tmp" || exit 1
     chmod 0640 "$meta.tmp" && set_group_if_exists "$SBM_SERVICE_USER" "$meta.tmp" && mv -f "$meta.tmp" "$meta" || exit 1
     subscription_reconcile 1
   ); then
-    rm -f "$profile" "$substore_profile" "$meta" "$meta.tmp"
+    rm -f "$profile" "$substore_profile" "$bundle" "$meta" "$meta.tmp"
     subscription_reconcile 1 || true
     return 1
   fi
   printf '订阅 ID：%s\n有效期至 epoch：%s\n本机 URL：http://127.0.0.1:%s/sub/%s\nSub-Store URL：http://127.0.0.1:%s/sub/%s?format=substore\n' \
     "${digest:0:12}" "$expires" "$SBM_SUBSCRIPTION_PORT" "$token" "$SBM_SUBSCRIPTION_PORT" "$token"
+  printf '格式参数：?format=xray / ?format=mihomo / ?format=sing-box / ?format=substore / ?format=compatibility\n'
   [[ "$live" != true ]] || printf '更新方式：动态（节点变更后自动更新，URL 不变）\n'
   [[ -z "$base" ]] || printf '远程 Sub-Store URL：%s/sub/%s?format=substore\n' "${base%/}" "$token"
   log_warn '订阅令牌只显示一次。不要直接向公网开放该端口；请使用 SSH 转发或受认证的 TLS 代理。'
@@ -163,7 +170,7 @@ subscription_create_cli() {
     case "$1" in
       --live) live=true; shift;;
       --base-url) [[ $# -ge 2 ]] || usage_die '--base-url 缺少地址'; base=$2; shift 2;;
-      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun] [--live] [--base-url HTTPS_URL]';;
+      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun|xray|mihomo] [--live] [--base-url HTTPS_URL]';;
       *)
         case "$positional" in 0) duration=$1;; 1) mode=$1;; *) usage_die '订阅参数过多。';; esac
         positional=$((positional+1)); shift;;
@@ -219,7 +226,7 @@ _subscription_revoke() {
     digest=$match
   else digest=$(printf '%s' "$token" | sha256sum | awk '{print $1}'); fi
   [[ -f "$SBM_SUBSCRIPTIONS/$digest.meta.json" ]] || die '订阅令牌不存在。'
-  rm -f "$SBM_SUBSCRIPTIONS/$digest.meta.json" "$SBM_SUBSCRIPTIONS/$digest.profile.json" "$SBM_SUBSCRIPTIONS/$digest.substore.txt"
+  rm -f "$SBM_SUBSCRIPTIONS/$digest.meta.json" "$SBM_SUBSCRIPTIONS/$digest.profile.json" "$SBM_SUBSCRIPTIONS/$digest.substore.txt" "$SBM_SUBSCRIPTIONS/$digest.bundle.json"
   log_ok "订阅已撤销：${digest:0:12}"
 }
 subscription_revoke() {

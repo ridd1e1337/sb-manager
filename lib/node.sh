@@ -169,8 +169,9 @@ node_validate_json_object() {
 
 _node_add() {
   local type=$1; shift
-  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='xtls-rprx-vision' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
-  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0
+  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
+  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_preview='' vless_network=''
+  local -a vless_options=()
   while (($#)); do
     case "$1" in
       --listen) proxy_listen=${2:?}; proxy_listen_supplied=1; shift 2;;
@@ -178,7 +179,11 @@ _node_add() {
       --domain) domain=${2:?}; shift 2;; --address) address=${2:?}; address_supplied=1; address_source=manual; shift 2;; --path) path=${2:?}; shift 2;;
       --method) method=${2:?}; shift 2;; --network) network=${2:?}; shift 2;; --no-mux) mux=false; shift;;
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
-      --security) security=${2:?}; shift 2;; --flow) flow=${2:?}; shift 2;;
+      --security) security=${2:?}; shift 2;;
+      --flow) (($# >= 2)) || usage_die '缺少 flow 值；可显式传空字符串。'; flow=$2; shift 2;;
+      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json)
+        (($# >= 2)) || usage_die "缺少参数值：$1"
+        vless_options+=("$1" "$2"); shift 2;;
       --handshake-server) handshake_server=${2:?}; shift 2;; --handshake-port) handshake_port=${2:?}; shift 2;;
       --congestion-control) congestion_control=${2:?}; shift 2;;
       --strict-mode) strict_mode=${2:?}; shift 2;; --wildcard-sni) wildcard_sni=${2:?}; shift 2;; --quic) network=udp; shift;;
@@ -200,6 +205,18 @@ _node_add() {
     case "$type" in socks|socks5|http|mixed) ;; *) usage_die '--listen 目前仅用于 socks/http/mixed 代理入口。';; esac
   fi
   local protocol base transport secret node_secret='' node candidate user_secret_path default_address created_at reality_secret='' snell_obfs_mode snell_obfs_host
+  if [[ "$type" == vless ]]; then
+    [[ -z "$path" ]] || vless_options+=(--path "$path")
+    vless_preview=$(jq -n --arg domain "$domain" --arg security "$security" --arg flow "$flow" \
+      --arg hs "$handshake_server" --argjson hp "$handshake_port" --argjson inbound "$xray_inbound_json" --argjson outbound "$xray_outbound_json" \
+      '{protocol:"vless",domain:$domain,security:$security,flow:$flow,handshake_server:$hs,handshake_port:$hp,xray:{inbound:$inbound,outbound:$outbound}}') || return 1
+    vless_preview=$(vless_config_apply "$vless_preview" "${vless_options[@]}") || return 1
+    security=$(jq -r '.security' <<<"$vless_preview"); flow=$(jq -r '.flow // ""' <<<"$vless_preview")
+    vless_network=$(vless_node_network "$vless_preview") || return 1
+    xray_inbound_json=$(jq -c '.xray.inbound // {}' <<<"$vless_preview"); xray_outbound_json=$(jq -c '.xray.outbound // {}' <<<"$vless_preview")
+  elif (( ${#vless_options[@]} > 0 )); then
+    usage_die 'VLESS 传输和加密参数不能用于其他协议。'
+  fi
   default_address=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
   case "$type" in
     vmess|vmess-ws-cf)
@@ -265,9 +282,21 @@ _node_add() {
       protocol=tuic; base=tuic; transport=udp; port=${port:-443}; domain=${domain:?TUIC 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-TUIC}; address=${address:-${default_address:-$domain}}; case "$congestion_control" in cubic|new_reno|bbr) ;; *) die 'TUIC 拥塞控制必须是 cubic、new_reno 或 bbr。';; esac; secret=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}')
       ;;
     vless)
-      protocol=vless; base=vless; transport=tcp; port=${port:-443}; [[ "$security" == tls || "$security" == reality ]] || die 'VLESS security 必须是 tls 或 reality。'; if [[ "$security" == reality && -z "$domain" ]]; then domain=www.apple.com; fi; [[ -n "$domain" ]] || die 'VLESS 必须指定 --domain。'; name=${name:-VLESS}; address=${address:-${default_address:-$domain}}; [[ "$security" != reality || -n "$handshake_server" ]] || die 'VLESS Reality 必须指定 --handshake-server。'; validate_domain "$domain" || die "无效域名：$domain"; validate_port "$handshake_port" || die "无效 Reality 握手端口：$handshake_port"; case "$flow" in ''|xtls-rprx-vision) ;; *) die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。';; esac
+      protocol=vless; base=vless
+      transport=$(vless_node_listener_kinds "$vless_preview") || return 1
+      port=${port:-443}
+      case "$security" in none|tls|reality) ;; *) die 'VLESS security 必须是 none、tls 或 reality。';; esac
+      if [[ "$security" == reality && -z "$domain" ]]; then
+        domain=$(jq -r '.xray.inbound.streamSettings.realitySettings.serverNames[0] // "www.apple.com"' <<<"$vless_preview")
+      fi
+      [[ "$security" == none ]] || { validate_domain "$domain" || die 'VLESS TLS/Reality 需要有效域名。'; }
+      name=${name:-VLESS}; address=${address:-${default_address:-$domain}}
+      case "$flow" in ''|xtls-rprx-vision) ;; *) die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。';; esac
       if [[ "$security" == reality ]]; then
+        if [[ -z "$handshake_server" ]] && jq -e '.xray.inbound.streamSettings.realitySettings.target // .xray.inbound.streamSettings.realitySettings.dest' <<<"$vless_preview" >/dev/null; then handshake_server=$domain; fi
+        [[ -n "$handshake_server" ]] || die 'Reality 必须指定握手目标或原生 target。'
         validate_domain "$handshake_server" || validate_ipv4 "$handshake_server" || validate_ipv6 "$handshake_server" || die 'Reality 握手目标必须是域名或 IP。'
+        validate_port "$handshake_port" || die '无效 Reality 握手端口。'
       fi
       if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray && ! -x "$SBM_XRAY_BIN" ]]; then _xray_install >&2 || return 1; fi
       secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') || return 1
@@ -309,7 +338,7 @@ _node_add() {
   if [[ "$address_supplied" == 0 ]]; then
     case "$protocol" in
       vless)
-        if [[ "$security" == reality ]]; then address=$(node_auto_address ''); else address=$(node_auto_address "$domain"); fi
+        if [[ "$security" != tls ]]; then address=$(node_auto_address ''); else address=$(node_auto_address "$domain"); fi
         ;;
       shadowtls) address=$(node_auto_address '') ;;
       *) address=$(node_auto_address "$domain");;
@@ -330,10 +359,10 @@ _node_add() {
   [[ -n "$id" ]] || id=$(state_unique_id "$base")
   validate_node_id "$id" || die "节点 ID 只能包含小写字母、数字、点、下划线和连字符。"
   state_node_exists "$id" && die "节点已存在：$id"
-  if [[ "$enabled" == true ]] && node_port_in_state "$transport" "$port"; then
+  if [[ "$enabled" == true && -n "$transport" ]] && node_port_in_state "$transport" "$port"; then
     die "已启用节点或复用入口占用 ${port}/${transport^^}；请换端口。"
   fi
-  if [[ "$enabled" == true ]] && host_port_in_use "$transport" "$port"; then
+  if [[ "$enabled" == true && -n "$transport" ]] && host_port_in_use "$transport" "$port"; then
     die "系统已有程序监听 ${port}/${transport^^}；请换端口或先停用冲突服务。"
   fi
   created_at=$(now_iso)
@@ -383,6 +412,9 @@ _node_add() {
   ' <<<"$node")
   node=$(jq --argjson inbound "$inbound_json" --argjson outbound "$outbound_json" ".singbox={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
   node=$(jq --argjson inbound "$xray_inbound_json" --argjson outbound "$xray_outbound_json" ".xray={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
+  if [[ "$protocol" == vless ]]; then
+    node=$(jq --argjson xray "$(jq -c '.xray' <<<"$vless_preview")" '.xray=$xray' <<<"$node") || return 1
+  fi
   if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
     node=$(jq '.credential_revision=1 | if .protocol=="snell" then .credential_mode="single" else . end' <<<"$node")
   fi
@@ -392,7 +424,7 @@ _node_add() {
   if [[ "$enabled" == true ]]; then
     case "$protocol" in
       anytls|hysteria2|trojan|tuic|naive) _cert_prepare_node_domain "$domain" || return 1;;
-      vless) [[ "$security" != tls ]] || { _cert_prepare_node_domain "$domain" || return 1; };;
+      vless) if [[ "$security" == tls ]] && ! jq -e '(.xray.inbound.streamSettings.tlsSettings.certificates // [])|length>0' <<<"$node" >/dev/null; then _cert_prepare_node_domain "$domain" || return 1; fi;;
     esac
   fi
   user_secret_path=$(state_user_secret_path "$id" default)
@@ -568,7 +600,15 @@ _node_set() {
   rm -f "$candidate"
 }
 node_set() {
-  local id=$1; shift
+  local id=$1 node; shift
+  node=$(state_get_node "$id") || return 1
+  if [[ $(jq -r '.protocol // ""' <<<"$node") == vless ]]; then
+    local arg
+    for arg in "$@"; do
+      case "$arg" in --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--xray-inbound-json|--xray-outbound-json)
+        node_vless_configure "$id" "$@"; return $?;; esac
+    done
+  fi
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then with_lock _node_set "$id" "$@"; else with_state_transaction node-edit _node_set "$id" "$@"; fi
 }
 

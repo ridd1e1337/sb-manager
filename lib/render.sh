@@ -5,7 +5,8 @@ node_transport_kinds() {
   local node=$1 protocol network
   protocol=$(jq -r '.protocol' <<<"$node")
   case "$protocol" in
-    vmess-ws-cf|anytls|trojan|vless|shadowtls|snell|http|socks|mixed) printf 'tcp\n' ;;
+    vmess-ws-cf|anytls|trojan|shadowtls|snell|http|socks|mixed) printf 'tcp\n' ;;
+    vless) vless_node_listener_kinds "$node" ;;
     hysteria2|tuic) printf 'udp\n' ;;
     naive) jq -r '.network // "tcp"' <<<"$node" ;;
     shadowsocks)
@@ -135,7 +136,8 @@ validate_state_semantics() {
         [[ -z ${occupied[$key]+x} ]] || die "端口冲突：$id 与 ${occupied[$key]} 同时占用 ${port}/${kind^^}。"
         occupied[$key]=$id
       done < <(node_transport_kinds "$node")
-      if [[ "$protocol" == anytls || "$protocol" == hysteria2 || "$protocol" == trojan || "$protocol" == tuic || "$protocol" == naive || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == tls) ]]; then
+      if [[ "$protocol" == anytls || "$protocol" == hysteria2 || "$protocol" == trojan || "$protocol" == tuic || "$protocol" == naive || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == tls) ]] \
+        && ! { [[ "$protocol" == vless ]] && jq -e '(.xray.inbound.streamSettings.tlsSettings.certificates // [])|length>0' <<<"$node" >/dev/null; }; then
         domain=$(jq -r '.domain // ""' <<<"$node")
         validate_domain "$domain" || die "节点 $id 的 TLS 域名无效：$domain"
         cert_dir="$SBM_CERTS/$domain"
@@ -146,6 +148,11 @@ validate_state_semantics() {
       done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
       if [[ "$protocol" == hysteria2 || "$protocol" == snell || "$protocol" == shadowtls || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
         [[ -r "$(state_secret_path "$id")" ]] || die "节点 $id 缺少协议级密钥文件。"
+      fi
+      if [[ "$protocol" == vless ]]; then
+        local vless_secret='{}'
+        [[ ! -r "$(state_secret_path "$id")" ]] || vless_secret=$(state_get_secret "$id") || return 1
+        vless_profile_validate "$node" "$vless_secret" "$state" || return 1
       fi
       if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
         [[ $(jq -r '.credential_revision // 0' <<<"$node") == 1 ]] || die "节点 $id 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"

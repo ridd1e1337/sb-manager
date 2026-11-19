@@ -42,13 +42,14 @@ node_client_outbound() {
     hysteria2) outbound=$(protocol_hy2_client_outbound "$node" "$secret" "$node_secret") ;;
     trojan) outbound=$(protocol_trojan_client_outbound "$node" "$secret") ;;
     tuic) outbound=$(protocol_tuic_client_outbound "$node" "$secret") ;;
-    vless) outbound=$(protocol_vless_client_outbound "$node" "$secret" "$node_secret") ;;
+    vless) outbound=$(protocol_vless_client_outbound "$node" "$secret" "$node_secret") || return 1 ;;
     socks|http|mixed) outbound=$(protocol_proxy_client_outbound "$node" "$secret") ;;
     naive) outbound=$(protocol_naive_client_outbound "$node" "$secret") ;;
     shadowtls) outbound=$(protocol_shadowtls_client_outbound "$node" "$secret" "$node_secret" "$tag") || return 1 ;;
     snell) outbound=$(protocol_snell_client_outbound "$node" "$secret" "$node_secret") ;;
     *) die "不支持导出的协议：$protocol" ;;
   esac
+  [[ -n "$outbound" ]] || return 1
   outbound=$(jq --arg tag "$tag" 'if type=="array" then . else .tag=$tag end' <<<"$outbound")
   override=$(singbox_node_override "$node" outbound)
   singbox_apply_override "$outbound" "$override"
@@ -78,7 +79,8 @@ export_substore_links() {
   while IFS= read -r node; do
     id=$(jq -r '.id' <<<"$node")
     while IFS= read -r user_id; do
-      if line=$(node_substore_line "$id" "$user_id" 2>/dev/null); then printf '%s\n' "$line" >>"$tmp"; fi
+      if line=$(node_substore_line "$id" "$user_id"); then printf '%s\n' "$line" >>"$tmp" || return 1
+      else log_warn "Sub-Store 链接已排除无法完整表达的节点：$id/$user_id；可导出原生 Xray JSON。"; fi
     done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")
   chmod 0600 "$tmp"
@@ -98,6 +100,10 @@ node_share() {
   node_secret='{}'; [[ ! -r $(state_secret_path "$id") ]] || node_secret=$(state_get_secret "$id")
   out_dir="$SBM_EXPORTS/nodes/$id/$user_id"; mkdir -p "$out_dir"; chmod 0700 "$out_dir" 2>/dev/null || true
   rm -f "$out_dir/surge.conf" "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"
+  if [[ "$protocol" == vless ]]; then
+    node_share_vless "$id" "$user_id" "$qr" "$out_dir"
+    return
+  fi
   if [[ "$protocol" == snell ]]; then
     if native=$(protocol_snell_surge_share "$node" "$secret" "$node_secret"); then
       printf '%s\n' "$native" >"$out_dir/surge.conf"; chmod 0600 "$out_dir/surge.conf"
@@ -164,10 +170,10 @@ node_share_all() (
     id=$(jq -r '.id' <<<"$node")
     protocol=$(jq -r '.protocol' <<<"$node")
     while IFS= read -r user_id; do
-      if uri=$(node_share_uri "$id" "$user_id" 2>/dev/null); then
+      if uri=$(node_share_uri "$id" "$user_id"); then
         printf '%s\n' "$uri" >>"$tmp" || return 1
         if [[ "$protocol" != snell ]]; then printf '%s\n' "$uri" >>"$display_tmp" || return 1; fi
-      fi
+      else log_warn "链接文件已排除无法完整表达的节点：$id/$user_id。"; fi
       if [[ "$protocol" == snell ]]; then
         if native=$(node_substore_line "$id" "$user_id" 2>/dev/null); then
           printf '%s\n' "$native" >>"$surge_tmp" || return 1
@@ -193,10 +199,14 @@ export_all_outbounds() {
   while IFS= read -r node; do
     id=$(jq -r '.id' <<<"$node")
     while IFS= read -r user_id; do
-      ob=$(node_client_outbound "$id" "$user_id") || return 1
+      if ! ob=$(node_client_outbound "$id" "$user_id"); then
+        log_warn "sing-box outbound 已排除不兼容节点：$id/$user_id。"
+        continue
+      fi
       arr=$(jq -c --argjson x "$ob" '. + ($x | if type=="array" then . else [.] end)' <<<"$arr")
     done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")
+  [[ "$arr" != '[]' ]] || { log_error '没有可导出的 sing-box 节点。'; return 1; }
   printf '%s\n' "$arr" | jq . >"$out"; chmod 0600 "$out"
   log_ok "已导出客户端 outbound 数组：$out"
 }
@@ -226,11 +236,15 @@ export_client_config() {
   mkdir -p "$(dirname "$output")"
   while IFS= read -r node; do
     while IFS= read -r user_id; do
-      ob=$(node_client_outbound "$(jq -r '.id' <<<"$node")" "$user_id") || return 1
+      if ! ob=$(node_client_outbound "$(jq -r '.id' <<<"$node")" "$user_id"); then
+        [[ -z "$selected_node" ]] || return 1
+        log_warn "sing-box 配置已排除不兼容节点：$(jq -r '.id' <<<"$node")/$user_id。"
+        continue
+      fi
       outbounds=$(jq -c --argjson x "$ob" '. + ($x | if type=="array" then . else [.] end)' <<<"$outbounds")
     done < <(jq -r --arg user "$selected_user" '.users[] | select(if $user=="" then .enabled==true else .id==$user end) | .id' <<<"$node")
   done < <(jq -c --arg id "$selected_node" '.nodes[]? | select(if $id=="" then .enabled==true else .id==$id end)' "$SBM_STATE")
-  [[ -z "$selected_node" || "$outbounds" != '[]' ]] || die '所选节点没有可导出的用户。'
+  [[ "$outbounds" != '[]' ]] || { log_error '没有可导出的 sing-box 节点，请使用原生 Xray 或兼容的 mihomo。'; return 1; }
   final=$(jq -r 'first(.[]?.tag) // "direct"' <<<"$outbounds")
   strategy=$(jq -r '.settings.outbound_ip_strategy // "prefer_ipv4"' "$SBM_STATE")
   dns=$(jq -n --arg strategy "$strategy" '{servers:[{type:"local",tag:"dns-local"}],final:"dns-local",strategy:$strategy}')
@@ -259,4 +273,147 @@ export_client_config() {
   if ! core_validate_config "$tmp"; then rm -f "$tmp"; return 1; fi
   chmod 0600 "$tmp" && mv -f "$tmp" "$output" || { rm -f "$tmp"; return 1; }
   log_ok "已导出 $mode 模式 sing-box 客户端配置：$output"
+}
+
+node_xray_client_outbound() {
+  local id=$1 user_id=${2:-} node user secret node_secret='{}' outbound
+  node=$(state_get_node "$id") || return 1
+  [[ -n "$node" && $(jq -r '.protocol' <<<"$node") == vless ]] || { log_warn '原生 Xray 客户端导出仅接入 VLESS。'; return 1; }
+  if declare -F nginx_stream_public_node >/dev/null 2>&1; then node=$(nginx_stream_public_node "$node") || return 1; fi
+  [[ -n "$user_id" ]] || user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
+  [[ -n "$user_id" ]] || return 1
+  user=$(state_get_user "$id" "$user_id") || return 1
+  [[ -n "$user" ]] || return 1
+  secret=$(jq -s '.[0]+.[1]' <(printf '%s\n' "$user") <(state_get_user_secret "$id" "$user_id")) || return 1
+  [[ ! -r "$(state_secret_path "$id")" ]] || node_secret=$(state_get_secret "$id") || return 1
+  outbound=$(vless_xray_client_outbound "$node" "$secret" "$node_secret") || return 1
+  jq --arg tag "proxy-$id-$user_id" '.tag=$tag' <<<"$outbound"
+}
+
+node_mihomo_client_outbound() {
+  local id=$1 user_id=${2:-} node user secret node_secret='{}' native name
+  node=$(state_get_node "$id") || return 1
+  [[ -n "$node" ]] || return 1
+  if declare -F nginx_stream_public_node >/dev/null 2>&1; then node=$(nginx_stream_public_node "$node") || return 1; fi
+  [[ -n "$user_id" ]] || user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
+  [[ -n "$user_id" ]] || return 1
+  user=$(state_get_user "$id" "$user_id") || return 1
+  [[ -n "$user" ]] || return 1
+  secret=$(jq -s '.[0]+.[1]' <(printf '%s\n' "$user") <(state_get_user_secret "$id" "$user_id")) || return 1
+  [[ ! -r "$(state_secret_path "$id")" ]] || node_secret=$(state_get_secret "$id") || return 1
+  case "$(jq -r '.protocol' <<<"$node")" in
+    vless) native=$(protocol_vless_mihomo_outbound "$node" "$secret" "$node_secret") || return 1;;
+    snell) native=$(protocol_snell_mihomo_share "$node" "$secret" "$node_secret") || return 1;;
+    *) log_warn '本原生 mihomo 导出入口转换 VLESS/Snell；其他协议请使用 Sub-Store。'; return 1;;
+  esac
+  name=$(jq -r '.name' <<<"$node") || return 1
+  # Keep stable unique identifiers even when different nodes share a display name.
+  jq --arg name "$name [$id/$user_id]" '.name=$name' <<<"$native"
+}
+
+export_xray_client_config() (
+  local output=${1:-$SBM_EXPORTS/xray-client.json} selected_node=${2:-} selected_user=${3:-}
+  local node id user_id outbound outbounds='[]' tmp first
+  mkdir -p "$(dirname "$output")" || return 1
+  while IFS= read -r node; do
+    id=$(jq -r '.id' <<<"$node") || return 1
+    while IFS= read -r user_id; do
+      if outbound=$(node_xray_client_outbound "$id" "$user_id"); then
+        outbounds=$(jq --argjson outbound "$outbound" '. + [$outbound]' <<<"$outbounds") || return 1
+      elif [[ -n "$selected_node" ]]; then return 1
+      else log_warn "Xray 配置已排除无法转换的节点：$id/$user_id。"; fi
+    done < <(jq -r --arg user "$selected_user" '.users[]|select(if $user=="" then .enabled else .id==$user end)|.id' <<<"$node")
+  done < <(jq -c --arg id "$selected_node" '.nodes[]?|select(if $id=="" then .enabled else .id==$id end)' "$SBM_STATE")
+  [[ "$outbounds" != '[]' ]] || { log_error '没有可导出的 Xray VLESS 节点。'; return 1; }
+  first=$(jq -r '.[0].tag' <<<"$outbounds") || return 1
+  if ! jq -e '[.[].tag,"direct"] as $tags | all(.[]; (.proxySettings.tag // .streamSettings.sockopt.dialerProxy // "") as $tag | $tag=="" or ($tags|index($tag))!=null)' <<<"$outbounds" >/dev/null; then
+    log_error '原生客户端引用了未包含的链式出站，请使用单节点 outbound 文件接入自己的完整配置。'; return 1
+  fi
+  tmp=$(mktemp "$(dirname "$output")/.xray-client.XXXXXX") || return 1
+  trap 'rm -f -- "$tmp"' EXIT
+  jq -n --arg first "$first" --argjson outbounds "$outbounds" '{
+    log:{loglevel:"warning"},
+    inbounds:[{tag:"socks-in",listen:"127.0.0.1",port:2080,protocol:"socks",settings:{auth:"noauth",udp:true}},
+      {tag:"http-in",listen:"127.0.0.1",port:2081,protocol:"http",settings:{}}],
+    outbounds:($outbounds+[{tag:"direct",protocol:"freedom"}]),
+    routing:{rules:[{type:"field",inboundTag:["socks-in","http-in"],outboundTag:$first}]}
+  }' >"$tmp" || return 1
+  if [[ -x "$SBM_XRAY_BIN" ]]; then xray_validate_config "$SBM_XRAY_BIN" "$tmp" || return 1; fi
+  chmod 0600 "$tmp" && mv -f "$tmp" "$output" || return 1
+  log_ok "已导出 Xray 客户端配置：$output；默认出口：$first；SOCKS 2080 / HTTP 2081。"
+)
+
+export_mihomo_client_config() (
+  local output=${1:-$SBM_EXPORTS/mihomo-client.json} selected_node=${2:-} selected_user=${3:-}
+  local node id user_id proxy proxies='[]' tmp
+  mkdir -p "$(dirname "$output")" || return 1
+  while IFS= read -r node; do
+    id=$(jq -r '.id' <<<"$node") || return 1
+    while IFS= read -r user_id; do
+      if proxy=$(node_mihomo_client_outbound "$id" "$user_id"); then
+        proxies=$(jq --argjson proxy "$proxy" '. + [$proxy]' <<<"$proxies") || return 1
+      elif [[ -n "$selected_node" ]]; then return 1
+      else log_warn "mihomo 配置已排除无法转换的节点：$id/$user_id。"; fi
+    done < <(jq -r --arg user "$selected_user" '.users[]|select(if $user=="" then .enabled else .id==$user end)|.id' <<<"$node")
+  done < <(jq -c --arg id "$selected_node" '.nodes[]?|select(if $id=="" then .enabled else .id==$id end)' "$SBM_STATE")
+  [[ "$proxies" != '[]' ]] || { log_error '没有可导出的 mihomo VLESS/Snell 节点。'; return 1; }
+  tmp=$(mktemp "$(dirname "$output")/.mihomo-client.XXXXXX") || return 1
+  trap 'rm -f -- "$tmp"' EXIT
+  jq -n --argjson proxies "$proxies" '{"mixed-port":2080,"allow-lan":false,mode:"rule","log-level":"warning",
+    proxies:$proxies,"proxy-groups":[{name:"代理选择",type:"select",proxies:($proxies|map(.name))}],rules:["MATCH,代理选择"]}' >"$tmp" || return 1
+  chmod 0600 "$tmp" && mv -f "$tmp" "$output" || return 1
+  log_ok "已导出 mihomo 客户端配置：$output；JSON 可直接作为 YAML 导入。"
+)
+
+export_vless_compatibility_json() {
+  local node id user_id user secret node_secret result mode protocol
+  {
+    while IFS= read -r node; do
+      id=$(jq -r '.id' <<<"$node"); protocol=$(jq -r '.protocol' <<<"$node")
+      [[ "$protocol" == vless ]] || continue
+      if declare -F nginx_stream_public_node >/dev/null 2>&1; then node=$(nginx_stream_public_node "$node") || return 1; fi
+      node_secret='{}'; [[ ! -r "$(state_secret_path "$id")" ]] || node_secret=$(state_get_secret "$id") || return 1
+      while IFS= read -r user_id; do
+        user=$(state_get_user "$id" "$user_id") || return 1
+        secret=$(jq -s '.[0]+.[1]' <(printf '%s\n' "$user") <(state_get_user_secret "$id" "$user_id")) || return 1
+        for mode in uri singbox mihomo; do
+          if ! result=$(protocol_vless_export_result "$mode" "$node" "$secret" "$node_secret"); then
+            result='{"ok":false,"reason":"无法生成有效的 VLESS 客户端参数；请检查该节点配置。"}'
+          fi
+          jq -cn --arg id "$id" --arg user "$user_id" --arg format "$mode" --argjson result "$result" \
+            '{node_id:$id,user_id:$user,format:$format,supported:$result.ok,reason:($result.reason // null)}' || return 1
+        done
+      done < <(jq -r '.users[]|select(.enabled)|.id' <<<"$node")
+    done < <(jq -c '.nodes[]?|select(.enabled)' "$SBM_STATE")
+  } | jq -s .
+}
+
+node_share_vless() {
+  local id=$1 user_id=$2 qr=$3 out_dir=$4 uri='' native outbound
+  rm -f "$out_dir/share.txt" "$out_dir/substore.txt" "$out_dir/outbound.json" "$out_dir/client.json" \
+    "$out_dir/xray-outbound.json" "$out_dir/xray-client.json" "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"
+  native=$(node_xray_client_outbound "$id" "$user_id") || return 1
+  printf '%s\n' "$native" >"$out_dir/xray-outbound.json" && chmod 0600 "$out_dir/xray-outbound.json" || return 1
+  printf '\n节点/用户：%s/%s\nXray 原生 outbound：%s\n' "$id" "$user_id" "$out_dir/xray-outbound.json"
+  if export_xray_client_config "$out_dir/xray-client.json" "$id" "$user_id" >/dev/null; then
+    printf 'Xray 完整客户端配置：%s\n' "$out_dir/xray-client.json"
+  else log_warn '该节点需要额外客户端配置，请将原生 outbound 接入自己的 Xray 配置。'; fi
+  if uri=$(node_share_uri "$id" "$user_id"); then
+    printf '%s\n' "$uri" >"$out_dir/share.txt" && chmod 0600 "$out_dir/share.txt" || return 1
+    cp "$out_dir/share.txt" "$out_dir/substore.txt" && chmod 0600 "$out_dir/substore.txt" || return 1
+    printf '\nVLESS 分享链接：\n%s\n' "$uri"
+    if [[ "$qr" == 1 ]] && command_exists qrencode; then qrencode -t ANSIUTF8 "$uri"; fi
+  else log_warn '此配置无法完整写入通用链接；已提供原生 Xray JSON。'; fi
+  if outbound=$(node_client_outbound "$id" "$user_id"); then
+    printf '%s\n' "$outbound" >"$out_dir/outbound.json" && chmod 0600 "$out_dir/outbound.json" || return 1
+    printf 'sing-box outbound：%s\n' "$out_dir/outbound.json"
+    if export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null; then
+      printf 'sing-box 完整客户端配置：%s\n' "$out_dir/client.json"
+    else rm -f "$out_dir/client.json"; log_warn '当前 sing-box 核心无法加载该客户端配置，保留 Xray 导出。'; fi
+  fi
+  if export_mihomo_client_config "$out_dir/mihomo.json" "$id" "$user_id" >/dev/null; then
+    cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml" && chmod 0600 "$out_dir/mihomo.yaml" || return 1
+    printf 'mihomo 完整客户端配置：%s\n' "$out_dir/mihomo.yaml"
+  fi
+  return 0
 }

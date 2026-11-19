@@ -267,6 +267,17 @@ Vision flow 写入每个 clients 项，Reality 使用最新 target 字段并支�
 普通 VLESS 可自定义传输；共享网站的受管 Reality 节点固定为 Vision/Reality/raw，
 不接受会覆盖目标或客户端参数的扩展。已有节点扩展非空时，一键共存明确拒绝。
 
+## VLESS 原生 Xray 参数（alpha.73）
+
+VLESS 结构化参数只是原生 Xray 入站/出站对象的视图：`sb node set ID --transport
+raw|ws|grpc|httpupgrade|xhttp|kcp|hysteria --security none|tls|reality` 及
+`--path/--host/--service-name/--xhttp-mode/--tls-server-name/--fingerprint/--alpn/
+--flow/--packet-encoding/--vless-encryption/--vless-decryption/--transport-json/
+--tls-json` 一次生成候选并整体校验。客户端出站由服务端有效入站推导，Reality
+公钥、SNI、shortId、ALPN、路径与加密配对不一致时拒绝安装。导出到 URI、
+sing-box、mihomo 时，无法完整表达的字段会跳过该节点并提示原因；完整原生配置
+可用 Xray 客户端导出。公网 `security none` 必须启用 VLESS Encryption。
+
 ## OpenList 与 Reality 共用 443（alpha.72）
 
 ```bash

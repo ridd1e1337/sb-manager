@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_vless_edit|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -435,7 +435,7 @@ ui_node_finish_menu() {
   printf '\n%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
   if [[ $(jq -r '.protocol' <<<"$node") == snell ]]; then printf '1. 再次显示 Surge 原生配置\n'
   else printf '1. 再次显示节点分享链接和二维码\n'; fi
-  printf '2. 显示可复制的完整 sing-box JSON\n3. 生成动态订阅地址\n4. 管理这个节点\n5. VPS 运维：查看防火墙与协议端口\n'
+  printf '2. 生成完整客户端配置\n3. 生成动态订阅地址\n4. 管理这个节点\n5. VPS 运维：查看防火墙与协议端口\n'
   if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
   printf '0. 返回主菜单\n'
   ui_menu_choice choice '下一步' "$max_choice"
@@ -444,10 +444,7 @@ ui_node_finish_menu() {
     2)
       user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
       [[ -n "$user_id" ]] || die '该节点没有启用用户。'
-      output="$SBM_EXPORTS/nodes/$id/$user_id/client.json"
-      export_node_client_config "$id" "$user_id" "$output" >/dev/null
-      printf '\n在 sing-box 客户端导入以下完整 JSON；其中含节点凭据，请妥善保存：\n'
-      cat "$output"
+      ui_open_submenu ui_client_export_menu "$id" "$user_id"
       ;;
     3) ui_open_submenu ui_subscription_menu;;
     4) ui_open_submenu ui_manage_nodes "$id";;
@@ -494,6 +491,195 @@ ui_use_recommended() {
   local __ui_answer
   prompt_value __ui_answer '其余选项使用推荐值？(Y/n，n 逐项自定义)' 'Y' || return 1
   [[ ! "$__ui_answer" =~ ^[Nn]$ ]]
+}
+
+# Collect related transport/security fields before changing a node. Editing
+# submits one candidate so switching families never applies a half profile.
+ui_vless_collect() {
+  local -n __vless_args=$1 __vless_domain=$2 __vless_transport=$3
+  local node=${4:-'{}'} transport security flow domain choice host path service_name mode sni fingerprint alpn insecure packet listen
+  local handshake_server handshake_port advanced inbound outbound transport_json tls_json encryption_choice pair encryption decryption
+  local current_transport current_security auth current_auth
+  __vless_args=()
+  listen=$(jq -r '.listen // "::"' <<<"$node") || return 1
+  prompt_value listen '监听地址 :: / 0.0.0.0 / 127.0.0.1 / ::1' "$listen" || return 1
+  __vless_args+=(--listen "$listen")
+  current_transport=$(jq -r '.xray.inbound.streamSettings.network // "raw"' <<<"$node") || return 1
+  case "$current_transport" in tcp) current_transport=raw;; websocket) current_transport=ws;; splithttp) current_transport=xhttp;; mkcp) current_transport=kcp;; esac
+  printf '\n当前传输：%s\n' "$current_transport"
+  printf '1. TCP / RAW\n2. WebSocket\n3. gRPC\n4. HTTPUpgrade\n5. XHTTP\n6. mKCP\n7. Hysteria 传输\n0. 返回\n'
+  ui_menu_choice choice '选择 VLESS 传输' 7 || return 1
+  case "$choice" in 1) transport=raw;; 2) transport=ws;; 3) transport=grpc;; 4) transport=httpupgrade;; 5) transport=xhttp;; 6) transport=kcp;; 7) transport=hysteria;; *) return 1;; esac
+  current_security=$(jq -r '.xray.inbound.streamSettings.security // .security // "reality"' <<<"$node") || return 1
+  printf '当前安全层：%s\n' "$current_security"
+  if [[ "$transport" == hysteria ]]; then
+    security=tls
+    printf 'Hysteria 传输使用 TLS。\n'
+  elif [[ "$transport" == raw || "$transport" == xhttp || "$transport" == grpc ]]; then
+    printf '1. TLS\n2. Reality\n3. 不使用 TLS / Reality\n0. 返回\n'
+    ui_menu_choice choice '选择安全层' 3 || return 1
+    case "$choice" in 1) security=tls;; 2) security=reality;; 3) security=none;; *) return 1;; esac
+  else
+    printf '1. TLS\n2. 不使用 TLS / Reality\n0. 返回\n'
+    ui_menu_choice choice '选择安全层' 2 || return 1
+    case "$choice" in 1) security=tls;; 2) security=none;; *) return 1;; esac
+  fi
+  __vless_args+=(--transport "$transport" --security "$security")
+  domain=$(jq -r '.domain // ""' <<<"$node") || return 1
+  case "$security" in
+    tls)
+      prompt_value domain 'TLS 证书域名' "$domain" || return 1
+      validate_domain "$domain" || { log_error '请输入有效的 TLS 域名。'; return 1; }
+      __vless_args+=(--domain "$domain");;
+    reality)
+      domain=${domain:-$SBM_RECOMMENDED_REALITY_SNI}
+      prompt_value domain 'Reality SNI' "$domain" || return 1
+      handshake_server=$(jq -r --arg domain "$domain" '.handshake_server // $domain' <<<"$node") || return 1
+      handshake_port=$(jq -r '.handshake_port // 443' <<<"$node") || return 1
+      prompt_value handshake_server 'Reality 目标域名或 IP' "$handshake_server" || return 1
+      prompt_value handshake_port 'Reality 目标端口' "$handshake_port" || return 1
+      __vless_args+=(--domain "$domain" --handshake-server "$handshake_server" --handshake-port "$handshake_port");;
+    none) domain=''; printf '公网明文入口需启用 VLESS 加密；本机反代可使用回环监听。\n';;
+  esac
+  case "$transport" in
+    ws|httpupgrade|xhttp)
+      host=$(jq -r --arg network "$transport" '
+        if $network=="ws" then (.xray.inbound.streamSettings.wsSettings.host // .xray.inbound.streamSettings.wsSettings.headers.Host // "")
+        elif $network=="httpupgrade" then (.xray.inbound.streamSettings.httpupgradeSettings.host // "")
+        else (.xray.inbound.streamSettings.xhttpSettings.host // .xray.inbound.streamSettings.splithttpSettings.host // "") end' <<<"$node") || return 1
+      path=$(jq -r --arg network "$transport" '
+        if $network=="ws" then (.xray.inbound.streamSettings.wsSettings.path // "/")
+        elif $network=="httpupgrade" then (.xray.inbound.streamSettings.httpupgradeSettings.path // "/")
+        else (.xray.inbound.streamSettings.xhttpSettings.path // .xray.inbound.streamSettings.splithttpSettings.path // "/") end' <<<"$node") || return 1
+      ui_prompt_optional host 'Host' "$host" || return 1
+      prompt_value path '请求路径' "$path" || return 1
+      __vless_args+=(--host "$host" --path "$path")
+      if [[ "$transport" == xhttp ]]; then
+        mode=$(jq -r '.xray.inbound.streamSettings.xhttpSettings.mode // .xray.inbound.streamSettings.splithttpSettings.mode // "auto"' <<<"$node") || return 1
+        printf 'XHTTP 模式：auto / packet-up / stream-up / stream-one\n'
+        prompt_value mode 'XHTTP 模式' "$mode" || return 1
+        __vless_args+=(--xhttp-mode "$mode")
+      fi;;
+    grpc)
+      service_name=$(jq -r '.xray.inbound.streamSettings.grpcSettings.serviceName // ""' <<<"$node") || return 1
+      ui_prompt_optional service_name 'gRPC serviceName' "$service_name" || return 1
+      __vless_args+=(--service-name "$service_name");;
+    kcp)
+      printf 'mKCP 可设置 mtu、tti、uplinkCapacity 等字段，留空保留默认值。\n'
+      prompt_value transport_json 'mKCP JSON 或 @文件' '' || return 1
+      [[ -z "$transport_json" ]] || __vless_args+=(--transport-json "$transport_json");;
+    hysteria)
+      current_auth=$(jq -r '.xray.inbound.streamSettings.hysteriaSettings.auth // ""' <<<"$node") || return 1
+      prompt_secret auth 'Hysteria auth，留空保留或自动生成' || return 1
+      [[ "$auth" != q ]] || { ui_cancel; return 1; }
+      auth=${auth:-$current_auth}
+      [[ -n "$auth" ]] || auth=$(random_password 24) || return 1
+      transport_json=$(jq --arg auth "$auth" '(.xray.inbound.streamSettings.hysteriaSettings // {}) | .auth=$auth' <<<"$node") || return 1
+      __vless_args+=(--transport-json "$transport_json");;
+  esac
+  if [[ "$security" != none ]]; then
+    sni=$(jq -r --arg security "$security" --arg domain "$domain" '
+      if $security=="reality" then (.xray.outbound.streamSettings.realitySettings.serverName // $domain)
+      else (.xray.outbound.streamSettings.tlsSettings.serverName // $domain) end' <<<"$node") || return 1
+    fingerprint=$(jq -r --arg security "$security" '
+      if $security=="reality" then (.xray.outbound.streamSettings.realitySettings.fingerprint // "chrome")
+      else (.xray.outbound.streamSettings.tlsSettings.fingerprint // "chrome") end' <<<"$node") || return 1
+    prompt_value sni '客户端 SNI' "$sni" || return 1
+    prompt_value fingerprint '客户端指纹' "$fingerprint" || return 1
+    __vless_args+=(--tls-server-name "$sni" --fingerprint "$fingerprint")
+    if [[ "$security" == tls ]]; then
+      alpn=$(jq -r '(.xray.outbound.streamSettings.tlsSettings.alpn // []) | join(",")' <<<"$node") || return 1
+      ui_prompt_optional alpn 'ALPN，逗号分隔' "$alpn" || return 1
+      insecure=$(jq -r '.xray.outbound.streamSettings.tlsSettings.allowInsecure // false' <<<"$node") || return 1
+      prompt_value insecure '跳过证书验证 true/false' "$insecure" || return 1
+      __vless_args+=(--alpn "$alpn" --allow-insecure "$insecure")
+    fi
+  fi
+  printf '\n1. 保留 VLESS 加密设置\n2. 不启用 VLESS 加密\n3. 自动生成 X25519 加密参数\n4. 自动生成 ML-KEM-768 加密参数\n5. 手动输入配对加密参数\n0. 返回\n'
+  ui_menu_choice encryption_choice 'VLESS 加密' 5 || return 1
+  case "$encryption_choice" in
+    1) ;;
+    2) __vless_args+=(--vless-encryption none --vless-decryption none);;
+    3|4)
+      [[ -x "$SBM_XRAY_BIN" ]] || xray_install || return 1
+      if [[ "$encryption_choice" == 3 ]]; then pair=$(xray_vless_keys x25519) || return 1
+      else pair=$(xray_vless_keys mlkem768) || return 1; fi
+      decryption=$(jq -er '.decryption' <<<"$pair") || return 1
+      encryption=$(jq -er '.encryption' <<<"$pair") || return 1
+      __vless_args+=(--vless-decryption "$decryption" --vless-encryption "$encryption");;
+    5)
+      prompt_secret decryption '服务端 decryption' || return 1
+      [[ "$decryption" != q ]] || { ui_cancel; return 1; }
+      prompt_secret encryption '客户端 encryption' || return 1
+      [[ "$encryption" != q ]] || { ui_cancel; return 1; }
+      [[ -n "$decryption" && -n "$encryption" ]] || { log_error '加密参数必须成对填写。'; return 1; }
+      __vless_args+=(--vless-decryption "$decryption" --vless-encryption "$encryption");;
+    *) return 1;;
+  esac
+  flow=$(jq -r '.flow // ""' <<<"$node") || return 1
+  if [[ "$transport" == raw && "$security" != none ]]; then flow=${flow:-xtls-rprx-vision}
+  else flow=''; fi
+  printf 'Flow：xtls-rprx-vision，或输入 - 不使用 Flow。\n'
+  if [[ "$transport" != raw ]]; then printf '非 RAW 传输默认关闭 Vision；高级组合须与 VLESS 加密及核心能力一致。\n'; fi
+  ui_prompt_optional flow 'Flow' "$flow" || return 1
+  __vless_args+=(--flow "$flow")
+  packet=$(jq -r '.xray.packet_encoding // .xray.outbound.packetEncoding // "xudp"' <<<"$node") || return 1
+  prompt_value packet 'UDP 封装 xudp/packetaddr/none' "$packet" || return 1
+  __vless_args+=(--packet-encoding "$packet")
+  prompt_value advanced '继续填写高级 JSON？y/N' N || return 1
+  if [[ "$advanced" =~ ^[Yy]$ ]]; then
+    printf 'JSON 可使用 @文件路径；留空保留，{} 清除对应扩展。服务器与客户端参数会一起校验。\n'
+    printf '传输 JSON 可设置 headers、early data、gRPC multiMode、XHTTP extra/xmux 等原生字段。\n'
+    prompt_value transport_json '传输设置 JSON' '' || return 1
+    [[ -z "$transport_json" ]] || __vless_args+=(--transport-json "$transport_json")
+    if [[ "$security" != none ]]; then
+      prompt_value tls_json '服务端 TLS/Reality 设置 JSON' '' || return 1
+      [[ -z "$tls_json" ]] || __vless_args+=(--tls-json "$tls_json")
+    fi
+    prompt_value inbound 'Xray 完整入站扩展 JSON' '' || return 1
+    prompt_value outbound 'Xray 完整客户端出站扩展 JSON' '' || return 1
+    [[ -z "$inbound" ]] || __vless_args+=(--xray-inbound-json "$inbound")
+    [[ -z "$outbound" ]] || __vless_args+=(--xray-outbound-json "$outbound")
+  fi
+  if [[ "$security" == tls ]]; then __vless_domain=$domain
+  else __vless_domain=''; fi
+  __vless_transport=$transport
+}
+
+ui_vless_add() {
+  local name address port vless_domain vless_transport kind
+  local -a vless_args=()
+  prompt_value name '节点名称' VLESS || return 1
+  ui_vless_collect vless_args vless_domain vless_transport '{}' || return 1
+  ui_prompt_server_address address "$(ui_client_address_default "$vless_domain")" || return 1
+  case "$vless_transport" in kcp|hysteria) kind=udp;; *) kind=tcp;; esac
+  ui_prompt_port port "$kind" '监听端口' 443 8443 9443 10443 || return 1
+  ui_add_node_and_deliver vless --name "$name" --address "$address" --port "$port" "${vless_args[@]}"
+}
+
+ui_vless_edit() {
+  local id=$1 node choice vless_domain vless_transport inbound outbound
+  local -a vless_args=()
+  node=$(state_get_node "$id") || return 1
+  [[ $(jq -r '.protocol' <<<"$node") == vless ]] || { log_error '此入口仅用于 VLESS 节点。'; return 1; }
+  if jq -e --arg id "$id" '.reality_site.enabled==true and .reality_site.node_id==$id' "$SBM_STATE" >/dev/null; then
+    log_info '共用 443 的节点采用固定 Vision Reality 参数；请通过 Reality 网站菜单管理。'
+    return 0
+  fi
+  printf '1. 编辑传输、安全层与加密\n2. 更新原生 Xray JSON\n0. 返回\n'
+  ui_menu_choice choice 'VLESS 参数' 2 || return 1
+  case "$choice" in
+    1) ui_vless_collect vless_args vless_domain vless_transport "$node" || return 1;;
+    2)
+      printf '输入单行 JSON 或 @文件路径；留空保留，{} 清除。XDrive 等特殊传输需完整成对配置。\n'
+      prompt_value inbound 'Xray 服务端入站扩展' '' || return 1
+      prompt_value outbound 'Xray 客户端出站扩展' '' || return 1
+      [[ -z "$inbound" ]] || vless_args+=(--xray-inbound-json "$inbound")
+      [[ -z "$outbound" ]] || vless_args+=(--xray-outbound-json "$outbound")
+      ((${#vless_args[@]} > 0)) || return 0;;
+    *) return 0;;
+  esac
+  node_vless_configure "$id" "${vless_args[@]}"
 }
 
 ui_add_node() {
@@ -585,36 +771,7 @@ ui_add_node() {
       case "$congestion_control" in 1) congestion_control=cubic;; 2) congestion_control=new_reno;; 3) congestion_control=bbr;; *) log_error '选择无效'; return;; esac
       ui_add_node_and_deliver tuic --name "$name" --domain "$domain" --address "$address" --port "$port" --congestion-control "$congestion_control"
       ;;
-    7)
-      local xray_custom xray_inbound xray_outbound
-      local -a vless_args=()
-      prompt_value name '节点名称' 'VLESS'
-      printf '1. TLS（需要域名）\n2. Reality（无需域名，推荐）\n'; ui_menu_choice security_choice '选择安全层' 2
-      case "$security_choice" in
-        1)
-          security=tls; ui_select_certificate_domain domain || { ui_cancel; return; }
-          prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-          ;;
-        2)
-          security=reality; prompt_value address '客户端连接地址' "$(ui_client_address_default '')"; ui_prompt_port port tcp 'TCP 端口' 443 8443 9443 10443
-          domain=$SBM_RECOMMENDED_REALITY_SNI; handshake_server=$SBM_RECOMMENDED_REALITY_SNI; handshake_port=443
-          if ! ui_use_recommended; then
-            prompt_value domain 'Reality SNI' "$domain"; prompt_value handshake_server 'Reality 握手域名' "$domain"; prompt_value handshake_port 'Reality 握手端口' '443'
-          fi
-          vless_args+=(--handshake-server "$handshake_server" --handshake-port "$handshake_port")
-          ;;
-        *) log_error '选择无效'; return;;
-      esac
-      prompt_value xray_custom '自定义 Xray 参数？y/N' 'N'
-      if [[ "$xray_custom" =~ ^[Yy]$ ]]; then
-        printf '入站参数仅在启用 Xray 时生效。可配置 streamSettings、TLS、Reality、WS、gRPC、XHTTP 等字段。\n'
-        printf '输入单行 JSON 或 @文件路径；出站扩展当前仅保存，客户端需另行配置。\n'
-        prompt_value xray_inbound 'Xray 入站 JSON 或 @文件路径' '{}'
-        prompt_value xray_outbound 'Xray 客户端出站 JSON 或 @文件路径' '{}'
-        vless_args+=(--xray-inbound-json "$xray_inbound" --xray-outbound-json "$xray_outbound")
-      fi
-      ui_add_node_and_deliver vless --name "$name" --domain "$domain" --address "$address" --port "$port" --security "$security" "${vless_args[@]}"
-      ;;
+    7) ui_vless_add;;
     8)
       prompt_value name '节点名称' 'NaiveProxy'; ui_select_certificate_domain domain || { ui_cancel; return; }
       prompt_value address '客户端连接地址' "$(ui_client_address_default "$domain")"
@@ -670,7 +827,7 @@ ui_add_node() {
 }
 
 ui_manage_nodes() {
-  local id=${1:-} action value remark region purpose line tags node
+  local id=${1:-} action value remark region purpose line tags node max_action=11
   if [[ -z "$id" ]]; then
     ui_select_node id || { ui_page_back; return; }
     if [[ ${SBM_UI_WORKER:-0} == 1 ]]; then ui_open_submenu ui_manage_nodes "$id"; return; fi
@@ -678,8 +835,10 @@ ui_manage_nodes() {
   state_node_exists "$id" || { ui_page_back; return; }
   node=$(state_get_node "$id")
   node_show "$id"
-  printf '\n1. 显示导入内容\n2. 启用节点\n3. 停用节点\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除节点\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n0. 返回\n'
-  ui_menu_choice action '选择操作' 11
+  printf '\n1. 显示导入内容\n2. 启用节点\n3. 停用节点\n4. 修改端口\n5. 修改客户端地址\n6. 修改名称\n7. 修改备注、地区与标签\n8. 轮换凭据\n9. 删除节点\n10. 设置/延长节点有效期\n11. 清除节点到期策略\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then printf '12. VLESS 传输与加密参数\n'; max_action=12; fi
+  printf '0. 返回\n'
+  ui_menu_choice action '选择操作' "$max_action"
   case "$action" in
     1) node_share "$id" 1;; 2) node_enable "$id";; 3) node_disable "$id";;
     4) prompt_value value '新端口' "$(jq -r '.port' <<<"$node")"; node_set "$id" --port "$value";;
@@ -697,6 +856,7 @@ ui_manage_nodes() {
     9) confirm "确认删除 $id？" N && node_delete "$id";;
     10) prompt_value value '续期天数（从当前到期日或今天起算）' '30'; node_expiry_cli "$id" --days "$value";;
     11) node_expiry_cli "$id" --clear;;
+    12) [[ $(jq -r '.protocol' <<<"$node") != vless ]] || ui_open_submenu ui_vless_edit "$id";;
   esac
 }
 
@@ -713,13 +873,23 @@ ui_share_export_menu() {
 }
 
 ui_client_export_menu() {
-  local mode_choice mode output dns_mode dns_address
-  printf '生成导入 sing-box 客户端的完整配置文件，包含节点、DNS 和入口设置。\n'
-  printf '1. 本机代理模式\n2. 虚拟网卡模式\n0. 返回\n'
-  ui_menu_choice mode_choice '选择客户端配置模式' 2
+  local selected_node=${1:-} selected_user=${2:-} mode_choice mode output dns_mode dns_address directory
+  directory=$SBM_EXPORTS
+  [[ -z "$selected_node" ]] || directory="$SBM_EXPORTS/nodes/$selected_node/${selected_user:-default}"
+  printf '选择客户端；不支持的节点会给出原因，不会生成错误的兼容参数。\n'
+  printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n3. Xray 本机代理\n4. mihomo 配置\n0. 返回\n'
+  ui_menu_choice mode_choice '选择客户端配置' 4
   case "$mode_choice" in
-    1) mode=mixed; output="$SBM_EXPORTS/client-mixed.json";;
-    2) mode=tun; output="$SBM_EXPORTS/client-tun.json";;
+    1) mode=mixed; output="$directory/client-mixed.json";;
+    2) mode=tun; output="$directory/client-tun.json";;
+    3)
+      prompt_value output 'Xray 配置文件' "$directory/client-xray.json" || return 1
+      export_xray_client_config "$output" "$selected_node" "$selected_user"
+      return;;
+    4)
+      prompt_value output 'mihomo 配置文件' "$directory/client-mihomo.json" || return 1
+      export_mihomo_client_config "$output" "$selected_node" "$selected_user"
+      return;;
     0) return;;
     *) log_error '选择无效'; return;;
   esac
@@ -731,7 +901,7 @@ ui_client_export_menu() {
     case "$dns_mode" in 1) dns_mode=hijack;; 2) dns_mode=native;; 3) dns_mode=disabled;; *) log_error '选择无效'; return;; esac
     if [[ "$dns_mode" != disabled ]]; then prompt_value dns_address 'DNS 地址（留空使用自动地址）' ''; fi
   fi
-  export_client_config "$output" "$mode" "$dns_mode" "$dns_address"
+  export_client_config "$output" "$mode" "$dns_mode" "$dns_address" "$selected_node" "$selected_user"
 }
 
 ui_cert_menu() {
@@ -1459,7 +1629,7 @@ ui_main_options() {
  2. 添加代理节点
  3. 管理节点
  4. 节点分享与导出
- 5. 完整 sing-box 客户端配置
+ 5. 完整客户端配置
  6. TLS 域名证书
  7. CF Tunnel
 维护与扩展

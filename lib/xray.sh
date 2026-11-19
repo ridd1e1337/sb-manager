@@ -123,11 +123,14 @@ xray_inbound_for_node() {
     rendered=$(jq --arg target "$target" --arg server_name "$domain" \
       --arg private "$(jq -r '.reality_private_key' <<<"$secret")" --arg short_id "$(jq -r '.reality_short_id' <<<"$secret")" \
       '.streamSettings += {security:"reality",realitySettings:{show:false,target:$target,xver:0,serverNames:[$server_name],privateKey:$private,shortIds:[$short_id]}}' <<<"$rendered") || return 1
-  else
+  elif [[ "$security" == tls ]]; then
     rendered=$(jq --arg cert "$SBM_CERTS/$domain/fullchain.pem" --arg key "$SBM_CERTS/$domain/key.pem" \
       '.streamSettings += {security:"tls",tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}' <<<"$rendered") || return 1
   fi
-  xray_apply_override "$rendered" "$(xray_node_override "$node" inbound)"
+  rendered=$(xray_apply_override "$rendered" "$(xray_node_override "$node" inbound)") || return 1
+  local stream
+  stream=$(vless_stream_normalize "$(jq -c '.streamSettings' <<<"$rendered")") || return 1
+  jq --argjson stream "$stream" '.streamSettings=$stream' <<<"$rendered"
 }
 
 xray_render_config() {

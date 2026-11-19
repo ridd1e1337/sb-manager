@@ -43,50 +43,83 @@ class Handler(BaseHTTPRequestHandler):
         if not TOKEN_RE.fullmatch(token):
             self.send_error(404)
             return
-        formats = parse_qs(request_url.query).get("format", ["sing-box"])
-        if len(formats) != 1 or formats[0] not in {"sing-box", "substore"}:
+        formats = parse_qs(request_url.query, keep_blank_values=True).get("format", [None])
+        if len(formats) != 1 or formats[0] not in {None, "sing-box", "substore", "xray", "mihomo", "compatibility"}:
             self.send_error(400, "Unsupported subscription format")
             return
-        output_format = formats[0]
         digest = hashlib.sha256(token.encode()).hexdigest()
         meta_path = self.root / f"{digest}.meta.json"
-        if output_format == "substore":
-            profile_path = self.root / f"{digest}.substore.txt"
-            content_type = "text/plain; charset=utf-8"
-        else:
-            profile_path = self.root / f"{digest}.profile.json"
-            content_type = "application/json; charset=utf-8"
+        status = 200
+        excluded = 0
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             live = meta.get("live") is True
             expires = meta["expires_at_epoch"]
+            mode = meta["mode"]
+            if mode not in {"mixed", "tun", "xray", "mihomo"}:
+                raise ValueError("invalid subscription mode")
             if expires is None and not live:
                 raise ValueError("only live subscriptions may have no expiry")
             if expires is not None and int(expires) <= int(time.time()):
                 self.send_error(410, "Subscription expired")
                 return
-            if live:
-                bundle = json.loads((self.root / "live.json").read_text(encoding="utf-8"))
-                if output_format == "substore":
-                    data = bundle["substore"].encode("utf-8")
+            output_format = formats[0] or (mode if mode in {"xray", "mihomo"} else "sing-box")
+            content_type = "text/plain; charset=utf-8" if output_format == "substore" else "application/json; charset=utf-8"
+            bundle_path = self.root / ("live.json" if live else f"{digest}.bundle.json")
+            if bundle_path.is_file():
+                bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+                report = bundle.get("compatibility", [])
+                if not isinstance(report, list):
+                    raise ValueError("invalid compatibility report")
+                report_format = {"sing-box": "singbox", "substore": "uri"}.get(output_format, output_format)
+                excluded = sum(item.get("format") == report_format and item.get("supported") is False
+                               for item in report if isinstance(item, dict))
+                if output_format == "compatibility":
+                    data = json.dumps(report, ensure_ascii=False).encode("utf-8")
+                elif output_format == "substore":
+                    if not bundle.get("substore"):
+                        status = 422
+                        content_type = "application/json; charset=utf-8"
+                        data = json.dumps({"error": "No compatible share links; use native Xray JSON.",
+                                           "compatibility": [item for item in report if item.get("format") == "uri"]}, ensure_ascii=False).encode("utf-8")
+                    else:
+                        data = bundle["substore"].encode("utf-8")
                 else:
-                    mode = meta["mode"]
-                    if mode not in {"mixed", "tun"} or not isinstance(bundle["profiles"][mode], dict):
-                        raise ValueError("missing live profile")
-                    data = json.dumps(bundle["profiles"][mode], ensure_ascii=False).encode("utf-8")
+                    profile_key = (mode if mode in {"mixed", "tun"} else "mixed") if output_format == "sing-box" else output_format
+                    profile = bundle["profiles"].get(profile_key)
+                    if not isinstance(profile, dict):
+                        status = 422
+                        data = json.dumps({"error": bundle.get("errors", {}).get(profile_key, "This client format is unavailable."),
+                                           "format": output_format,
+                                           "compatibility": [item for item in report if item.get("format") == report_format]}, ensure_ascii=False).encode("utf-8")
+                    else:
+                        data = json.dumps(profile, ensure_ascii=False).encode("utf-8")
+            elif not live:
+                # Existing snapshot tokens retain their original files. New
+                # formats require a new snapshot instead of returning the
+                # wrong client's JSON under a different format name.
+                if output_format == "substore":
+                    data = (self.root / f"{digest}.substore.txt").read_bytes()
+                elif output_format == "sing-box" and mode in {"mixed", "tun"}:
+                    data = (self.root / f"{digest}.profile.json").read_bytes()
+                else:
+                    status = 422
+                    data = json.dumps({"error": "This older snapshot does not contain the requested format; create a new subscription."}).encode("utf-8")
             else:
-                data = profile_path.read_bytes()
+                raise ValueError("missing live generation")
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             self.send_error(404)
             return
         if len(data) > 10 * 1024 * 1024:
             self.send_error(500)
             return
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if excluded:
+            self.send_header("X-SB-Excluded-Entries", str(excluded))
         self.end_headers()
         if include_body:
             self.wfile.write(data)
