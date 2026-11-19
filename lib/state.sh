@@ -26,7 +26,8 @@ state_default_json() {
         core_update_policy: "notify",
         manager_auto_update: true,
         manager_update_minute: $manager_update_minute,
-        cloudflared_update_policy: "notify"
+        cloudflared_update_policy: "notify",
+        xray_update_policy: "notify"
       },
       tunnel: {
         mode: "none",
@@ -193,6 +194,7 @@ state_normalize_v2_file() {
     | .settings.dns_optimistic //= false
     | .settings.dns_optimistic_timeout //= "3d"
     | .settings.dns_timeout //= "10s"
+    | .settings.xray_update_policy //= "notify"
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
     | .realm //= {enabled:false,listen:"::",port:9443,public_url:"",tls_domain:"",user_name:"default",max_realms:0}
     | .realm.enabled //= false
@@ -457,7 +459,8 @@ state_validate() {
       and (.core_update_policy | IN("manual", "notify", "patch", "stable"))
       and (.manager_auto_update | type == "boolean")
       and (.manager_update_minute | type == "number" and floor==. and .>=0 and .<180)
-      and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable")))
+      and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable"))
+      and (.xray_update_policy | IN("manual", "notify", "patch", "stable")))
     and (.tunnel | type == "object"
       and (.mode | IN("none", "fixed", "quick", "managed"))
       and ((.node_id | type) == "string" or (.node_id | type) == "null")

@@ -184,6 +184,9 @@ dependency_feature_packages() {
     traffic:zypper) printf '%s\n' nftables ;;
     subscription:alpine|subscription:debian|subscription:dnf|subscription:yum|subscription:zypper) printf '%s\n' python3 ;;
     subscription:pacman) printf '%s\n' python ;;
+    xray:alpine) printf '%s\n' unzip ;;
+    xray:debian) printf '%s\n' unzip ;;
+    xray:dnf|xray:yum|xray:pacman|xray:zypper) printf '%s\n' unzip ;;
     bbr:alpine|bbr:debian|bbr:dnf|bbr:yum|bbr:zypper) printf '%s\n' kmod ;;
     bbr:pacman) printf '%s\n' kmod ;;
     probe:alpine) printf '%s\n' iproute2-ss ;;
@@ -206,6 +209,7 @@ dependency_feature_commands() {
     subscription)
       if [[ $(dependency_distro) == pacman ]]; then printf '%s\n' python; else printf '%s\n' python3; fi
       ;;
+    xray) printf '%s\n' unzip ;;
     bbr) printf '%s\n' modprobe ;;
     probe) printf '%s\n' ss ;;
     scheduler) printf '%s\n' crond ;;

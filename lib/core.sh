@@ -463,6 +463,9 @@ core_auto_update() {
       ;;
   esac
   cloudflared_auto_update || log_warn 'cloudflared 自动更新检查未完成。'
+  if declare -F xray_auto_update >/dev/null 2>&1; then
+    xray_auto_update || log_warn 'Xray 自动更新检查未完成。'
+  fi
 }
 
 cloudflared_auto_update() {

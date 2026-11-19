@@ -76,6 +76,8 @@ uninstall_manager() {
     service_stop "$SBM_TUNNEL_SERVICE" || true
     service_disable "$SBM_SERVICE" || true
     service_stop "$SBM_SERVICE" || true
+    service_disable "$SBM_XRAY_SERVICE" || true
+    service_stop "$SBM_XRAY_SERVICE" || true
     service_disable "$SBM_NGINX_STREAM_SERVICE" || true
     service_stop "$SBM_NGINX_STREAM_SERVICE" || true
     service_disable "$SBM_SUBSCRIPTION_SERVICE" || true
@@ -85,7 +87,7 @@ uninstall_manager() {
     if [[ "$backend" == systemd ]]; then
       systemctl disable --now sb-manager-update.timer sb-core-update.timer sb-acme-renew.timer sb-quick-tunnel-refresh.timer sb-traffic-sync.timer sb-health-check.timer >/dev/null 2>&1 || true
       systemctl disable --now sb-maintenance.timer >/dev/null 2>&1 || true
-      systemctl reset-failed "$SBM_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" "$SBM_TRAFFIC_SERVICE" >/dev/null 2>&1 || true
+      systemctl reset-failed "$SBM_SERVICE" "$SBM_XRAY_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" "$SBM_TRAFFIC_SERVICE" >/dev/null 2>&1 || true
     fi
   fi
 
@@ -93,6 +95,7 @@ uninstall_manager() {
   # leave stale services behind.
   rm -f \
     "$SBM_SYSTEMD_DIR/$SBM_SERVICE" \
+    "$SBM_SYSTEMD_DIR/$SBM_XRAY_SERVICE" \
     "$SBM_SYSTEMD_DIR/$SBM_TUNNEL_SERVICE" \
     "$SBM_SYSTEMD_DIR/$SBM_NGINX_STREAM_SERVICE" \
     "$SBM_SYSTEMD_DIR/sb-core-update.service" \
@@ -112,6 +115,7 @@ uninstall_manager() {
     "$SBM_SYSTEMD_DIR/sb-maintenance.service" \
     "$SBM_SYSTEMD_DIR/sb-maintenance.timer" \
     "$SBM_OPENRC_DIR/sb-sing-box" \
+    "$SBM_OPENRC_DIR/sb-xray" \
     "$SBM_OPENRC_DIR/sb-cloudflared" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_NGINX_STREAM_SERVICE")" \
     "$SBM_OPENRC_DIR/$(service_native_name "$SBM_SUBSCRIPTION_SERVICE")" \

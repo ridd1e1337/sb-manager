@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.67
+
+- Add optional Xray-core runtime support using the latest official
+  XTLS/Xray-core Release assets. Provide install, update, status, config,
+  enable, disable, and update-policy commands while keeping sing-box as the
+  default service.
+- Verify Xray archives with Release SHA-256 metadata or the official
+  `SHA2-256=` checksum format, support amd64, arm64-v8a, and arm32-v7a assets,
+  and retain independent version directories and service files.
+- Render Xray configuration from the existing state for VMess, ordinary
+  Shadowsocks, Trojan, VLESS, SOCKS, HTTP, and mixed nodes. Reject protocols
+  and Shadowsocks 2022 methods that Xray cannot provide, preserving sing-box
+  for those nodes. No test scripts, test environments, or test procedures were
+  added or run.
+
 ## 0.1.0-alpha.66
 
 - Add a zero-input recommended node: VLESS Reality with an auto-detected

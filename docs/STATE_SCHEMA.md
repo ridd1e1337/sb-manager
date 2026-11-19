@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.66",
+  "manager_version": "0.1.0-alpha.67",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -111,6 +111,13 @@ manager scripts and Caddy when `.caddy.managed == true`, using the same daily
 task and independent update transactions. No Caddy enrollment is implicit.
 `core_update_policy` and `cloudflared_update_policy` remain independent.
 Last-attempt state and logs live under `var/updates/`, not in topology state.
+
+`settings.xray_update_policy` is `manual`, `notify`, `patch`, or `stable` and
+defaults to `notify`. Xray-core is an optional service provider managed by
+`sb xray`; downloaded binaries and generated configuration remain outside
+topology state. The default sing-box service and its protocol extensions remain
+unchanged. Xray activation is explicit and stops sing-box first when ports
+would conflict. The state schema version remains 2.
 
 Since alpha.64, optional `caddy_apt: {"enabled": true, "config": "/etc/caddy/Caddyfile"}`
 enrolls a standard official stable APT package in the same updater. It is

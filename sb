@@ -32,6 +32,7 @@ source "$SBM_LIB/protocols/proxy.sh"
 source "$SBM_LIB/protocols/shadowtls.sh"
 source "$SBM_LIB/protocols/snell.sh"
 source "$SBM_LIB/lib/render.sh"
+source "$SBM_LIB/lib/xray.sh"
 source "$SBM_LIB/lib/core.sh"
 source "$SBM_LIB/lib/manager.sh"
 source "$SBM_LIB/lib/node.sh"
@@ -155,6 +156,7 @@ sb_help_full() {
   sb probe NODE_ID                探测节点 DNS、监听和 TLS/UDP 可达性
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
+  sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>
   sb update [--check]             更新管理脚本与受管 Caddy
   sb update auto enable|disable|status [--json]|run  每日更新脚本与受管 Caddy
   sb cloudflared status|install|update|policy <manual|notify|patch|stable>
@@ -186,7 +188,7 @@ sb_help_full() {
 EOF_HELP
 }
 
-SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
+SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core xray update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
 
 sb_help_overview() {
   cat <<EOF_OVERVIEW
@@ -209,7 +211,7 @@ sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
 流量与监控：  traffic  notify  health  probe
 网络调优：    tcp  bbr  hy2  network
 服务器与网站：vps  firewall  mux  caddy  maintenance  settings
-核心与维护：  core  cloudflared  deps  acme  api  realm  config
+核心与维护：  core  xray  cloudflared  deps  acme  api  realm  config
 备份与卸载：  backup  restore  restart  uninstall
 
 通用选项：--json  --yes|-y  --dry-run  --quiet|-q  --no-color  --version
@@ -645,6 +647,26 @@ main() {
         channel) core_set_channel "${3:?缺少渠道}" ;;
         auto) core_auto_update ;;
         *) usage_die "未知 core 操作：$action" ;;
+      esac
+      ;;
+    xray)
+      local action=${2:-status}
+      case "$action" in
+        status) (($# <= 3)) || usage_die '用法：sb xray status'; xray_status ;;
+        install) (($# == 2)) || usage_die '用法：sb xray install'; xray_install ;;
+        update) (($# == 2)) || usage_die '用法：sb xray update'; xray_update ;;
+        config)
+          (($# <= 3)) || usage_die '用法：sb xray config [文件]'
+          [[ -x "$SBM_XRAY_BIN" ]] || die 'Xray 尚未安装，请先运行 sb xray install。'
+          local xray_output=${3:-$SBM_XRAY_CONFIG}
+          xray_render_config "$SBM_STATE" "$xray_output"
+          xray_validate_config "$SBM_XRAY_BIN" "$xray_output"
+          log_ok "Xray 配置已生成：$xray_output"
+          ;;
+        enable) (($# == 2)) || usage_die '用法：sb xray enable'; xray_enable ;;
+        disable) (($# == 2)) || usage_die '用法：sb xray disable'; xray_disable ;;
+        policy) (($# == 3)) || usage_die '用法：sb xray policy <manual|notify|patch|stable>'; xray_set_policy "$3" ;;
+        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>' ;;
       esac
       ;;
     cloudflared)

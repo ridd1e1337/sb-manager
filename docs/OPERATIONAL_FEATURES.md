@@ -246,6 +246,28 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 切换程序；版本查询无法判断同一主版本下的插件构建差异。sing-box 和 cloudflared
 的更新策略保持独立。
 
+## Xray-core 可选运行时（alpha.67）
+
+Xray-core 使用 XTLS 官方 Release，执行 `sb xray install` 安装最新版，执行
+`sb xray update` 更新，执行 `sb xray status` 查看版本和服务状态。安装程序
+按 CPU 架构选择 `Xray-linux-64.zip`、`Xray-linux-arm64-v8a.zip` 或
+`Xray-linux-arm32-v7a.zip`，优先使用 GitHub Release API 的 SHA-256 摘要，
+并兼容官方摘要文件中的 `SHA2-256=` 格式。临时压缩包会在成功后删除，版本
+目录保存在管理器核心目录中。
+
+`sb xray config` 根据 `/etc/sb-manager/state.json` 生成并用 Xray 原生命令
+检查配置。支持 VMess、普通 Shadowsocks、Trojan、VLESS、SOCKS、HTTP 和
+mixed。Shadowsocks 2022、AnyTLS、Hysteria2、TUIC、Naive、ShadowTLS、Snell
+和项目的 sing-box 专属扩展会明确拒绝生成 Xray 配置，避免启动后协议行为
+不一致；这些节点继续由 sing-box 提供。
+
+`sb xray enable` 是显式切换操作：它先生成并检查配置，停止占用节点端口的
+sing-box，再创建 `sb-xray.service` 并启动 Xray。`sb xray disable` 停止并禁用
+Xray，随后按当前状态恢复 sing-box。网站配置、证书、节点状态和凭据不被切换
+命令改写。Xray 与 sing-box 使用独立的程序、服务、日志和配置路径；更新 Xray
+只在 Xray 服务已运行时重新检查当前配置。
+
+
 ## 缓存与日志的一天保留策略
 
 `sb maintenance status` 查看策略；`sb maintenance run` 立即维护。正常安装
@@ -293,26 +315,6 @@ sb mux caddy
 使用自定义 Caddy 二进制时，应将 systemd/OpenRC 的启动与重载命令都指向
 该二进制，并保留原程序、配置与服务定义以便回滚。状态页检查 `caddy`
 服务和端口，不能代替对外部 Caddy 路由配置的核对。
-
-## 吞吐测速与对比
-
-目标需要运行自己的 iperf3 服务。管理器只启动客户端，默认测试 10 秒、单连接，
-最多 30 秒、16 个连接；测速会实际传输数据。
-
-```bash
-sb deps install benchmark
-sb network speed 192.0.2.10 --port 5201 --seconds 10 --streams 1 --direction down --json
-sb network speed 192.0.2.10 --port 5201 --seconds 10 --streams 4 --direction up
-sb network history
-sb network compare BEFORE_ID AFTER_ID --json
-```
-
-记录保存在 `/var/lib/sb-manager/network-tests/`（目录 0700，文件 0600），包含
-iperf3 JSON、接收吞吐、重传统计和 TCP 调优快照。只比较相同目标、端口、时长、
-连接数和方向的结果。线路和对端负载会影响结果，建议多次测试。写入默认历史
-目录需要 root；原有 `network ping` 仍可由普通用户运行。
-
-面板：“诊断与修复 → 吞吐测速与前后对比”。
 
 ## SOCKS5、HTTP 和 mixed 入口
 
