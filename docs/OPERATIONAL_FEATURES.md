@@ -227,9 +227,9 @@ Alpine/OpenRC 等不使用 Debian 包管理的环境保留发行版程序，使�
 
 候选配置校验通过后才切换链接，重启 Caddy 并确认实际运行版本；操作失败按
 事务记录恢复链接、服务定义、包管理接入和状态。升级可能短暂中断网站连接。
-`sb caddy rollback` 对上一版重新校验当前网站配置后切换。当前配置已使用旧版
-不支持的字段时会停止，不覆盖网站配置。回滚记录属于必要恢复资料，保留至
-后续成功升级或显式清理。完整备份和旧状态快照要求 Caddy 管理状态匹配，
+从 alpha.72 起，成功升级后不再保留历史程序或 `.caddy.previous`；当次操作仍有
+失败恢复能力。旧的回滚命令只适用于尚未清理的旧状态。活动网站配置引用的程序
+继续保留，以维持解除入口的能力。手动完整备份要求 Caddy 管理状态匹配，
 不会直接覆盖另一台主机的包管理数据库。
 
 网站分流恢复与 Caddy 程序维护是独立操作；`sb mux detach` 恢复网站配置，
@@ -246,30 +246,69 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 切换程序；版本查询无法判断同一主版本下的插件构建差异。sing-box 和 cloudflared
 的更新策略保持独立。
 
-## Xray-core 可选运行时（alpha.68）
+## Xray 与 sing-box 分工（alpha.72）
 
-Xray-core 使用 XTLS 官方 Release，执行 `sb xray install` 安装最新版，执行
-`sb xray update` 更新，执行 `sb xray status` 查看版本和服务状态。安装程序
-按 CPU 架构选择 `Xray-linux-64.zip`、`Xray-linux-arm64-v8a.zip` 或
-`Xray-linux-arm32-v7a.zip`，优先使用 GitHub Release API 的 SHA-256 摘要，
-并兼容官方摘要文件中的 `SHA2-256=` 格式。临时压缩包会在成功后删除，版本
-目录保存在管理器核心目录中。
+新安装默认 `settings.vless_engine=xray`：全部 VLESS 由 Xray 运行，其余协议由
+sing-box 运行。旧状态缺少该字段时根据受管 Xray 服务是否已运行/启用推导引擎，
+其余旧配置保留 `sing-box`；执行 `sb xray enable` 后切换 VLESS。仅安装过 Xray
+程序而没有启用服务不会触发迁移。`sb xray disable` 将引擎设为
+`disabled` 并暂停 VLESS，其余协议保持工作。共用 443 的 Reality 节点需先解除
+网站入口才能停用，以免网站随代理节点停机。
 
-`sb xray config` 根据 `/etc/sb-manager/state.json` 生成并用 Xray 原生命令
-检查配置。支持 VMess、普通 Shadowsocks、Trojan、VLESS、SOCKS、HTTP 和
-mixed。Shadowsocks 2022、AnyTLS、Hysteria2、TUIC、Naive、ShadowTLS、Snell
-和项目的 sing-box 专属扩展会明确拒绝生成 Xray 配置，避免启动后协议行为
-不一致；这些节点继续由 sing-box 提供。
+`sb xray install|update|status|config` 和面板 `8 → 13` 管理官方 Xray。
+支持官方两位年份版本号（如 v26.11.9），核对 Release SHA-256 或官方 .dgst，
+只提取 Xray 程序，不安装此配置用不到的 geoip/geosite 数据库。两份配置分别原生
+校验后才原子安装；按实际配置变化重启对应服务，失败恢复两份配置及服务定义。
+OpenRC 使用低权限服务账号及低端口 capability，systemd 使用 unit capability。
+VLESS TLS 证书续签会同步重新加载对应 Xray 服务。
 
-`sb xray enable` 是显式切换操作：它先生成并检查配置，停止占用节点端口的
-sing-box，再创建 `sb-xray.service` 并启动 Xray。`sb xray disable` 停止并禁用
-Xray，随后按当前状态恢复 sing-box。网站配置、证书、节点状态和凭据不被切换
-命令改写。Xray 与 sing-box 使用独立的程序、服务、日志和配置路径；更新 Xray
-只在 Xray 服务已运行时重新检查当前配置。
+VLESS 向导或 `--xray-inbound-json JSON|@FILE` 可传入原生 streamSettings。
+Vision flow 写入每个 clients 项，Reality 使用最新 target 字段并支持本机目标。
+普通 VLESS 可自定义传输；共享网站的受管 Reality 节点固定为 Vision/Reality/raw，
+不接受会覆盖目标或客户端参数的扩展。已有节点扩展非空时，一键共存明确拒绝。
 
-VLESS 节点可通过 `--xray-inbound-json` 或 `@FILE` 追加 3x-ui 风格的
-`streamSettings`。管理器保留生成的用户和监听身份，只把自定义传输、安全层和
-伪装字段合并到 Xray 入站；Xray 原生配置检查负责确认字段与当前核心兼容。
+## OpenList 与 Reality 共用 443（alpha.72）
+
+```bash
+sb vps reality files.example.com nginx
+sb vps reality files.example.com caddy
+sb reality setup files.example.com nginx --node EXISTING_VLESS_ID
+sb reality status
+sb reality detach
+```
+
+前两条是二选一的新 VPS 初始化入口，会安装网站、OpenList、Xray、UFW 和 Fail2ban。
+面板入口为 `15 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
+或使用 `sb vps reality` 才显式配置基础防护。新主机只放行 22/TCP、80/TCP、443/TCP、
+443/UDP，同时保留当前 SSH 端口和已有规则，不会清空现有主机规则。
+支持 Debian/Ubuntu systemd 与 Alpine OpenRC；默认选择更节省磁盘的 Nginx。
+
+Nginx 使用已有证书，缺少时复用 Cloudflare 凭据准备 DNS 并签发证书。Caddy 使用
+官方标准程序，有 Cloudflare 凭据时先准备 DNS，没有时要求域名已解析；通过 HTTP-01
+和端口 80 申请、续签证书，不依赖被 Reality 接管的 TLS-ALPN。迁移使用候选配置和
+失败恢复：先把网站 TLS 移到随机高位本机端口并确认 TLS 1.3，再由 Xray 接管 TCP/443。
+认证的 VLESS 请求进入代理；普通 HTTPS 保持端到端 TLS，转给本机 Nginx/Caddy，
+随后反代 `127.0.0.1:5244` 的 OpenList。网站后端端口不需要在 UFW 开放。
+
+无 `--node` 时复用唯一的启用 VLESS/443 节点，否则创建新的 VLESS 节点。
+复用时保留 UUID、Reality 密钥和 short ID，但 SNI 会改为网站域名，需要刷新客户端订阅。
+Nginx 补齐 HTTP/2、TLS 1.3；Caddy 关闭 HTTP/3，避免广告本机高位端口。
+Caddy 支持标准单文件具名站点，复杂 import、监听包装、来源 IP 条件等拒绝自动迁移；
+Nginx 支持标准 http/include，复杂 stream/mail、来源 IP 访问控制或自定义地址绑定拒绝。
+普通网站日志会看到代理后的本机地址，这不是客户端真实 IP。
+
+`sb reality detach` 先停用对应 Reality 节点，再恢复普通网站 443，保留节点凭据和
+OpenList 数据。当前网站恢复所需的少量配置保存在 `/var/lib/sb-manager/reality-site/current`，
+属于活动入口配置；它在解除入口时删除。日常节点操作不能隐式停掉这个网站入口。
+普通 OpenList 移除和卸载也先处理 Reality 入口。手动备份不能隐式迁移网站端口。
+
+OpenList 官方 v4.2.10 amd64 解压程序约 162.3 MiB，Xray v26.11.9 约 33.8 MiB。
+脚本在安装前估算剩余空间，下载后再按实际展开大小留至少 32 MiB 余量；不足即停止。
+程序只保留当前版本，操作中的旧程序用于失败恢复，完成后清理。压缩包优先暂存在
+`/tmp` 并检查 tmpfs 的可用空间/内存。OpenList 默认 Go 内存软目标 128 MiB，可通过
+`/etc/default/sb-openlist` 或 OpenRC 配置覆盖，软目标不是进程 RSS 硬上限。
+1 GiB 物理磁盘若大量划给 /boot 和 swap，根分区可能装不下这些组件；脚本不会
+自动重分区或占用 /boot。小磁盘应使用外部网盘，不宜放本地上传和下载缓存。
 
 ## OpenList 网站配置（alpha.71）
 
@@ -285,20 +324,19 @@ GitHub 提供的 SHA-256 摘要后保存。独立 `sb-openlist` 用户运行服�
 首次上线前显式初始化管理员，输出保存至 `/etc/sb-manager/secrets/openlist-admin.txt`，
 权限为 `0600`；更新不重置密码。数据目录为 `/var/lib/sb-openlist`，管理本机 SQLite。
 更新前停止服务并备份 SQLite、配置、程序链接和服务文件；失败恢复并重启旧服务。
-缓存下载结束即删除，文件日志和专属 journal 纳入一天维护策略；保留当前/上一版程序
-及两份安装恢复记录。旧 systemd 的系统日志仍沿用宿主机策略。
+缓存下载结束即删除，文件日志和专属 journal 纳入一天维护策略；只保留当前程序，
+临时 SQLite/服务恢复记录在成功或恢复完成后立即删除。旧 systemd 的系统日志仍沿用宿主机策略。
 
 Caddy 自动申请 HTTPS，域名需已解析至服务器。Nginx 使用本项目已有证书，缺少时
 通过已配置的 Cloudflare 凭据自动准备 DNS 和申请证书；续期后平滑重载 Nginx。
 站点写入 Nginx 主配置同目录的隐藏片段，并在 http 块显式 include，兼容 Debian 的
 conf.d 与 Alpine 的 http.d。两种网站程序都先保存配置、校验候选、原子安装和平滑
 重载，再确认本机 HTTPS 入口；失败恢复本次变更，已有站点域名拒绝覆盖。
-配置记录保存在 `/var/lib/sb-manager/backups/openlist/`，文件权限受保护。
+操作期间的配置记录位于 `/var/lib/sb-manager/backups/openlist/`，受保护并在操作结束后删除。
 
 普通卸载移除受管网站入口、停止服务，保留 OpenList 数据；彻底卸载会删除默认路径
 中的 OpenList 数据和日志。完整 `sb backup` 仍只备份管理器数据；OpenList 的数据库
-及上传文件需单独备份其数据目录。本功能只部署普通 HTTPS 网站，Xray Reality 前置
-和网站端口迁移尚未自动化。
+及上传文件需单独备份其数据目录。共享 Reality 入口使用上节的专用命令。
 
 面板 `8 → 13` 也已接入 Xray 管理；VLESS 向导支持输入原生 JSON 或 `@FILE`。
 Xray 配置在候选文件校验成功后原子替换，失败保留现有配置。
@@ -311,17 +349,18 @@ Xray 配置在候选文件校验成功后原子替换，失败保留现有配置
 
 已知下载/构建临时目录在成功后立即删除；遗留目录按 23 小时阈值清理，为调度
 间隔预留余量。项目文件日志使用固定时间窗口，约一天内重置，单文件超过
-5 MiB 在下一轮维护时截断，不重启代理服务。诊断、管理器更新、网站构建日志
+1 MiB 在下一轮维护时截断，不重启代理服务。诊断、管理器更新、网站构建日志
 同样按时间和容量清理。活动操作、停机或调度器不可用期间无法保证准时清理。
 
 systemd 245+ 使用独立 `sb-manager` journal namespace：23 小时、持久总量
-16 MiB，并每 15 分钟轮转与清理；不修改主机默认 namespace。日志命令和
+4 MiB，并每 15 分钟轮转与清理；不修改主机默认 namespace。日志命令和
 Quick Tunnel 域名发现同时兼容迁移前后的日志。迁移前共享 journal 中的旧记录
 不能按单个服务物理删除，仍沿用宿主机策略；systemd 245 之前也保留主机策略。
 OpenRC 使用项目文件日志，旧的八轮日志配置调整为不保留轮转副本。
 
 清理范围不包含证书、密钥、CF Token、订阅与规则快照、流量计数、手动备份、
-网站恢复记录以及当前/回滚程序。旧版本曾写入共享 Go 目录的缓存无法可靠归属，
+活动网站配置及当前程序。自动程序备份、状态快照、VPS 初始化快照在操作完成后删除；
+恢复失败的临时记录最多保留 23 小时，运行中的操作有 PID/锁保护。旧版本曾写入共享 Go 目录的缓存无法可靠归属，
 不会自动清空其他项目使用的 Go 缓存；后续显式编译全部使用隔离目录。
 
 ## 与现有 Caddy 网站共享 443（alpha.53，手工接入）

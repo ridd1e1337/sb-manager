@@ -1,8 +1,8 @@
 # sb-manager
 
-`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。也可按需安装最新 Xray-core，生成兼容节点配置并显式切换服务。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
+`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.71`
+当前版本：`0.1.0-alpha.72`
 
 ## 第一步：安装
 
@@ -116,7 +116,11 @@ sb caddy rollback
 
 `sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box、Xray 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
-Xray-core 通过 `sb xray install` 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 下载当前最新版，校验官方摘要后保存在独立版本目录。`sb xray update` 和更新策略会跟随最新 Release；`sb xray status` 显示程序和服务状态。`sb xray config` 根据同一份状态生成 Xray 配置，`sb xray enable` 会停止占用相同节点端口的 sing-box 并启动 Xray，`sb xray disable` 恢复 sing-box。Xray 支持 VMess、普通 Shadowsocks、Trojan、VLESS、SOCKS、HTTP 和 mixed 节点；AnyTLS、Hysteria2、TUIC、Naive、ShadowTLS、Snell 等继续使用 sing-box。
+Xray-core 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 安装并核对摘要。
+`sb xray enable` 将 VLESS 交给 Xray，其他协议继续使用 sing-box；`sb xray disable`
+仅暂停 VLESS。新安装默认使用此分工，旧配置在显式启用前保留原来的 VLESS 引擎。
+旧版已启用的 Xray 会依据服务状态保留分工。两个核心独立生成和校验配置，
+配置未变化的服务不会因另一核心的节点变化重启。
 
 面板 `8 → 13` 可管理 Xray；添加 VLESS 时可选择输入 Xray JSON 或 `@文件路径`。
 面板 `15 → 9` 提供 OpenList 网站安装、更新和 Caddy/Nginx 配置，也可执行：
@@ -134,11 +138,31 @@ Cloudflare 凭据准备 DNS 并申请证书。初始管理员信息保存在
 `/etc/sb-manager/secrets/openlist-admin.txt`，数据保存在 `/var/lib/sb-openlist`。
 站点配置先保存备份，再校验、原子安装和平滑重载，失败尝试恢复；已有域名拒绝覆盖。
 `sb openlist detach DOMAIN` 移除本项目站点入口，保留 OpenList 数据。
-当前功能只部署普通 HTTPS 网站；Xray Reality 前置和网站端口迁移尚未自动化。
+需要 OpenList 与 VLESS Vision Reality 共用 TCP/443，使用面板 `15 → 10`，或：
+
+```bash
+# 新 VPS：同时安装网站、OpenList、Xray、UFW 和 Fail2ban
+sb vps reality files.example.com nginx
+# 使用官方标准 Caddy 时，最后一项换成 caddy
+# 已有基础环境，仅配置网站与节点：
+sb reality setup files.example.com caddy
+```
+
+Xray 监听公网 TCP/443，普通 HTTPS 访问转给本机 TLS 网站，再由网站反代 OpenList。
+Nginx 和 Caddy 均支持，Caddy 无需 L4 插件和本地编译。Nginx 需要本项目现有证书或
+Cloudflare 凭据；Caddy 可通过 HTTP80 申请证书，有 Cloudflare 凭据时会准备 DNS。
+仅在显式 VPS 初始化入口配置 UFW：新主机放行 22/TCP、80/TCP、443/TCP、443/UDP，
+保留实际 SSH 端口及已有规则。只允许这几个公网端口时，其他协议的高位端口需自行决定
+是否开放。`sb reality detach` 恢复网站直接使用 443，并停用该 Reality 节点。
+
+小 VPS 默认推荐 Nginx。程序不会长期保留自动备份或旧版核心；下载包及时删除，
+安装前检查实际可用空间。官方 OpenList v4.2.10 程序约 162 MiB，没有官方 lite 包；
+1 GiB 总磁盘不等于根分区有 1 GiB。OpenList 适合挂载外部网盘，避免将小根分区当作
+文件存储。复杂网站配置会拒绝自动迁移，详细边界见[操作说明](docs/OPERATIONAL_FEATURES.md)。
 
 节点使用独立端口时，Caddy 可直接使用官方 stable APT 包。Debian/Ubuntu systemd 上执行 `sb caddy apt`，将现有标准包接入 `sb update` 和每日任务；仍可正常使用 `apt update && apt upgrade`。该命令只登记已恢复的标准包，不自动拆除 L4、修改网站或开放端口。更新会核对官方源与 SHA256、用候选程序校验网站配置，再通过 APT 安装；失败尝试恢复原包。已登记的标准包不会自动装回 L4。
 
-安装后自动维护项目缓存与日志，最长约一天，并限制日志容量；成功下载和编译的临时目录立即删除。查看策略用 `sb maintenance status`，手动清理用 `sb maintenance run`。证书、凭据、规则、备份以及当前和回滚程序保留。迁移前的共享系统日志仍按宿主机策略管理。
+安装后自动维护项目缓存与日志，最长约一天，并限制日志容量；成功下载和编译的临时目录立即删除。查看策略用 `sb maintenance status`，手动清理用 `sb maintenance run`。默认只保留当前程序；自动备份在操作完成后删除，恢复失败的临时资料最多保留 23 小时。证书、凭据、规则、手动备份和活动网站配置保留。迁移前的共享系统日志仍按宿主机策略管理。
 
 更多协议参数、安全边界、证书、Sub-Store、备份和高级功能见：
 

@@ -30,27 +30,28 @@ status_certificates_json() {
 }
 
 status_nodes_json() {
-  local traffic_data node runtime_node id kind listening endpoint
+  local traffic_data node runtime_node id kind listening endpoint engine
   traffic_data=$(traffic_status_json_unlocked all)
   {
     while IFS= read -r node; do
       [[ -n "$node" ]] || continue
       id=$(jq -r '.id' <<<"$node"); runtime_node=$node
+      engine=$(state_node_engine "$node")
       if declare -F nginx_stream_effective_node >/dev/null 2>&1; then runtime_node=$(nginx_stream_effective_node "$SBM_STATE" "$node"); fi
-      if [[ $(jq -r '.enabled' <<<"$node") != true ]]; then
+      if [[ $(jq -r '.enabled' <<<"$node") != true || "$engine" == disabled ]]; then
         listening=false
       elif [[ "$SBM_SKIP_INIT" == 1 ]]; then
         listening=null
       else
         listening=true
         while IFS= read -r kind; do
-          singbox_port_in_use "$kind" "$(jq -r '.port' <<<"$runtime_node")" || listening=false
+          node_runtime_port_in_use "$node" "$kind" || listening=false
         done < <(node_transport_kinds "$runtime_node")
       fi
       endpoint=$(jq -r '(.domain // .server_address // .client_address // "")' <<<"$node")
       jq -cn --argjson node "$node" --argjson runtime "$runtime_node" --argjson listening "$listening" \
-        --arg endpoint "$endpoint" --argjson traffic "$(jq -c --arg id "$id" '.[]|select(.id==$id)' <<<"$traffic_data")" '
-        {id:$node.id,name:$node.name,protocol:$node.protocol,enabled:$node.enabled,listening:$listening,
+        --arg endpoint "$endpoint" --arg engine "$engine" --argjson traffic "$(jq -c --arg id "$id" '.[]|select(.id==$id)' <<<"$traffic_data")" '
+        {id:$node.id,name:$node.name,protocol:$node.protocol,engine:$engine,enabled:$node.enabled,listening:$listening,
          listen:$runtime.listen,port:$runtime.port,endpoint:$endpoint,metadata:$node.metadata,
          traffic:($traffic + {percent_used:(if $traffic.quota_bytes==null then null else (($traffic.billable_bytes*10000/$traffic.quota_bytes|floor)/100) end)})}
       '
@@ -138,7 +139,7 @@ status_show() {
     usage=$(jq -r 'if .traffic.percent_used==null then "-" else (.traffic.percent_used|tostring)+"%" end' <<<"$row")
     quota=$(jq -r '([.metadata.region]+.metadata.tags | map(select(length>0)) | join(","))' <<<"$row")
     printf '%-17s %-15s %-7s %-9s %-10s %-12s %s\n' "$(jq -r '.id' <<<"$row")" "$(node_protocol_label "$(jq -r '.protocol' <<<"$row")")" \
-      "$(jq -r 'if .enabled then (if .listening==false then "异常" else "启用" end) else "停用" end' <<<"$row")" \
+      "$(jq -r 'if .engine=="disabled" then "暂停" elif .enabled then (if .listening==false then "异常" else "启用" end) else "停用" end' <<<"$row")" \
       "$(jq -r '.port' <<<"$row")" "$usage" "${quota:--}" "$(jq -r '.name' <<<"$row")"
   done < <(jq -c '.nodes[]' <<<"$data")
   if [[ $(jq -r '.issues|length' <<<"$data") != 0 ]]; then

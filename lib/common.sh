@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.71}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.72}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -24,6 +24,7 @@ SBM_CERTS="${SBM_CERTS:-${SBM_ETC}/certs}"
 SBM_BACKUPS="${SBM_BACKUPS:-${SBM_VAR}/backups}"
 SBM_EXPORTS="${SBM_EXPORTS:-${SBM_VAR}/exports}"
 SBM_CACHE="${SBM_CACHE:-${SBM_VAR}/cache}"
+SBM_DOWNLOAD_TMP="${SBM_DOWNLOAD_TMP:-/tmp}"
 SBM_REALM_SECRET="${SBM_REALM_SECRET:-${SBM_SECRETS}/realm.json}"
 SBM_CORE_DIR="${SBM_CORE_DIR:-${SBM_LIB}/cores}"
 SBM_LOCK="${SBM_LOCK:-${SBM_RUN}/manager.lock}"
@@ -74,11 +75,11 @@ SBM_NOTIFICATION_EVENTS="${SBM_NOTIFICATION_EVENTS:-$SBM_VAR/notification-events
 SBM_HEALTH_REPORT="${SBM_HEALTH_REPORT:-$SBM_VAR/health-report.json}"
 SBM_HEALTH_EVENTS="${SBM_HEALTH_EVENTS:-$SBM_VAR/health-events.json}"
 SBM_HEALTH_SERVICE="${SBM_HEALTH_SERVICE:-sb-health-check.service}"
-# Keep the installed footprint bounded on small VPS disks.  The defaults keep
-# the active core plus one rollback candidate and two program backups.
-SBM_CORE_RETENTION="${SBM_CORE_RETENTION:-2}"
+# Retain only the active programs. Operation-local recovery data is removed
+# after success; explicit user-created backup archives remain opt-in.
+SBM_CORE_RETENTION="${SBM_CORE_RETENTION:-1}"
 SBM_CLOUDFLARED_RETENTION="${SBM_CLOUDFLARED_RETENTION:-1}"
-SBM_PROGRAM_BACKUP_RETENTION="${SBM_PROGRAM_BACKUP_RETENTION:-2}"
+SBM_PROGRAM_BACKUP_RETENTION="${SBM_PROGRAM_BACKUP_RETENTION:-0}"
 # Used only when GitHub's Release API cannot be queried.  Normal installs and
 # updates still resolve the newest non-draft Release dynamically.
 SBM_CORE_FALLBACK_VERSION="${SBM_CORE_FALLBACK_VERSION:-1.14.4}"

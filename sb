@@ -34,6 +34,7 @@ source "$SBM_LIB/protocols/snell.sh"
 source "$SBM_LIB/lib/render.sh"
 source "$SBM_LIB/lib/xray.sh"
 source "$SBM_LIB/lib/openlist.sh"
+source "$SBM_LIB/lib/reality_site.sh"
 source "$SBM_LIB/lib/core.sh"
 source "$SBM_LIB/lib/manager.sh"
 source "$SBM_LIB/lib/node.sh"
@@ -159,6 +160,8 @@ sb_help_full() {
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
   sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>
   sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN
+  sb reality status|setup DOMAIN [nginx|caddy] [--node ID] [--init-vps]|detach
+  sb vps reality DOMAIN [nginx|caddy] [--node ID]  一键部署 OpenList、Reality 与基础防护
   sb update [--check]             更新管理脚本与受管 Caddy
   sb update auto enable|disable|status [--json]|run  每日更新脚本与受管 Caddy
   sb cloudflared status|install|update|policy <manual|notify|patch|stable>
@@ -191,7 +194,7 @@ sb_help_full() {
 EOF_HELP
 }
 
-SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core xray openlist update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
+SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core xray openlist reality update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
 
 sb_help_overview() {
   cat <<EOF_OVERVIEW
@@ -213,8 +216,8 @@ sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
 节点与客户端：export  subscription  substore  tunnel  cert
 流量与监控：  traffic  notify  health  probe
 网络调优：    tcp  bbr  hy2  network
-服务器与网站：vps  firewall  mux  caddy  maintenance  settings
-核心与维护：  core  xray  openlist  cloudflared  deps  acme  api  realm  config
+服务器与网站：vps  firewall  mux  caddy  openlist  reality  maintenance  settings
+核心与维护：  core  xray  cloudflared  deps  acme  api  realm  config
 备份与卸载：  backup  restore  restart  uninstall
 
 通用选项：--json  --yes|-y  --dry-run  --quiet|-q  --no-color  --version
@@ -667,6 +670,7 @@ main() {
         *) usage_die '用法：sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN' ;;
       esac
       ;;
+    reality) shift; reality_site_cli "$@" ;;
     cloudflared)
       local action=${2:-status}
       case "$action" in
@@ -766,7 +770,7 @@ main() {
       done
       backup_restore "$archive" "$assume_yes" "$identity"
       ;;
-    restart) singbox_service_reconcile; nginx_stream_reconcile; traffic_reconcile; [[ $(jq -r '.tunnel.mode' "$SBM_STATE") != none ]] && service_try_restart "$SBM_TUNNEL_SERVICE"; status_summary ;;
+    restart) runtime_services_reconcile; nginx_stream_reconcile; traffic_reconcile; [[ $(jq -r '.tunnel.mode' "$SBM_STATE") != none ]] && service_try_restart "$SBM_TUNNEL_SERVICE"; status_summary ;;
     settings)
       case ${2:-show} in
         show) settings_show_addresses "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;

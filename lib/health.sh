@@ -79,7 +79,7 @@ health_node_runtime() {
     runtime_node=$(nginx_stream_effective_node "$SBM_STATE" "$node")
   fi
   while IFS= read -r kind; do
-    singbox_port_in_use "$kind" "$(jq -r '.port' <<<"$runtime_node")" || return 1
+    node_runtime_port_in_use "$node" "$kind" || return 1
   done < <(node_transport_kinds "$runtime_node")
 }
 
@@ -90,12 +90,15 @@ health_collect_json() {
       enabled=$(state_enabled_count)
       if state_runtime_required && ! service_active "$SBM_SERVICE"; then
         health_issue error singbox_inactive sing-box '存在启用节点或 API，但 sing-box 服务未运行。'
-      elif (( enabled > 0 )) && service_active "$SBM_SERVICE"; then
-        while IFS= read -r node; do
-          id=$(jq -r '.id' <<<"$node")
-          health_node_runtime "$node" || health_issue error "node_not_listening:$id" node "节点 $id 的监听端口未就绪。"
-        done < <(state_enabled_nodes "$SBM_STATE")
       fi
+      if xray_runtime_required && ! service_active "$SBM_XRAY_SERVICE"; then
+        health_issue error xray_inactive xray '存在启用的 VLESS 节点，但 Xray 服务未运行。'
+      fi
+      while IFS= read -r node; do
+        [[ $(state_node_engine "$node") != disabled ]] || continue
+        id=$(jq -r '.id' <<<"$node")
+        health_node_runtime "$node" || health_issue error "node_not_listening:$id" node "节点 $id 的监听端口未就绪。"
+      done < <(state_enabled_nodes "$SBM_STATE")
       if nginx_stream_state_enabled "$SBM_STATE"; then
         if ! service_active "$(mux_service)"; then
           health_issue error mux_inactive mux "TCP/SNI 复用已启用但服务未运行（$(mux_backend_label)）。"

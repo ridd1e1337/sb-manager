@@ -128,6 +128,16 @@ vps_init_rollback() {
   return "$rc"
 }
 
+vps_init_finish() {
+  local backup=$1 complete=$2
+  if [[ "$complete" == 1 ]] || vps_init_rollback "$backup"; then
+    rm -rf -- "$backup" || return 1
+  else
+    touch "$backup/.recovery-pending" || return 1
+    log_error "初始化恢复未完成，资料最多保留 23 小时：$backup"
+  fi
+}
+
 vps_init_caddy() {
   local backup=$1 tmp
   if service_active caddy.service; then
@@ -260,12 +270,12 @@ _vps_init() (
   mkdir -p "$SBM_VPS_INIT_DIR" || return 1
   chmod 0700 "$SBM_VPS_INIT_DIR" || return 1
   backup=$(mktemp -d "$SBM_VPS_INIT_DIR/$(now_stamp).XXXXXX") || return 1
-  chmod 0700 "$backup"
+  trap 'rc=$?; trap - EXIT; vps_init_finish "$backup" "$complete" || log_warn "初始化临时资料清理未完成：$backup"; exit "$rc"' EXIT
+  chmod 0700 "$backup" || return 1
   vps_service_snapshot "$backup" || return 1
   if command_exists fail2ban-client && fail2ban-client status sshd >/dev/null 2>&1; then
     touch "$backup/fail2ban-sshd-was-active" || return 1
   fi
-  trap 'rc=$?; trap - EXIT; if [[ "$complete" != 1 ]]; then vps_init_rollback "$backup" || true; fi; exit "$rc"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM HUP
   # Include services before package installation: Debian packages may start
@@ -289,13 +299,13 @@ _vps_init() (
   vps_init_fail2ban "$backup" "$ports" || return 1
   local report
   report=$(mktemp "$SBM_VPS_INIT_DIR/.last.XXXXXX") || return 1
-  jq -n --arg at "$(now_iso)" --arg version "$SBM_VERSION" --arg backup "$backup" \
+  jq -n --arg at "$(now_iso)" --arg version "$SBM_VERSION" \
     --argjson ports "$(jq -Rsc 'split("\n")|map(select(length>0)|tonumber)' <<<"$ports")" \
-    '{completed_at:$at,manager_version:$version,backup:$backup,ssh_ports:$ports,components:["caddy","ufw","fail2ban"]}' >"$report" || return 1
+    '{completed_at:$at,manager_version:$version,ssh_ports:$ports,components:["caddy","ufw","fail2ban"]}' >"$report" || return 1
   chmod 0600 "$report" && mv -f "$report" "$SBM_VPS_INIT_DIR/last.json" || return 1
   complete=1
   log_ok '新 VPS 初始化完成：Caddy、UFW、Fail2ban 已就绪。'
-  log_info "配置备份：$backup；已有规则保留，其他节点端口不会自动放行。"
+  log_info '已有规则保留，其他节点端口不会自动放行；本次临时恢复资料随完成清理。'
 )
 
 vps_init() {
@@ -308,6 +318,12 @@ vps_init() {
 vps_cli() {
   local action=${1:-status} dry_run=${SBM_DRY_RUN:-0} json=${SBM_OUTPUT_JSON:-0}
   (($# == 0)) || shift
+  if [[ "$action" == reality ]]; then
+    require_root; require_command jq; require_command openssl; require_command flock
+    state_init || return 1
+    reality_site_cli setup "$@" --init-vps
+    return
+  fi
   while (($#)); do
     case "$1" in --dry-run) dry_run=1;; --json) json=1;; --yes|-y) ;; *) usage_die '用法：sb vps init [--dry-run] | status [--json] | systems';; esac
     shift

@@ -221,7 +221,7 @@ _caddy_switch() {
   if [[ "$managed" == true ]]; then
     canonical=$(jq -r '.binary' <<<"$context"); method=$(jq -r '.method' <<<"$context")
     service_file=$(jq -r '.service_file' <<<"$context")
-    previous=$(jq -c '{target,version,sha256}' <<<"$context")
+    previous=null
   else
     method=standalone; canonical="$SBM_BIN_DIR/caddy-managed"
     if [[ $(dependency_distro) == debian ]] && command_exists dpkg-divert && command_exists update-alternatives \
@@ -275,7 +275,28 @@ _caddy_manage() {
 caddy_manage() {
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'Caddy 接入不接受 --dry-run。'
   website_mux_require_python || return 1
-  with_state_transaction caddy-manage _caddy_manage
+  with_state_transaction caddy-manage _caddy_manage || return 1
+  with_lock caddy_prune_versions
+}
+
+caddy_prune_versions() {
+  local path candidate
+  [[ -s "$SBM_STATE" && -d "$SBM_CADDY_STORE" ]] || return 0
+  [[ -z $(find "$SBM_BACKUPS" -maxdepth 4 -type f -name .recovery-pending -print -quit 2>/dev/null) ]] || return 0
+  if jq -e '.caddy.previous != null' "$SBM_STATE" >/dev/null; then
+    candidate=$(state_candidate) || return 1
+    jq 'del(.caddy.previous)' "$SBM_STATE" >"$candidate" && state_update_timestamp "$candidate" && safe_install_file "$candidate" "$SBM_STATE" 0600 || { rm -f "$candidate"; return 1; }
+    rm -f "$candidate" || return 1
+  fi
+  for path in "$SBM_CADDY_STORE"/*; do
+    [[ -d "$path" && ! -L "$path" ]] || continue
+    [[ "${path##*/}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{16}$ ]] || continue
+    if ! jq -e --arg target "$path/caddy" '.caddy.target==$target
+      or .nginx_stream.website.binary==$target or .nginx_stream.website.original_binary==$target
+      or .reality_site.binary==$target or any(.openlist.sites[]?; .binary==$target)' "$SBM_STATE" >/dev/null; then
+      rm -rf -- "$path" || return 1
+    fi
+  done
 }
 
 _caddy_update() {
@@ -300,11 +321,13 @@ _caddy_update() {
   digest=$(sha256sum "$target" | awk '{print $1}') || return 1
   if [[ "$digest" == "$(jq -r '.sha256' <<<"$context")" ]]; then
     caddy_verify_running "$target" "$digest" || return 1
+    caddy_prune_versions || return 1
     log_ok '官方构建与当前运行程序一致，无需切换或重启。'; return 0
   fi
   # Download failures and unchanged builds must not enter a rollback that
   # would restart otherwise healthy services during the daily update.
-  _state_transaction_run caddy-update _caddy_switch "$target" update
+  _state_transaction_run caddy-update _caddy_switch "$target" update || return 1
+  caddy_prune_versions
 }
 
 _caddy_rollback() {
@@ -313,7 +336,7 @@ _caddy_rollback() {
   target=$(jq -r '.caddy.previous.target // empty' "$SBM_STATE")
   digest=$(jq -r '.caddy.previous.sha256 // empty' "$SBM_STATE")
   [[ -n "$target" && -x "$target" && "$(sha256sum "$target" | awk '{print $1}')" == "$digest" ]] || {
-    log_error '没有可用且摘要匹配的上一版 Caddy。'; return 1;
+    log_error '默认不保留历史 Caddy 程序；更新失败仍会在本次操作内自动恢复。'; return 1;
   }
   _caddy_switch "$target" rollback
 }
@@ -363,7 +386,8 @@ caddy_cli() {
     rollback)
       (($# == 0)) || usage_die '用法：sb caddy rollback'
       [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'Caddy 回滚不接受 --dry-run。'
-      with_state_transaction caddy-rollback _caddy_rollback;;
+      with_state_transaction caddy-rollback _caddy_rollback || return 1
+      with_lock caddy_prune_versions;;
     *) usage_die '用法：sb caddy status|apt|manage|update [--check]|rollback';;
   esac
 }

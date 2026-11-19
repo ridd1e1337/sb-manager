@@ -23,10 +23,10 @@ maintenance_journal_units() {
 # Managed by sb-manager; applies only to its own journal namespace.
 [Journal]
 Storage=persistent
-SystemMaxUse=16M
-RuntimeMaxUse=8M
-SystemMaxFileSize=2M
-RuntimeMaxFileSize=1M
+SystemMaxUse=4M
+RuntimeMaxUse=2M
+SystemMaxFileSize=1M
+RuntimeMaxFileSize=512K
 MaxFileSec=15min
 MaxRetentionSec=23h
 ForwardToSyslog=no
@@ -66,6 +66,12 @@ maintenance_safe_cache_root() {
   [[ -d "$SBM_CACHE" && ! -L "$SBM_CACHE" ]]
 }
 
+maintenance_operation_active() {
+  local pid
+  pid=$(cat "$1/.operation-pid" 2>/dev/null || true)
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null
+}
+
 _maintenance_run() {
   local path name temporary epochs now epoch inode saved_inode modified born directory
   now=$(date +%s)
@@ -79,8 +85,53 @@ _maintenance_run() {
   if maintenance_safe_cache_root; then
     while IFS= read -r -d '' path; do
       name=${path##*/}
-      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|xray.*|openlist.*|acme.*|cloudflared.*) rm -rf -- "$path" || return 1;; esac
+      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|xray.*|openlist.*|acme.*|cloudflared.*|backup.*|restore.*) rm -rf -- "$path" || return 1;; esac
     done < <(find "$SBM_CACHE" -mindepth 1 -maxdepth 1 -mmin +1380 -print0)
+  fi
+  if [[ -d "$SBM_DOWNLOAD_TMP" && ! -L "$SBM_DOWNLOAD_TMP" ]]; then
+    while IFS= read -r -d '' path; do
+      rm -rf -- "$path" || return 1
+    done < <(find "$SBM_DOWNLOAD_TMP" -mindepth 1 -maxdepth 1 -type d \( -name 'sb-manager-openlist.*' -o -name 'sb-manager-sing-box.*' \) -mmin +1380 -print0)
+  fi
+  # Only operation-created recovery directories have this marker. User-made
+  # .tar.gz/.age backups are never selected by automatic maintenance.
+  if [[ -d "$SBM_BACKUPS" && ! -L "$SBM_BACKUPS" ]]; then
+    while IFS= read -r -d '' path; do
+      maintenance_operation_active "$(dirname "$path")" && continue
+      rm -rf -- "$(dirname "$path")" || return 1
+    done < <(find "$SBM_BACKUPS" -mindepth 2 -maxdepth 4 -type f -name .recovery-pending -mmin +1380 -print0)
+    while IFS= read -r -d '' path; do
+      [[ ! -f "$path/.recovery-pending" ]] || continue
+      maintenance_operation_active "$path" && continue
+      rm -rf -- "$path" || return 1
+    done < <(find "$SBM_BACKUPS" -mindepth 1 -maxdepth 1 -type d -name 'config-current.*' -mmin +1380 -print0)
+    if [[ ${SBM_PROGRAM_BACKUP_RETENTION:-0} == 0 ]]; then
+      for path in "$SBM_BACKUPS"/program-*; do
+        [[ -d "$path" && ! -L "$path" && ! -f "$path/.recovery-pending" ]] || continue
+        maintenance_operation_active "$path" && continue
+        rm -rf -- "$path" || return 1
+      done
+    fi
+  fi
+  if [[ -d "$SBM_RUN" && ! -L "$SBM_RUN" ]]; then
+    for path in "$SBM_RUN"/reality-setup.* "$SBM_RUN"/reality-detach.*; do
+      [[ -d "$path" && ! -L "$path" && -f "$path/.recovery-pending" ]] || continue
+      maintenance_operation_active "$path" && continue
+      modified=$(stat -c %Y "$path/.recovery-pending") || return 1
+      (( now - modified >= 82800 )) || continue
+      rm -rf -- "$path" || return 1
+    done
+  fi
+  if [[ -d "${SBM_VPS_INIT_DIR:-$SBM_VAR/vps-init}" && ! -L "${SBM_VPS_INIT_DIR:-$SBM_VAR/vps-init}" ]]; then
+    for path in "${SBM_VPS_INIT_DIR:-$SBM_VAR/vps-init}"/*; do
+      [[ -d "$path" && ! -L "$path" && "${path##*/}" =~ ^[0-9]{8}T[0-9]{6}Z\.[A-Za-z0-9]+$ ]] || continue
+      maintenance_operation_active "$path" && continue
+      if [[ -f "$path/.recovery-pending" ]]; then
+        modified=$(stat -c %Y "$path/.recovery-pending") || return 1
+        (( now - modified >= 82800 )) || continue
+      fi
+      rm -rf -- "$path" || return 1
+    done
   fi
   for directory in "$SBM_LOG_DIR" "$SBM_OPENLIST_LOG_DIR"; do
     [[ -d "$directory" && ! -L "$directory" && "$directory" != / && "$directory" != /var/log ]] || continue
@@ -94,7 +145,7 @@ _maintenance_run() {
         born=$(stat -c %W "$path" 2>/dev/null || printf 0)
         if [[ "$born" =~ ^[1-9][0-9]*$ ]]; then epoch=$born; else epoch=$modified; fi
       fi
-      if (( now - epoch >= 84600 )) || (( $(stat -c %s "$path") > 5242880 )); then
+      if (( now - epoch >= 84600 )) || (( $(stat -c %s "$path") > 1048576 )); then
         maintenance_truncate_log "$path" || return 1
         epoch=$now
       fi
@@ -109,7 +160,7 @@ _maintenance_run() {
     [[ -d "$directory" && ! -L "$directory" && "$directory" != / ]] || continue
     find "$directory" -maxdepth 1 -type f -name '*.log' -mmin +1380 -delete || return 1
     while IFS= read -r -d '' path; do
-      (( $(stat -c %s "$path") <= 5242880 )) || maintenance_truncate_log "$path" || return 1
+      (( $(stat -c %s "$path") <= 1048576 )) || maintenance_truncate_log "$path" || return 1
     done < <(find "$directory" -maxdepth 1 -type f -name '*.log' -print0)
   done
   if [[ -d "$SBM_BACKUPS/openlist" && ! -L "$SBM_BACKUPS/openlist" ]]; then
@@ -118,20 +169,15 @@ _maintenance_run() {
   fi
   if [[ -f "$SBM_JOURNAL_CONFIG" ]] && maintenance_namespace_supported \
     && systemctl is-active --quiet systemd-journald@sb-manager.service; then
-    journalctl --namespace=sb-manager --rotate --vacuum-time=23h --vacuum-size=16M >/dev/null 2>&1 || return 1
+    journalctl --namespace=sb-manager --rotate --vacuum-time=23h --vacuum-size=4M >/dev/null 2>&1 || return 1
   fi
-  # Versioned Caddy programs are not temporary cache: retain the running and
-  # rollback binaries even when older than a day; reclaim only other versions.
-  if [[ -d "$SBM_CADDY_STORE" && -s "$SBM_STATE" ]]; then
-    while IFS= read -r -d '' path; do
-      name=${path##*/}
-      [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{16}$ ]] || continue
-      if ! jq -e --arg target "$path/caddy" '.caddy.target==$target or .caddy.previous.target==$target
-        or .nginx_stream.website.binary==$target or .nginx_stream.website.original_binary==$target' "$SBM_STATE" >/dev/null; then
-        rm -rf -- "$path" || return 1
-      fi
-    done < <(find "$SBM_CADDY_STORE" -mindepth 1 -maxdepth 1 -type d -mmin +1380 -print0)
-  fi
+  # Active website baselines may still refer to a binary after a frontend
+  # transition. The Caddy helper keeps those references, without old releases.
+  if declare -F caddy_prune_versions >/dev/null 2>&1; then caddy_prune_versions || return 1; fi
+  if declare -F snapshot_prune >/dev/null 2>&1; then snapshot_prune || return 1; fi
+  if declare -F core_prune_cached_versions >/dev/null 2>&1; then core_prune_cached_versions || return 1; fi
+  if declare -F cloudflared_prune_cached_versions >/dev/null 2>&1; then cloudflared_prune_cached_versions || return 1; fi
+  if declare -F xray_prune_versions >/dev/null 2>&1; then xray_prune_versions || return 1; fi
   now_iso >"$SBM_MAINTENANCE_DIR/last-run"
 }
 
@@ -193,13 +239,14 @@ maintenance_status() {
   elif [[ -x "$SBM_PERIODIC_DIR/15min/sb-maintenance" ]] && service_active crond; then scheduled='已启用'; fi
   printf '定期维护：%s\n' "$scheduled"
   printf '临时下载/编译缓存：最长约 24 小时；成功下载/编译会立即清理。\n'
-  printf '项目文件日志：最长约 24 小时，单文件上限 5 MiB（每 15 分钟维护）。\n'
+  printf '项目文件日志：最长约 24 小时，单文件达到 1 MiB 后清理（每 15 分钟维护）。\n'
   if maintenance_namespace_supported; then
-    printf 'systemd 项目日志：独立 sb-manager 空间，23 小时、总量 16 MiB。\n'
+    printf 'systemd 项目日志：独立 sb-manager 空间，23 小时、总量 4 MiB。\n'
   else
     printf 'OpenRC 使用项目文件日志；systemd 245 之前的系统日志沿用宿主机策略。\n'
   fi
-  printf '保留：当前/回滚程序、证书、凭据、流量计数、规则与网站恢复记录。\n'
+  printf '自动操作成功即删除临时恢复资料；恢复未完成的资料最多保留 23 小时。\n'
+  printf '默认仅保留当前核心；证书、凭据、节点数据、活动网站配置与手动备份保留。\n'
   [[ ! -f "$SBM_MAINTENANCE_DIR/last-run" ]] || printf '上次完成：%s\n' "$(cat "$SBM_MAINTENANCE_DIR/last-run")"
 }
 

@@ -82,6 +82,29 @@ singbox_port_in_use() {
   '
 }
 
+node_runtime_port_in_use() {
+  local node=$1 kind=$2 state=${3:-$SBM_STATE} engine port
+  engine=$(state_node_engine "$node" "$state") || return 1
+  if declare -F nginx_stream_effective_node >/dev/null 2>&1; then
+    node=$(nginx_stream_effective_node "$state" "$node") || return 1
+  fi
+  port=$(jq -r '.port' <<<"$node") || return 1
+  case "$engine" in
+    sing-box) singbox_port_in_use "$kind" "$port" ;;
+    xray)
+      [[ "$kind" == tcp ]] && command_exists ss || return 1
+      ss -H -ltnp 2>/dev/null | awk -v p="$port" '
+        $0 ~ /"xray"/ {
+          address = ($1 == "tcp") ? $5 : $4
+          if (address ~ (":" p "$")) found=1
+        }
+        END {exit !found}
+      ' ;;
+    disabled) return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
 node_list_json() {
   local tag=${1:-} region=${2:-}
   jq --arg tag "$tag" --arg region "$region" '[.nodes[]
@@ -146,7 +169,7 @@ node_validate_json_object() {
 
 _node_add() {
   local type=$1; shift
-  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
+  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='xtls-rprx-vision' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
   local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0
   while (($#)); do
     case "$1" in
@@ -242,7 +265,13 @@ _node_add() {
       protocol=tuic; base=tuic; transport=udp; port=${port:-443}; domain=${domain:?TUIC 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-TUIC}; address=${address:-${default_address:-$domain}}; case "$congestion_control" in cubic|new_reno|bbr) ;; *) die 'TUIC 拥塞控制必须是 cubic、new_reno 或 bbr。';; esac; secret=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}')
       ;;
     vless)
-      protocol=vless; base=vless; transport=tcp; port=${port:-443}; [[ "$security" == tls || "$security" == reality ]] || die 'VLESS security 必须是 tls 或 reality。'; if [[ "$security" == reality && -z "$domain" ]]; then domain=www.apple.com; fi; [[ -n "$domain" ]] || die 'VLESS 必须指定 --domain。'; name=${name:-VLESS}; address=${address:-${default_address:-$domain}}; flow=${flow:-xtls-rprx-vision}; [[ "$security" != reality || -n "$handshake_server" ]] || die 'VLESS Reality 必须指定 --handshake-server。'; validate_domain "$domain" || die "无效域名：$domain"; validate_port "$handshake_port" || die "无效 Reality 握手端口：$handshake_port"; secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}'); [[ "$security" != reality ]] || reality_secret=$(protocol_vless_generate_reality_secret)
+      protocol=vless; base=vless; transport=tcp; port=${port:-443}; [[ "$security" == tls || "$security" == reality ]] || die 'VLESS security 必须是 tls 或 reality。'; if [[ "$security" == reality && -z "$domain" ]]; then domain=www.apple.com; fi; [[ -n "$domain" ]] || die 'VLESS 必须指定 --domain。'; name=${name:-VLESS}; address=${address:-${default_address:-$domain}}; [[ "$security" != reality || -n "$handshake_server" ]] || die 'VLESS Reality 必须指定 --handshake-server。'; validate_domain "$domain" || die "无效域名：$domain"; validate_port "$handshake_port" || die "无效 Reality 握手端口：$handshake_port"; case "$flow" in ''|xtls-rprx-vision) ;; *) die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。';; esac
+      if [[ "$security" == reality ]]; then
+        validate_domain "$handshake_server" || validate_ipv4 "$handshake_server" || validate_ipv6 "$handshake_server" || die 'Reality 握手目标必须是域名或 IP。'
+      fi
+      if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray && ! -x "$SBM_XRAY_BIN" ]]; then _xray_install >&2 || return 1; fi
+      secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') || return 1
+      [[ "$security" != reality ]] || reality_secret=$(protocol_vless_generate_reality_secret) || return 1
       ;;
     naive)
       protocol=naive; base=naive; [[ "$network" == tcp || "$network" == udp ]] || die 'Naive network 必须是 tcp 或 udp。'; transport=$network; port=${port:-443}; domain=${domain:?Naive 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-Naive}; address=${address:-${default_address:-$domain}}; secret=$(jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}')
@@ -502,7 +531,7 @@ _node_set() {
       --masquerade) [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || die 'masquerade 不能包含控制字符'; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.masquerade)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --security) [[ "$value" == "$(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.security' "$candidate")" ]] || { rm -f "$candidate"; die 'VLESS security 创建后不可直接切换；请新建目标类型节点。'; };;
       --flow) [[ -z "$value" || "$value" == xtls-rprx-vision ]] || { rm -f "$candidate"; die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。'; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.flow)=(if $v=="" then null else $v end)' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
-      --handshake-server) validate_domain "$value" || { rm -f "$candidate"; die "无效握手域名：$value"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.handshake_server)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
+      --handshake-server) validate_domain "$value" || { [[ $(jq -r '.protocol' <<<"$node") == vless ]] && { validate_ipv4 "$value" || validate_ipv6 "$value"; }; } || { rm -f "$candidate"; die "无效握手目标：$value"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.handshake_server)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --strict-mode) [[ "$value" == true || "$value" == false ]] || { rm -f "$candidate"; die 'strict-mode 必须是 true 或 false。'; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.strict_mode)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --wildcard-sni) case "$value" in off|authed|all) ;; *) rm -f "$candidate"; die 'wildcard-sni 必须是 off、authed 或 all。';; esac; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.wildcard_sni)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --snell-mode) case "$value" in default|unshaped|unsafe-raw) ;; *) rm -f "$candidate"; die 'Snell mode 必须是 default、unshaped 或 unsafe-raw。';; esac; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.snell_mode)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;

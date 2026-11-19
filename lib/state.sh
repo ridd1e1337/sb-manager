@@ -12,7 +12,7 @@ state_default_json() {
       created_at: $now,
       updated_at: $now,
       settings: {
-        log_level: "info",
+        log_level: "warn",
         default_server_address: "",
         default_server_address_source: "auto",
         public_ipv4: "",
@@ -27,7 +27,8 @@ state_default_json() {
         manager_auto_update: true,
         manager_update_minute: $manager_update_minute,
         cloudflared_update_policy: "notify",
-        xray_update_policy: "notify"
+        xray_update_policy: "notify",
+        vless_engine: "xray"
       },
       tunnel: {
         mode: "none",
@@ -173,7 +174,8 @@ state_migrate() {
         snapshot_restore "$backup" || true
         die "状态 schema v1 → v2 迁移失败；已尝试恢复快照：$backup"
       fi
-      log_ok "状态已从 schema v1 迁移到 v2；迁移前快照：$backup"
+      rm -rf -- "$backup" || return 1
+      log_ok '状态已从 schema v1 迁移到 v2。'
       ;;
     '') die "状态文件缺少 schema_version，无法自动迁移：$SBM_STATE" ;;
     *) die "不支持的状态版本 $version；当前管理器仅支持 schema_version 1/2。" ;;
@@ -181,9 +183,22 @@ state_migrate() {
 }
 
 state_normalize_v2_file() {
-  local file=$1 tmp
+  local file=$1 tmp legacy_engine=sing-box xray_unit
+  # Older releases enabled Xray through its service without recording the
+  # engine in state. Preserve that explicit activation on the first upgrade;
+  # a downloaded binary by itself must never move existing VLESS listeners.
+  if jq -e '.settings.vless_engine == null' "$file" >/dev/null; then
+    xray_unit=$(SBM_SKIP_INIT=0 service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
+    if [[ -f "$xray_unit" ]] && grep -Eq 'sb-manager .*Xray-core service' "$xray_unit"; then
+      # --no-start suppresses mutations, but these two service queries are
+      # read-only and must still recognize an existing enabled Xray service.
+      if SBM_SKIP_INIT=0 service_active "$SBM_XRAY_SERVICE" || SBM_SKIP_INIT=0 service_enabled "$SBM_XRAY_SERVICE"; then
+        legacy_engine=xray
+      fi
+    fi
+  fi
   tmp=$(mktemp "$(dirname "$file")/.state-normalize.XXXXXX")
-  jq --argjson manager_update_minute "$((RANDOM % 180))" '
+  jq --argjson manager_update_minute "$((RANDOM % 180))" --arg legacy_engine "$legacy_engine" '
     .settings.default_server_address_source //= (if .settings.default_server_address=="" then "auto" else "manual" end)
     | if .settings.manager_auto_update==null then .settings.manager_auto_update=true else . end
     | .settings.manager_update_minute //= $manager_update_minute
@@ -195,6 +210,7 @@ state_normalize_v2_file() {
     | .settings.dns_optimistic_timeout //= "3d"
     | .settings.dns_timeout //= "10s"
     | .settings.xray_update_policy //= "notify"
+    | .settings.vless_engine //= $legacy_engine
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
     | .realm //= {enabled:false,listen:"::",port:9443,public_url:"",tls_domain:"",user_name:"default",max_realms:0}
     | .realm.enabled //= false
@@ -465,7 +481,8 @@ state_validate() {
       and (.manager_auto_update | type == "boolean")
       and (.manager_update_minute | type == "number" and floor==. and .>=0 and .<180)
       and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable"))
-      and (.xray_update_policy | IN("manual", "notify", "patch", "stable")))
+      and (.xray_update_policy | IN("manual", "notify", "patch", "stable"))
+      and (.vless_engine | IN("sing-box", "xray", "disabled")))
     and (.tunnel | type == "object"
       and (.mode | IN("none", "fixed", "quick", "managed"))
       and ((.node_id | type) == "string" or (.node_id | type) == "null")
@@ -570,6 +587,7 @@ state_validate() {
         and (.enabled | type == "boolean")
         and (.created_at | timestamp)))
   ' "$f" >/dev/null || die "状态文件结构无效或字段不符合 schema v2：$f"
+  if declare -F reality_site_validate_state >/dev/null 2>&1; then reality_site_validate_state "$f" || return 1; fi
 }
 
 state_candidate() {
@@ -584,32 +602,62 @@ state_enabled_count() {
   local state=${1:-$SBM_STATE}
   jq '[.nodes[]? | select(.enabled==true)] | length' "$state"
 }
+state_singbox_nodes() {
+  jq -c '(.settings.vless_engine // "sing-box") as $engine
+    | .nodes[]? | select(.enabled==true and (.protocol!="vless" or $engine=="sing-box"))' "${1:-$SBM_STATE}"
+}
+
+state_xray_nodes() {
+  jq -c 'select(.settings.vless_engine=="xray") | .nodes[]? | select(.enabled==true and .protocol=="vless")' "${1:-$SBM_STATE}"
+}
+
+state_node_engine() {
+  local node=$1 state=${2:-$SBM_STATE}
+  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then jq -r '.settings.vless_engine // "sing-box"' "$state"
+  else printf 'sing-box\n'; fi
+}
+
+# This historical helper describes sing-box service demand, not both cores.
 state_runtime_required() {
-  local state=${1:-$SBM_STATE}
-  (( $(state_enabled_count "$state") > 0 )) || [[ $(jq -r '.api.enabled // false' "$state") == true ]] || [[ $(jq -r '.realm.enabled // false' "$state") == true ]]
+  jq -e '(.settings.vless_engine // "sing-box") as $engine
+    | any(.nodes[]?; .enabled==true and (.protocol!="vless" or $engine=="sing-box"))
+      or .api.enabled==true or .realm.enabled==true
+      or (.nginx_stream.enabled==true and (.nginx_stream.backend // "sing-box")=="sing-box")' "${1:-$SBM_STATE}" >/dev/null
+}
+
+xray_runtime_required() {
+  jq -e '.settings.vless_engine=="xray" and any(.nodes[]?; .enabled==true and .protocol=="vless")' "${1:-$SBM_STATE}" >/dev/null
 }
 
 singbox_service_reconcile() {
+  local restart=${1:-1}
   [[ "$SBM_SKIP_INIT" == "1" ]] && return 0
   service_exists "$SBM_SERVICE" || return 0
-  service_reload_manager
   if ! state_runtime_required; then
-    # Keep an empty installation dormant across reboots. Adding the first
-    # enabled node will enable and start the unit again below.
-    service_disable "$SBM_SERVICE"
-    service_stop "$SBM_SERVICE"
+    service_disable "$SBM_SERVICE" && service_stop "$SBM_SERVICE" || return 1
     service_reset_failed "$SBM_SERVICE"
     return 0
   fi
-  service_enable "$SBM_SERVICE" || true
+  if [[ "$restart" == 0 ]] && service_active "$SBM_SERVICE"; then return 0; fi
+  service_reload_manager && service_enable "$SBM_SERVICE" || return 1
   service_reset_failed "$SBM_SERVICE"
-  if ! service_restart "$SBM_SERVICE"; then
-    service_failure_report "$SBM_SERVICE"
-    return 1
+  service_restart "$SBM_SERVICE" && service_wait_active "$SBM_SERVICE" 20 || {
+    service_failure_report "$SBM_SERVICE"; return 1;
+  }
+}
+
+runtime_services_reconcile() {
+  local singbox_changed=${1:-1} xray_changed=${2:-1}
+  [[ "$SBM_SKIP_INIT" != 1 ]] || return 0
+  # Release VLESS listeners in the old engine before starting the new owner.
+  if [[ "$xray_changed" == 1 ]] && service_active "$SBM_XRAY_SERVICE"; then
+    service_stop "$SBM_XRAY_SERVICE" || return 1
+    if service_active "$SBM_XRAY_SERVICE"; then log_error 'Xray 未能停止，保留恢复记录。'; return 1; fi
   fi
-  if ! service_wait_active "$SBM_SERVICE" 20; then
-    service_failure_report "$SBM_SERVICE"
-    return 1
+  if [[ $(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE") == xray ]]; then
+    singbox_service_reconcile "$singbox_changed" && xray_service_reconcile "$xray_changed"
+  else
+    xray_service_reconcile "$xray_changed" && singbox_service_reconcile "$singbox_changed"
   fi
 }
 state_secret_path() { printf '%s/nodes/%s.json\n' "$SBM_SECRETS" "$1"; }
@@ -666,76 +714,87 @@ state_update_timestamp() {
   must_mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
 }
 
-snapshot_create() {
-  local reason=${1:-manual} stamp dir
-  stamp=$(now_stamp)
-  mkdir -p "$SBM_BACKUPS/snapshots"
-  dir=$(mktemp -d "$SBM_BACKUPS/snapshots/${stamp}-${reason//[^a-zA-Z0-9._-]/_}.XXXXXX")
+snapshot_create() (
+  local reason=${1:-manual} stamp dir xray_unit complete=0
+  stamp=$(now_stamp) || return 1
+  mkdir -p "$SBM_BACKUPS/snapshots" || return 1
+  dir=$(mktemp -d "$SBM_BACKUPS/snapshots/${stamp}-${reason//[^a-zA-Z0-9._-]/_}.XXXXXX") || return 1
+  trap '(( complete )) || rm -rf -- "$dir"' EXIT
+  chmod 0700 "$dir" || return 1
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_checkpoint_unlocked >/dev/null 2>&1 \
     && jq -e '.schema_version==2 and all(.nodes[]?; (.traffic.reset_day // 0) >= 1)' "$SBM_STATE" >/dev/null 2>&1; then
-    traffic_checkpoint_unlocked || log_warn '创建快照前无法同步流量用量；快照中的用量可能稍旧。'
+    traffic_checkpoint_unlocked || log_warn '创建临时快照前无法同步流量用量。'
   fi
-  [[ -f "$SBM_STATE" ]] && cp -a "$SBM_STATE" "$dir/state.json"
-  [[ -f "$SBM_CONFIG" ]] && cp -a "$SBM_CONFIG" "$dir/config.json"
-  [[ -d "$SBM_SECRETS" ]] && cp -a "$SBM_SECRETS" "$dir/secrets"
-  [[ -d "$SBM_CERTS" ]] && cp -a "$SBM_CERTS" "$dir/certs"
-  [[ -d "$SBM_SUBSCRIPTIONS" ]] && cp -a "$SBM_SUBSCRIPTIONS" "$dir/subscriptions"
-  [[ -f "$SBM_TRAFFIC_USAGE" ]] && cp -a "$SBM_TRAFFIC_USAGE" "$dir/traffic-usage.json"
+  [[ ! -f "$SBM_STATE" ]] || cp -a "$SBM_STATE" "$dir/state.json" || return 1
+  [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$dir/config.json" || return 1
+  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$dir/xray-config.json" || return 1
+  xray_unit=$(service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
+  [[ -z "$xray_unit" || ! -f "$xray_unit" ]] || cp -a "$xray_unit" "$dir/xray-service" || return 1
+  touch "$dir/dual-core-snapshot" || return 1
+  printf '%s\n' "$$" >"$dir/.operation-pid" || return 1
+  [[ ! -d "$SBM_SECRETS" ]] || cp -a "$SBM_SECRETS" "$dir/secrets" || return 1
+  [[ ! -d "$SBM_CERTS" ]] || cp -a "$SBM_CERTS" "$dir/certs" || return 1
+  [[ ! -d "$SBM_SUBSCRIPTIONS" ]] || cp -a "$SBM_SUBSCRIPTIONS" "$dir/subscriptions" || return 1
+  [[ ! -f "$SBM_TRAFFIC_USAGE" ]] || cp -a "$SBM_TRAFFIC_USAGE" "$dir/traffic-usage.json" || return 1
   if [[ "$reason" == *restore* ]] && declare -F substore_backup_payload >/dev/null 2>&1; then
     substore_backup_payload "$dir/substore" || return 1
-    touch "$dir/substore-restore-scope"
+    touch "$dir/substore-restore-scope" || return 1
   fi
+  complete=1
   printf '%s\n' "$dir"
-}
+)
 
 snapshot_restore_payload() {
   local snapshot=$1 path tmp
   [[ -d "$snapshot" ]] || return 1
   if [[ -d "$snapshot/secrets" ]]; then
     tmp="$SBM_SECRETS.rollback.$$"
-    rm -rf -- "$tmp"
-    cp -a "$snapshot/secrets" "$tmp"
-    rm -rf -- "$SBM_SECRETS"
-    mv -f -- "$tmp" "$SBM_SECRETS"
+    rm -rf -- "$tmp" || return 1 || return 1 || return 1 || return 1
+    cp -a "$snapshot/secrets" "$tmp" || return 1
+    rm -rf -- "$SBM_SECRETS" || return 1 || return 1
+    mv -f -- "$tmp" "$SBM_SECRETS" || return 1 || return 1
   elif [[ -d "$snapshot/node-secrets" ]]; then
     tmp="$SBM_SECRETS.rollback.$$"
-    rm -rf -- "$tmp"
-    mkdir -p "$tmp"
-    cp -a "$snapshot/node-secrets" "$tmp/nodes"
-    rm -rf -- "$SBM_SECRETS"
-    mv -f -- "$tmp" "$SBM_SECRETS"
+    rm -rf -- "$tmp" || return 1 || return 1 || return 1 || return 1
+    mkdir -p "$tmp" || return 1
+    cp -a "$snapshot/node-secrets" "$tmp/nodes" || return 1
+    rm -rf -- "$SBM_SECRETS" || return 1 || return 1
+    mv -f -- "$tmp" "$SBM_SECRETS" || return 1 || return 1
   fi
   if [[ -d "$snapshot/certs" ]]; then
     tmp="$SBM_CERTS.rollback.$$"
-    rm -rf -- "$tmp"
-    cp -a "$snapshot/certs" "$tmp"
-    rm -rf -- "$SBM_CERTS"
-    mv -f -- "$tmp" "$SBM_CERTS"
+    rm -rf -- "$tmp" || return 1 || return 1 || return 1 || return 1
+    cp -a "$snapshot/certs" "$tmp" || return 1
+    rm -rf -- "$SBM_CERTS" || return 1
+    mv -f -- "$tmp" "$SBM_CERTS" || return 1
   fi
   if [[ -d "$snapshot/subscriptions" ]]; then
     tmp="$SBM_SUBSCRIPTIONS.rollback.$$"
-    rm -rf -- "$tmp"
-    cp -a "$snapshot/subscriptions" "$tmp"
-    rm -rf -- "$SBM_SUBSCRIPTIONS"
-    mv -f -- "$tmp" "$SBM_SUBSCRIPTIONS"
+    rm -rf -- "$tmp" || return 1 || return 1 || return 1 || return 1
+    cp -a "$snapshot/subscriptions" "$tmp" || return 1
+    rm -rf -- "$SBM_SUBSCRIPTIONS" || return 1
+    mv -f -- "$tmp" "$SBM_SUBSCRIPTIONS" || return 1
   fi
   if [[ -f "$snapshot/traffic-usage.json" ]]; then
-    install -m 0600 "$snapshot/traffic-usage.json" "$SBM_TRAFFIC_USAGE"
+    install -m 0600 "$snapshot/traffic-usage.json" "$SBM_TRAFFIC_USAGE" || return 1
   else
-    rm -f "$SBM_TRAFFIC_USAGE"
+    rm -f "$SBM_TRAFFIC_USAGE" || return 1
   fi
   if [[ -f "$snapshot/substore-restore-scope" ]]; then
     if [[ "$SBM_SKIP_INIT" != 1 ]] && service_exists "$SBM_SUBSTORE_SERVICE"; then service_stop "$SBM_SUBSTORE_SERVICE" || return 1; fi
     rm -rf "$SBM_SUBSTORE_DIR/app" "$SBM_SUBSTORE_DIR/data"
     if [[ -d "$snapshot/substore" ]]; then mkdir -p "$SBM_SUBSTORE_DIR" && cp -a "$snapshot/substore/app" "$snapshot/substore/data" "$SBM_SUBSTORE_DIR/" || return 1; fi
   fi
-  state_init_dirs
+  state_init_dirs || return 1
   return 0
 }
 
 snapshot_restore() {
-  local snapshot=$1
+  local snapshot=$1 singbox_changed=1 xray_changed=1
   [[ -d "$snapshot" ]] || return 1
+  [[ ! -f "$snapshot/config.json" || ! -f "$SBM_CONFIG" ]] || ! cmp -s "$snapshot/config.json" "$SBM_CONFIG" || singbox_changed=0
+  [[ ! -f "$snapshot/xray-config.json" || ! -f "$SBM_XRAY_CONFIG" ]] || ! cmp -s "$snapshot/xray-config.json" "$SBM_XRAY_CONFIG" || xray_changed=0
+  [[ ! -f "$snapshot/force-xray-restart" ]] || xray_changed=1
   if [[ ! -f "$snapshot/caddy-package/package.json" && -f "$snapshot/state.json" && -f "$SBM_STATE" ]] \
     && [[ $(jq -Sc '.caddy // null' "$snapshot/state.json") != "$(jq -Sc '.caddy // null' "$SBM_STATE")" ]]; then
     log_error '快照对应的 Caddy 程序版本与当前不同，请先使用 sb caddy rollback 对齐版本。'; return 1
@@ -743,23 +802,36 @@ snapshot_restore() {
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F nginx_stream_reconcile >/dev/null 2>&1 && service_exists "$SBM_NGINX_STREAM_SERVICE"; then
     service_stop "$SBM_NGINX_STREAM_SERVICE"
   fi
-  [[ -f "$snapshot/state.json" ]] && cp -a "$snapshot/state.json" "$SBM_STATE"
-  [[ -f "$snapshot/config.json" ]] && cp -a "$snapshot/config.json" "$SBM_CONFIG"
+  [[ ! -f "$snapshot/state.json" ]] || cp -a "$snapshot/state.json" "$SBM_STATE" || return 1
+  if [[ -f "$snapshot/config.json" ]]; then cp -a "$snapshot/config.json" "$SBM_CONFIG" || return 1
+  elif [[ -f "$snapshot/dual-core-snapshot" ]]; then rm -f "$SBM_CONFIG" || return 1; fi
+  if [[ -f "$snapshot/dual-core-snapshot" ]]; then
+    if [[ -f "$snapshot/xray-config.json" ]]; then
+      safe_install_file "$snapshot/xray-config.json" "$SBM_XRAY_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_XRAY_CONFIG" || return 1
+    else rm -f "$SBM_XRAY_CONFIG" || return 1; fi
+    local xray_unit
+    xray_unit=$(service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
+    if [[ -n "$xray_unit" ]]; then
+      if [[ -f "$snapshot/xray-service" ]]; then cp -a "$snapshot/xray-service" "$xray_unit" || return 1
+      elif service_exists "$SBM_XRAY_SERVICE"; then
+        service_disable "$SBM_XRAY_SERVICE" && service_stop "$SBM_XRAY_SERVICE" && rm -f "$xray_unit" || return 1
+      fi
+    fi
+    service_reload_manager || return 1
+  fi
   snapshot_restore_payload "$snapshot" || return 1
   if declare -F caddy_package_restore >/dev/null 2>&1; then
     caddy_package_restore "$snapshot" || { log_error 'Caddy 包管理恢复未完成，保留快照供恢复。'; return 1; }
   fi
   if declare -F website_mux_rollback >/dev/null 2>&1; then
-    website_mux_rollback "$snapshot" || log_error '网站配置恢复失败，请检查本次快照中的 website-files。'
+    website_mux_rollback "$snapshot" || { log_error '网站配置恢复失败，请检查本次快照中的 website-files。'; return 1; }
   fi
   if declare -F caddy_restart_restored >/dev/null 2>&1; then caddy_restart_restored "$snapshot" || return 1; fi
   if [[ -f "$SBM_STATE" ]]; then
     state_migrate || return 1
     state_validate "$SBM_STATE"
   fi
-  if [[ "$SBM_SKIP_INIT" != "1" ]] && service_exists "$SBM_SERVICE"; then
-    singbox_service_reconcile || return 1
-  fi
+  if [[ "$SBM_SKIP_INIT" != "1" ]]; then runtime_services_reconcile "$singbox_changed" "$xray_changed" || return 1; fi
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then
     traffic_reconcile_unlocked 0 || return 1
   fi
@@ -782,18 +854,25 @@ _state_transaction_run() {
     "$fn" "$@" || exit "$?"
     if declare -F subscription_refresh_live >/dev/null 2>&1; then subscription_refresh_live || exit 1; fi
   ); then
-    snapshot_prune 20
+    rm -rf -- "$backup" || return 1
+    snapshot_prune
     return 0
   else
     rc=$?
   fi
   log_error "操作 $reason 失败，正在恢复完整状态。"
+  local restored=1
   if [[ -s "$backup/cloudflare-dns.json" ]] && declare -F cloudflare_dns_rollback >/dev/null 2>&1; then
-    cloudflare_dns_rollback "$backup" || log_error 'Cloudflare DNS 清理失败；本地状态仍会回滚，请核对上方记录日志。'
+    cloudflare_dns_rollback "$backup" || { restored=0; log_error 'Cloudflare DNS 清理失败；本地状态仍会回滚，请核对上方记录日志。'; }
   fi
-  snapshot_restore "$backup" || log_error "自动恢复未完成，请检查快照：$backup"
+  snapshot_restore "$backup" || restored=0
   if declare -F tunnel_reconcile_after_rollback >/dev/null 2>&1; then
-    tunnel_reconcile_after_rollback || log_error "Tunnel 回滚后协调失败，请运行 sb doctor。"
+    tunnel_reconcile_after_rollback || restored=0
+  fi
+  if (( restored )); then rm -rf -- "$backup"
+  else
+    touch "$backup/.recovery-pending"
+    log_error "自动恢复未完成，临时恢复记录最多保留 23 小时：$backup"
   fi
   return "$rc"
 }
@@ -805,68 +884,68 @@ with_state_transaction() {
 }
 
 snapshot_prune() {
-  local keep=${1:-20}
+  local directory pid
   [[ -d "$SBM_BACKUPS/snapshots" ]] || return 0
-  mapfile -t dirs < <(find "$SBM_BACKUPS/snapshots" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | awk '{print $2}')
-  local i
-  for ((i=keep; i<${#dirs[@]}; i++)); do rm -rf -- "${dirs[$i]}"; done
+  while IFS= read -r -d '' directory; do
+    [[ "$directory" != "${SBM_OPERATION_SNAPSHOT:-}" ]] || continue
+    [[ ! -f "$directory/.recovery-pending" ]] || continue
+    pid=$(cat "$directory/.operation-pid" 2>/dev/null || true)
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then continue; fi
+    rm -rf -- "$directory" || return 1
+  done < <(find "$SBM_BACKUPS/snapshots" -mindepth 1 -maxdepth 1 -type d -print0)
 }
 
 state_install_candidate() {
-  local candidate=$1 config=$2 reason=${3:-change} backup
-  state_validate "$candidate"
-  state_update_timestamp "$candidate"
+  local candidate=$1 config=$2 reason=${3:-change} xray_config=${4:-} backup own_snapshot=0 rc=0
+  state_validate "$candidate" && state_update_timestamp "$candidate" || return 1
   backup=${SBM_OPERATION_SNAPSHOT:-}
-  [[ -n "$backup" && -d "$backup" ]] || backup=$(snapshot_create "$reason")
+  if [[ -z "$backup" || ! -d "$backup" ]]; then
+    backup=$(snapshot_create "$reason") || return 1
+    own_snapshot=1
+  fi
+  if _state_install_candidate_files "$candidate" "$config" "$xray_config" "$backup"; then
+    if (( own_snapshot )); then rm -rf -- "$backup" || return 1; fi
+    snapshot_prune
+    return 0
+  else rc=$?; fi
+  log_error '运行时变更未完成，正在恢复本次状态与两个核心配置。'
+  if snapshot_restore "$backup"; then
+    if (( own_snapshot )); then rm -rf -- "$backup"; fi
+  else
+    touch "$backup/.recovery-pending"
+    log_error "自动恢复未完成，临时恢复记录最多保留 23 小时：$backup"
+  fi
+  return "$rc"
+}
 
-  local state_tmp config_tmp
-  state_tmp="${SBM_STATE}.new.$$"; config_tmp="${SBM_CONFIG}.new.$$"
-  if declare -F website_mux_prepare >/dev/null 2>&1; then
-    if ! website_mux_prepare "$candidate" "$backup"; then
-      website_mux_rollback "$backup" || log_error '网站配置自动恢复失败。'
-      return 1
-    fi
-  fi
-  if declare -F nginx_stream_prepare_transition >/dev/null 2>&1; then
-    nginx_stream_prepare_transition "$candidate" || return 1
-  fi
+_state_install_candidate_files() {
+  local candidate=$1 config=$2 xray_config=$3 backup=$4
+  local state_tmp config_tmp xray_tmp singbox_changed=1 xray_changed=1
+  state_tmp="${SBM_STATE}.new.$$"; config_tmp="${SBM_CONFIG}.new.$$"; xray_tmp="${SBM_XRAY_CONFIG}.new.$$"
+  [[ ! -f "$SBM_CONFIG" ]] || ! cmp -s "$config" "$SBM_CONFIG" || singbox_changed=0
+  [[ -z "$xray_config" || ! -f "$SBM_XRAY_CONFIG" ]] || ! cmp -s "$xray_config" "$SBM_XRAY_CONFIG" || xray_changed=0
+  if declare -F website_mux_prepare >/dev/null 2>&1; then website_mux_prepare "$candidate" "$backup" || return 1; fi
+  if declare -F nginx_stream_prepare_transition >/dev/null 2>&1; then nginx_stream_prepare_transition "$candidate" || return 1; fi
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_checkpoint_unlocked >/dev/null 2>&1; then
     traffic_checkpoint_unlocked || return 1
   fi
-  must_install -m 0600 "$candidate" "$state_tmp" || { rm -f "$state_tmp" "$config_tmp"; return 1; }
-  must_install -m 0640 "$config" "$config_tmp" || { rm -f "$state_tmp" "$config_tmp"; return 1; }
-  set_group_if_exists "$SBM_SERVICE_USER" "$config_tmp" || { rm -f "$state_tmp" "$config_tmp"; return 1; }
-  must_mv -f "$state_tmp" "$SBM_STATE" || { rm -f "$state_tmp" "$config_tmp"; return 1; }
-  must_mv -f "$config_tmp" "$SBM_CONFIG" || {
-    rm -f "$config_tmp"
-    snapshot_restore "$backup" || true
-    return 1
-  }
-
-  if [[ "$SBM_SKIP_INIT" != "1" ]] && service_exists "$SBM_SERVICE"; then
-    if ! singbox_service_reconcile; then
-      log_error "新配置启动失败，正在回滚。"
-      snapshot_restore "$backup" || log_error "自动回滚失败，请立即检查快照：$backup"
-      return 1
+  if ! { must_install -m 0600 "$candidate" "$state_tmp" && must_install -m 0640 "$config" "$config_tmp" \
+    && set_group_if_exists "$SBM_SERVICE_USER" "$config_tmp"; }; then
+    rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
+  fi
+  if [[ -n "$xray_config" ]]; then
+    if ! { must_install -m 0640 "$xray_config" "$xray_tmp" && set_group_if_exists "$SBM_SERVICE_USER" "$xray_tmp"; }; then
+      rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
     fi
   fi
+  if ! { must_mv -f "$state_tmp" "$SBM_STATE" && must_mv -f "$config_tmp" "$SBM_CONFIG"; }; then
+    rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
+  fi
+  if [[ -n "$xray_config" ]]; then must_mv -f "$xray_tmp" "$SBM_XRAY_CONFIG" || { rm -f "$xray_tmp"; return 1; }; fi
+  runtime_services_reconcile "$singbox_changed" "$xray_changed" || return 1
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then
-    if ! traffic_reconcile_unlocked 0; then
-      log_error '流量控制规则应用失败，正在回滚。'
-      snapshot_restore "$backup" || log_error '自动回滚失败，请立即检查快照。'
-      return 1
-    fi
+    traffic_reconcile_unlocked 0 || return 1
   fi
-  if declare -F nginx_stream_reconcile >/dev/null 2>&1; then
-    if ! nginx_stream_reconcile; then
-      log_error 'TCP/SNI 复用服务协调失败，正在回滚。'
-      snapshot_restore "$backup" || log_error '自动回滚失败，请立即检查快照。'
-      return 1
-    fi
-  fi
-  if declare -F website_mux_reconcile >/dev/null 2>&1; then
-    website_mux_reconcile || return 1
-  fi
-  snapshot_prune 20
-  return 0
+  if declare -F nginx_stream_reconcile >/dev/null 2>&1; then nginx_stream_reconcile || return 1; fi
+  if declare -F website_mux_reconcile >/dev/null 2>&1; then website_mux_reconcile || return 1; fi
 }

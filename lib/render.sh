@@ -206,7 +206,7 @@ render_config_from_state() {
     [[ ! -r $(state_secret_path "$node_id") ]] || node_secret=$(state_get_secret "$node_id")
     inbound=$(render_inbound_for_node "$node" "$credentials" "$node_secret") || return 1
     inbounds=$(jq -c --argjson x "$inbound" '. + ($x | if type=="array" then . else [.] end)' <<<"$inbounds") || return 1
-  done < <(jq -c '.nodes[]? | select(.enabled==true)' "$state")
+  done < <(state_singbox_nodes "$state")
   log_level=$(jq -r '.settings.log_level // "info"' "$state")
   api_enabled=$(jq -r '.api.enabled // false' "$state")
   api_secret=''; api_port=$(jq -r '.api.port // 9090' "$state"); dashboard=$(jq -r '.api.dashboard // false' "$state")
@@ -280,23 +280,47 @@ core_validate_config_with() {
 
 core_validate_config() { core_validate_config_with "$SBM_SING_BOX_BIN" "$1"; }
 
-apply_candidate_state() {
-  local candidate=$1 reason=${2:-change} tmp_config
-  website_mux_sync_routes "$candidate" || return 1
-  tmp_config=$(mktemp "$SBM_RUN/config.candidate.XXXXXX")
-  if ! render_config_from_state "$candidate" "$tmp_config"; then rm -f "$tmp_config"; return 1; fi
-  if ! core_validate_config "$tmp_config"; then rm -f "$tmp_config"; return 1; fi
-  if ! state_install_candidate "$candidate" "$tmp_config" "$reason"; then rm -f "$tmp_config"; return 1; fi
-  rm -f "$tmp_config"
-  log_ok "配置已应用。"
+runtime_render_candidates() {
+  local state=$1 singbox_config=$2 xray_config=$3
+  render_config_from_state "$state" "$singbox_config" && core_validate_config "$singbox_config" || return 1
+  if xray_runtime_required "$state" && [[ ! -x "$SBM_XRAY_BIN" ]]; then
+    _xray_install >&2 || return 1
+  fi
+  xray_render_config "$state" "$xray_config" || return 1
+  if xray_runtime_required "$state"; then xray_validate_config "$SBM_XRAY_BIN" "$xray_config" || return 1; fi
 }
 
-render_current_config() {
-  local tmp
-  tmp=$(mktemp "$SBM_RUN/config.current.XXXXXX")
-  render_config_from_state "$SBM_STATE" "$tmp"
-  core_validate_config "$tmp"
-  safe_install_file "$tmp" "$SBM_CONFIG" 0640
-  set_group_if_exists "$SBM_SERVICE_USER" "$SBM_CONFIG"
-  rm -f "$tmp"
-}
+apply_candidate_state() (
+  local candidate=$1 reason=${2:-change} tmp_config tmp_xray
+  website_mux_sync_routes "$candidate" || return 1
+  tmp_config=$(mktemp "$SBM_RUN/config.candidate.XXXXXX") || return 1
+  tmp_xray=$(mktemp "$SBM_RUN/xray.candidate.XXXXXX") || { rm -f "$tmp_config"; return 1; }
+  trap 'rm -f -- "$tmp_config" "$tmp_xray"' EXIT
+  runtime_render_candidates "$candidate" "$tmp_config" "$tmp_xray" || return 1
+  state_install_candidate "$candidate" "$tmp_config" "$reason" "$tmp_xray" || return 1
+  log_ok '配置已应用。'
+)
+
+render_current_config() (
+  local tmp tmp_xray backup retain=0 restored=1
+  tmp=$(mktemp "$SBM_RUN/config.current.XXXXXX") || return 1
+  tmp_xray=$(mktemp "$SBM_RUN/xray.current.XXXXXX") || { rm -f "$tmp"; return 1; }
+  backup=$(mktemp -d "$SBM_BACKUPS/config-current.XXXXXX") || { rm -f "$tmp" "$tmp_xray"; return 1; }
+  trap 'rm -f -- "$tmp" "$tmp_xray"; (( retain )) || rm -rf -- "$backup"' EXIT
+  printf '%s\n' "$$" >"$backup/.operation-pid" || return 1
+  runtime_render_candidates "$SBM_STATE" "$tmp" "$tmp_xray" || return 1
+  [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$backup/singbox" || return 1
+  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$backup/xray" || return 1
+  if ! { safe_install_file "$tmp" "$SBM_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_CONFIG" \
+    && safe_install_file "$tmp_xray" "$SBM_XRAY_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_XRAY_CONFIG"; }; then
+    if [[ -f "$backup/singbox" ]]; then cp -a "$backup/singbox" "$SBM_CONFIG" || restored=0
+    else rm -f "$SBM_CONFIG" || restored=0; fi
+    if [[ -f "$backup/xray" ]]; then cp -a "$backup/xray" "$SBM_XRAY_CONFIG" || restored=0
+    else rm -f "$SBM_XRAY_CONFIG" || restored=0; fi
+    if (( ! restored )); then
+      retain=1; touch "$backup/.recovery-pending"
+      log_error "配置恢复未完成，临时记录最多保留 23 小时：$backup"
+    fi
+    return 1
+  fi
+)

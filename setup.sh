@@ -18,6 +18,7 @@ INSTALL_CLOUDFLARED=${SBM_INSTALL_CLOUDFLARED:-0}
 INIT_VPS=0
 SETUP_MUTATED=0
 SETUP_ROLLBACK_DIR=''
+SETUP_CORE_TARGET=''
 
 # Load only the small dependency policy before the source tree is copied.  It
 # is loaded again from TARGET_LIB below so an upgrade uses the installed code.
@@ -28,13 +29,15 @@ source "$SRC_DIR/lib/dependencies.sh"
 SBM_JOURNAL_CONFIG="${SBM_JOURNAL_CONFIG:-$(dirname "$SETUP_SYSTEMD_DIR")/journald@sb-manager.conf}"
 
 setup_rollback_on_error() {
-  local rc=$?
+  local rc=$? restore_rc=0 path target
   trap - ERR
   set +e
-  if [[ "$SETUP_MUTATED" == 1 && -n "$SETUP_ROLLBACK_DIR" && -d "$SETUP_ROLLBACK_DIR/program" ]]; then
+  if [[ "$SETUP_MUTATED" == 1 && -n "$SETUP_ROLLBACK_DIR" && -d "$SETUP_ROLLBACK_DIR" ]]; then
     printf '[ROLLBACK] 安装失败，正在恢复上一版程序和服务定义…\n' >&2
-    find "$TARGET_LIB" -mindepth 1 -maxdepth 1 ! -name cores -exec rm -rf {} +
-    cp -a "$SETUP_ROLLBACK_DIR/program"/. "$TARGET_LIB"/
+    if [[ -d "$SETUP_ROLLBACK_DIR/program" ]]; then
+      find "$TARGET_LIB" -mindepth 1 -maxdepth 1 ! -name cores -exec rm -rf {} + || restore_rc=1
+      cp -a "$SETUP_ROLLBACK_DIR/program"/. "$TARGET_LIB"/ || restore_rc=1
+    fi
     rm -f "$SETUP_SYSTEMD_DIR/sb-sing-box.service" "$SETUP_SYSTEMD_DIR/sb-xray.service" "$SETUP_SYSTEMD_DIR/sb-openlist.service" "$SETUP_SYSTEMD_DIR/sb-cloudflared.service" "$SETUP_SYSTEMD_DIR/sb-nginx-stream.service" \
       "$SETUP_SYSTEMD_DIR/sb-core-update.service" "$SETUP_SYSTEMD_DIR/sb-core-update.timer" \
       "$SETUP_SYSTEMD_DIR/sb-manager-update.service" "$SETUP_SYSTEMD_DIR/sb-manager-update.timer" \
@@ -44,7 +47,7 @@ setup_rollback_on_error() {
       "$SETUP_SYSTEMD_DIR/sb-traffic-sync.service" "$SETUP_SYSTEMD_DIR/sb-traffic-sync.timer" \
       "$SETUP_SYSTEMD_DIR/sb-health-check.service" "$SETUP_SYSTEMD_DIR/sb-health-check.timer"
     rm -f "$SETUP_SYSTEMD_DIR/sb-maintenance.service" "$SETUP_SYSTEMD_DIR/sb-maintenance.timer"
-    [[ ! -d "$SETUP_ROLLBACK_DIR/systemd" ]] || cp -a "$SETUP_ROLLBACK_DIR/systemd"/. "$SETUP_SYSTEMD_DIR"/
+    [[ ! -d "$SETUP_ROLLBACK_DIR/systemd" ]] || cp -a "$SETUP_ROLLBACK_DIR/systemd"/. "$SETUP_SYSTEMD_DIR"/ || restore_rc=1
     if [[ -f "$SETUP_ROLLBACK_DIR/journal.conf" ]]; then cp -a "$SETUP_ROLLBACK_DIR/journal.conf" "$SBM_JOURNAL_CONFIG"
     else rm -f "$SBM_JOURNAL_CONFIG"; fi
     if [[ ! -f "$SETUP_ROLLBACK_DIR/systemd/sb-maintenance.timer" ]]; then
@@ -56,7 +59,7 @@ setup_rollback_on_error() {
       rm -f "$SETUP_SYSTEMD_DIR/timers.target.wants/sb-manager-update.timer"
     fi
     rm -f "$SETUP_OPENRC_DIR/sb-sing-box" "$SETUP_OPENRC_DIR/sb-xray" "$SETUP_OPENRC_DIR/sb-openlist" "$SETUP_OPENRC_DIR/sb-cloudflared" "$SETUP_OPENRC_DIR/sb-nginx-stream" "$SETUP_OPENRC_DIR/sb-subscription" "$SETUP_OPENRC_DIR/sb-traffic"
-    [[ ! -d "$SETUP_ROLLBACK_DIR/openrc" ]] || cp -a "$SETUP_ROLLBACK_DIR/openrc"/. "$SETUP_OPENRC_DIR"/
+    [[ ! -d "$SETUP_ROLLBACK_DIR/openrc" ]] || cp -a "$SETUP_ROLLBACK_DIR/openrc"/. "$SETUP_OPENRC_DIR"/ || restore_rc=1
     rm -f "$SETUP_PERIODIC_DIR/15min/sb-health-check"
     if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-health-check" ]]; then
       mkdir -p "$SETUP_PERIODIC_DIR/15min"
@@ -71,7 +74,25 @@ setup_rollback_on_error() {
     if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-maintenance" ]]; then
       cp -a "$SETUP_ROLLBACK_DIR/periodic/sb-maintenance" "$SETUP_PERIODIC_DIR/15min/"
     fi
-    command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
+    if [[ -n "$SETUP_CORE_TARGET" && -x "$SETUP_CORE_TARGET" ]]; then
+      ln -sfn "$SETUP_CORE_TARGET" "$SBM_SING_BOX_BIN.new" && mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN" || restore_rc=1
+    fi
+    if [[ -f "$SETUP_ROLLBACK_DIR/runtime/state.json" ]]; then
+      cp -a "$SETUP_ROLLBACK_DIR/runtime/state.json" "$SBM_STATE" || restore_rc=1
+      for path in config.json xray-config.json; do
+        if [[ "$path" == config.json ]]; then target=$SBM_CONFIG; else target=$SBM_XRAY_CONFIG; fi
+        if [[ -f "$SETUP_ROLLBACK_DIR/runtime/$path" ]]; then cp -a "$SETUP_ROLLBACK_DIR/runtime/$path" "$target" || restore_rc=1
+        else rm -f "$target" || restore_rc=1; fi
+      done
+    fi
+    if declare -F runtime_services_reconcile >/dev/null 2>&1; then
+      service_reload_manager && runtime_services_reconcile || restore_rc=1
+    elif command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload >/dev/null 2>&1 || restore_rc=1; fi
+    if (( restore_rc == 0 )); then rm -rf -- "$SETUP_ROLLBACK_DIR"
+    else
+      touch "$SETUP_ROLLBACK_DIR/.recovery-pending"
+      printf '[ROLLBACK] 恢复未完成，临时记录最多保留23小时：%s\n' "$SETUP_ROLLBACK_DIR" >&2
+    fi
   fi
   exit "$rc"
 }
@@ -118,14 +139,17 @@ prune_runtime_payload() {
 }
 
 prune_setup_backups() {
-  local keep=${SBM_PROGRAM_BACKUP_RETENTION:-2} i
+  local keep=0 i path
   local -a backups=()
-  [[ "$keep" =~ ^[0-9]+$ ]] || keep=2
+  [[ "$keep" =~ ^[0-9]+$ ]] || keep=0
   [[ -d "$PROGRAM_BACKUP_ROOT" ]] || return 0
   while IFS= read -r path; do [[ -n "$path" ]] && backups+=("$path"); done < <(
     find "$PROGRAM_BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'program-*' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk '{sub(/^[^ ]+ /, ""); print}'
   )
-  for ((i=keep; i<${#backups[@]}; i++)); do rm -rf -- "${backups[$i]}"; done
+  for ((i=keep; i<${#backups[@]}; i++)); do
+    [[ ! -f "${backups[$i]}/.recovery-pending" ]] || continue
+    rm -rf -- "${backups[$i]}"
+  done
 }
 
 usage() {
@@ -403,7 +427,7 @@ $SBM_LOG_DIR/*.log {
   daily
   rotate 0
   maxage 1
-  maxsize 5M
+  maxsize 1M
   missingok
   notifempty
   copytruncate
@@ -447,9 +471,10 @@ if [[ "$src_real" != "$target_real" ]]; then
     mkdir -p "$PROGRAM_BACKUP_ROOT"
     backup=$(mktemp -d "$PROGRAM_BACKUP_ROOT/program-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
     SETUP_ROLLBACK_DIR="$backup"
+    printf '%s\n' "$$" >"$backup/.operation-pid"
     mkdir -p "$backup/program" "$backup/systemd" "$backup/openrc" "$backup/periodic"
-    cp -a "$TARGET_LIB"/. "$backup/program/"
-    rm -rf "$backup/program/cores"
+    # Copy only manager sources; duplicating core binaries would exhaust small VPS disks.
+    while IFS= read -r -d '' path; do cp -a "$path" "$backup/program/"; done < <(find "$TARGET_LIB" -mindepth 1 -maxdepth 1 ! -name cores -print0)
     for path in "$SETUP_SYSTEMD_DIR"/sb-*.service "$SETUP_SYSTEMD_DIR"/sb-*.timer; do [[ ! -f "$path" ]] || cp -a "$path" "$backup/systemd/"; done
     for path in "$SETUP_OPENRC_DIR"/sb-*; do [[ ! -f "$path" ]] || cp -a "$path" "$backup/openrc/"; done
     [[ ! -f "$SETUP_PERIODIC_DIR/15min/sb-health-check" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/sb-health-check" "$backup/periodic/"
@@ -494,6 +519,9 @@ source "$TARGET_LIB/protocols/proxy.sh"
 source "$TARGET_LIB/protocols/shadowtls.sh"
 source "$TARGET_LIB/protocols/snell.sh"
 source "$TARGET_LIB/lib/render.sh"
+source "$TARGET_LIB/lib/xray.sh"
+source "$TARGET_LIB/lib/openlist.sh"
+source "$TARGET_LIB/lib/reality_site.sh"
 source "$TARGET_LIB/lib/export.sh"
 source "$TARGET_LIB/lib/node.sh"
 source "$TARGET_LIB/lib/traffic.sh"
@@ -523,6 +551,27 @@ BACKEND=$(init_system 2>/dev/null || true)
 [[ "$BACKEND" != none && -n "$BACKEND" ]] || BACKEND=systemd
 
 printf '[3/7] 创建低权限服务用户和数据目录…\n'
+SETUP_CORE_TARGET=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
+if [[ -z "$SETUP_ROLLBACK_DIR" && -s "$SBM_STATE" ]]; then
+  mkdir -p "$PROGRAM_BACKUP_ROOT"
+  SETUP_ROLLBACK_DIR=$(mktemp -d "$PROGRAM_BACKUP_ROOT/program-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
+  printf '%s\n' "$$" >"$SETUP_ROLLBACK_DIR/.operation-pid"
+  mkdir -p "$SETUP_ROLLBACK_DIR/systemd" "$SETUP_ROLLBACK_DIR/openrc" "$SETUP_ROLLBACK_DIR/periodic"
+  for path in "$SETUP_SYSTEMD_DIR"/sb-*.service "$SETUP_SYSTEMD_DIR"/sb-*.timer; do [[ ! -f "$path" ]] || cp -a "$path" "$SETUP_ROLLBACK_DIR/systemd/"; done
+  for path in "$SETUP_OPENRC_DIR"/sb-*; do [[ ! -f "$path" ]] || cp -a "$path" "$SETUP_ROLLBACK_DIR/openrc/"; done
+  for path in sb-health-check sb-manager-update sb-maintenance; do
+    [[ ! -f "$SETUP_PERIODIC_DIR/15min/$path" ]] || cp -a "$SETUP_PERIODIC_DIR/15min/$path" "$SETUP_ROLLBACK_DIR/periodic/"
+  done
+  [[ ! -f "$SBM_JOURNAL_CONFIG" ]] || cp -a "$SBM_JOURNAL_CONFIG" "$SETUP_ROLLBACK_DIR/journal.conf"
+  SETUP_MUTATED=1
+  trap setup_rollback_on_error ERR
+fi
+if [[ -n "$SETUP_ROLLBACK_DIR" ]]; then
+  mkdir -p "$SETUP_ROLLBACK_DIR/runtime"
+  [[ ! -f "$SBM_STATE" ]] || cp -a "$SBM_STATE" "$SETUP_ROLLBACK_DIR/runtime/state.json"
+  [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$SETUP_ROLLBACK_DIR/runtime/config.json"
+  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$SETUP_ROLLBACK_DIR/runtime/xray-config.json"
+fi
 create_service_account
 state_init 0
 mkdir -p "$SBM_VAR/dashboard" "$SBM_LOG_DIR"
@@ -562,7 +611,6 @@ if [[ "$KEEP_CORE" != 1 ]]; then
   ln -sfn "$sb_binary" "$SBM_SING_BOX_BIN.new"; mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN"
 fi
 prepare_singbox_binary_for_backend "$SBM_SING_BOX_BIN" "$BACKEND"
-core_prune_cached_versions
 
 if [[ "$INSTALL_CLOUDFLARED" == 1 ]]; then
   printf '[5/7] 安装可选 cloudflared…\n'
@@ -628,7 +676,7 @@ fi
 printf '[7/7] 启动服务…\n'
 if [[ "$NO_START" == 0 ]]; then
   scheduler_reconcile
-  if ! singbox_service_reconcile; then
+  if ! runtime_services_reconcile; then
     runtime_exec_diagnostics "$SBM_SING_BOX_BIN"
     exit 1
   fi
@@ -653,6 +701,10 @@ if [[ -x "$SBM_CLOUDFLARED_BIN" ]] && declare -F cloudflared_prune_cached_versio
 fi
 if [[ "$NO_START" == 1 ]]; then manager_auto_reconcile 0; else manager_auto_reconcile 1; fi
 if [[ "$NO_START" == 1 ]]; then maintenance_reconcile 0; else maintenance_reconcile 1; fi
+SETUP_MUTATED=0
+trap - ERR
+core_prune_cached_versions
+xray_prune_versions
 prune_setup_backups
 
 printf '\n安装完成。\n'
@@ -668,7 +720,7 @@ printf '  状态检查：sb status\n'
 printf '  诊断命令：sb doctor（自动修复：sb doctor --repair）\n'
 printf '  数据目录：%s\n' "$SBM_ETC"
 if ! state_runtime_required; then
-  printf '  sing-box：暂无启用节点，服务保持待命；添加首个节点后会自动启动。\n'
+  printf '  sing-box：暂无分配到本核心的启用节点，服务保持待命。\n'
 fi
 if [[ ! -x "$SBM_CLOUDFLARED_BIN" ]]; then
   printf '  cloudflared：未安装（Tunnel 功能启用前执行 sb cloudflared install）。\n'

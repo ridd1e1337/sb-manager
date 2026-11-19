@@ -150,7 +150,7 @@ core_validate_build_tags() {
   if jq -e '.nodes[]? | select(.enabled==true and (.protocol=="hysteria2" or .protocol=="tuic"))' "$state" >/dev/null; then
     grep -Eq '(^|[,[:space:]])with_quic([,[:space:]]|$)' <<<"$output" || { log_error '当前配置需要 with_quic 构建标签。'; return 1; }
   fi
-  if jq -e '.nodes[]? | select(.enabled==true and .protocol=="vless" and .security=="reality")' "$state" >/dev/null; then
+  if jq -e '(.settings.vless_engine // "sing-box")=="sing-box" and any(.nodes[]?; .enabled==true and .protocol=="vless" and .security=="reality")' "$state" >/dev/null; then
     grep -Eq '(^|[,[:space:]])with_utls([,[:space:]]|$)' <<<"$output" || { log_error '当前 Reality 配置需要 with_utls 构建标签。'; return 1; }
   fi
   if jq -e '.nodes[]? | select(.enabled==true and .protocol=="snell")' "$state" >/dev/null; then
@@ -200,19 +200,20 @@ artifact_record() {
 core_check_free_space() {
   local path=${1:-$SBM_CORE_DIR} required=${2:-${SBM_CORE_MIN_FREE_BYTES:-260000000}} available
   [[ "$required" =~ ^[0-9]+$ ]] || required=260000000
-  available=$(df -Pk "$path" 2>/dev/null | awk 'NR==2 {print $4 * 1024; exit}')
-  [[ "$available" =~ ^[0-9]+$ ]] || return 0
+  available=$(df -Pk "$path" 2>/dev/null | awk 'NR==2 {printf "%.0f\n", $4 * 1024; exit}') || return 1
+  [[ "$available" =~ ^[0-9]+$ ]] || { log_error "无法确认磁盘剩余空间：$path"; return 1; }
   if (( available < required )); then
     log_error "磁盘剩余空间不足：$(numfmt --to=iec "$available" 2>/dev/null || printf '%s bytes' "$available")，至少需要约 $(numfmt --to=iec "$required" 2>/dev/null || printf '%s bytes' "$required") 才能安全下载/解压核心。"
-    log_error "请清理缓存或设置 SBM_CORE_MIN_FREE_BYTES 调整预检查阈值后重试。"
+    log_error '请清理磁盘或使用容量充足的安装目录后重试。'
     return 1
   fi
 }
 
 core_prune_cached_versions() {
-  local keep=${SBM_CORE_RETENTION:-2} current path version
+  local keep=${SBM_CORE_RETENTION:-1} current path version
   local -a dirs=()
-  [[ "$keep" =~ ^[0-9]+$ ]] || keep=2
+  [[ "$keep" =~ ^[0-9]+$ ]] || keep=1
+  [[ -z $(find "$SBM_BACKUPS" -maxdepth 4 -type f -name .recovery-pending -print -quit 2>/dev/null) ]] || return 0
   (( keep >= 1 )) || keep=1
   current=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
   [[ -d "$SBM_CORE_DIR/sing-box" ]] || return 0
@@ -238,8 +239,8 @@ core_prune_cached_versions() {
   done
 }
 
-core_download_version() {
-  local version=$1 arch json asset_name asset_url digest checksum_url tmpdir archive target expected found found_dir
+core_download_version() (
+  local version=$1 arch json asset_name asset_url digest checksum_url tmpdir archive target expected member library archive_bytes expanded_bytes install_dir='' complete=false
   arch=$(sb_arch)
   if [[ "$version" == latest ]]; then
     version=$(core_latest_version)
@@ -253,7 +254,7 @@ core_download_version() {
     fi
   fi
   version=$(jq -r '.tag_name // empty' <<<"$json" | sed 's/^v//')
-  [[ -n "$version" ]] || die "sing-box Release 信息缺少版本号。"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || die "sing-box Release 版本号无效。"
   asset_name="sing-box-${version}-linux-${arch}.tar.gz"
   asset_url=$(jq -r --arg n "$asset_name" 'first(.assets[] | select(.name==$n) | .browser_download_url) // empty' <<<"$json")
   digest=$(jq -r --arg n "$asset_name" 'first(.assets[] | select(.name==$n) | (.digest // "")) // empty' <<<"$json")
@@ -267,13 +268,15 @@ core_download_version() {
     printf '%s\n' "$target"
     return 0
   fi
-  mkdir -p "$SBM_CORE_DIR"
-  mkdir -p "$SBM_CACHE"
-  core_check_free_space "$SBM_CACHE"
-  core_check_free_space "$SBM_CORE_DIR"
-  tmpdir=$(mktemp -d "$SBM_CACHE/sing-box.XXXXXX"); archive="$tmpdir/$asset_name"
+  mkdir -p "$SBM_CORE_DIR" "$SBM_DOWNLOAD_TMP" || return 1
+  archive_bytes=$(jq -r --arg n "$asset_name" 'first(.assets[]|select(.name==$n)).size // 40000000' <<<"$json") || return 1
+  [[ "$archive_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
+  core_check_free_space "$SBM_DOWNLOAD_TMP" "$((archive_bytes + 8388608))" || return 1
+  tmpdir=$(mktemp -d "$SBM_DOWNLOAD_TMP/sb-manager-sing-box.XXXXXX") || return 1
+  trap 'rm -rf -- "$tmpdir"; [[ "$complete" == true || -z "$install_dir" ]] || rm -rf -- "$install_dir"' EXIT
+  archive="$tmpdir/$asset_name"
   log_info "下载 sing-box $version ($arch)…"
-  download_file_with_retries "$asset_url" "$archive" "sing-box $version" 5
+  download_file_with_retries "$asset_url" "$archive" "sing-box $version" 5 || return 1
   if ! verify_asset_digest "$archive" "$digest"; then
     checksum_url=$(jq -r 'first(.assets[] | select(.name|test("checksums.*\\.txt$|checksum.*\\.txt$";"i")) | .browser_download_url) // empty' <<<"$json")
     [[ -n "$checksum_url" ]] || { rm -rf "$tmpdir"; die "Release 未提供可用 SHA-256 摘要，已拒绝安装。"; }
@@ -282,25 +285,22 @@ core_download_version() {
     [[ -n "$expected" && "$expected" == "$(sha256sum "$archive" | awk '{print $1}')" ]] || { rm -rf "$tmpdir"; die "sing-box 下载文件校验失败。"; }
     digest="sha256:$expected"
   fi
-  mkdir -p "$SBM_CORE_DIR/sing-box/$version"
-  chmod 0755 "$SBM_CORE_DIR" "$SBM_CORE_DIR/sing-box" "$SBM_CORE_DIR/sing-box/$version"
-  if ! tar -xzf "$archive" -C "$tmpdir"; then
-    rm -rf "$tmpdir"
-    die "sing-box 下载文件无法解压，可能已损坏。"
-  fi
-  local found
-  found=$(find "$tmpdir" -type f -name sing-box -perm -u+x -print -quit)
-  [[ -n "$found" ]] || { rm -rf "$tmpdir"; die "压缩包中未找到 sing-box。"; }
-  if ! install -m 0755 "$found" "$target"; then
-    rm -rf "$tmpdir"
-    die "无法写入 sing-box 核心，可能是磁盘空间不足：$target"
-  fi
-  found_dir=$(dirname "$found")
-  if [[ -f "$found_dir/libcronet.so" ]]; then
-    if ! install -m 0755 "$found_dir/libcronet.so" "$(dirname "$target")/libcronet.so"; then
-      rm -rf "$tmpdir"
-      die "无法写入 sing-box companion library，可能是磁盘空间不足。"
-    fi
+  member=$(tar -tzf "$archive" | awk '$0 ~ /(^|\/)sing-box$/ {print}') || return 1
+  [[ -n "$member" && "$member" != *$'\n'* ]] || die '压缩包中未找到唯一 sing-box 程序。'
+  library=$(tar -tzf "$archive" | awk '$0 ~ /(^|\/)libcronet[.]so$/ {print}') || return 1
+  [[ "$library" != *$'\n'* ]] || die '压缩包中 companion library 不唯一。'
+  expanded_bytes=$(tar -tvzf "$archive" | awk '$NF ~ /(^|\/)(sing-box|libcronet[.]so)$/ {total += $3} END {printf "%.0f",total}') || return 1
+  [[ "$expanded_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
+  core_check_free_space "$SBM_CORE_DIR" "$((expanded_bytes + 33554432))" || return 1
+  install_dir="$SBM_CORE_DIR/sing-box/$version"
+  install -d -m 0755 "$SBM_CORE_DIR/sing-box" "$install_dir" || return 1
+  # Extract only required payload directly onto its destination filesystem;
+  # keep the compressed archive in the configured temporary directory.
+  tar -xOzf "$archive" "$member" >"$target" || return 1
+  chmod 0755 "$target" || return 1
+  if [[ -n "$library" ]]; then
+    tar -xOzf "$archive" "$library" >"$install_dir/libcronet.so" || return 1
+    chmod 0755 "$install_dir/libcronet.so" || return 1
   fi
   ensure_program_permissions
   if ! "$target" version >/dev/null 2>&1; then
@@ -311,15 +311,15 @@ core_download_version() {
     die "下载的 sing-box 核心无法执行。"
   fi
   prepare_singbox_binary_for_backend "$target"
-  artifact_record sing-box "$version" "$asset_url" "$digest" "$target"
-  rm -rf "$tmpdir"
+  artifact_record sing-box "$version" "$asset_url" "$digest" "$target" || return 1
+  complete=true
   printf '%s\n' "$target"
-}
+)
 
 core_switch_to() {
-  local version=$1 binary current_target previous transition_snapshot
+  local version=$1 binary current_target previous recovery
   binary="$SBM_CORE_DIR/sing-box/${version#v}/sing-box"
-  [[ -x "$binary" ]] || binary=$(core_download_version "$version")
+  [[ -x "$binary" ]] || binary=$(core_download_version "$version") || return 1
   validate_runtime_binary_path sing-box "$binary"
   ensure_program_permissions
   prepare_singbox_binary_for_backend "$binary"
@@ -327,24 +327,35 @@ core_switch_to() {
   core_validate_build_tags "$binary" "$SBM_STATE" || return 1
   current_target=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
   previous=${current_target:-none}
-  transition_snapshot=$(snapshot_create "core-before-${version#v}")
-  mkdir -p "$SBM_BIN_DIR" "$SBM_VAR/core-history"
-  ln -sfn "$binary" "$SBM_SING_BOX_BIN.new"
-  mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN"
+  mkdir -p "$SBM_BIN_DIR" || return 1
+  ln -sfn "$binary" "$SBM_SING_BOX_BIN.new" || return 1
+  mv -Tf "$SBM_SING_BOX_BIN.new" "$SBM_SING_BOX_BIN" || return 1
   ensure_program_permissions
   if [[ "$SBM_SKIP_INIT" != "1" ]] && service_exists "$SBM_SERVICE"; then
     if ! singbox_service_reconcile; then
       log_error "新核心启动失败，恢复旧核心。"
       if [[ -n "$current_target" && -x "$current_target" ]]; then
-        prepare_singbox_binary_for_backend "$current_target"
-        ln -sfn "$current_target" "$SBM_SING_BOX_BIN"
-        singbox_service_reconcile || true
+        if ! { prepare_singbox_binary_for_backend "$current_target" && ln -sfn "$current_target" "$SBM_SING_BOX_BIN" && singbox_service_reconcile; }; then
+          recovery=$(mktemp -d "$SBM_BACKUPS/core-recovery-$(now_stamp).XXXXXX") || return 1
+          printf '%s\n' "$current_target" >"$recovery/previous-program"
+          touch "$recovery/.recovery-pending"
+          log_error "旧核心恢复未完成，资料最多保留 23 小时：$recovery"
+        else
+          core_prune_cached_versions || return 1
+        fi
+      else
+        rm -f "$SBM_SING_BOX_BIN" || return 1
       fi
       return 1
     fi
   fi
-  printf '%s\t%s\t%s\t%s\n' "$(now_iso)" "$previous" "$binary" "$transition_snapshot" >>"$SBM_VAR/core-history/sing-box.tsv"
-  core_prune_cached_versions
+  if [[ ${SBM_CORE_RETENTION:-1} =~ ^[0-9]+$ ]] && (( SBM_CORE_RETENTION > 1 )); then
+    mkdir -p "$SBM_VAR/core-history" || return 1
+    printf '%s\t%s\t%s\t\n' "$(now_iso)" "$previous" "$binary" >"$SBM_VAR/core-history/sing-box.tsv" || return 1
+  else
+    rm -f "$SBM_VAR/core-history/sing-box.tsv" || return 1
+  fi
+  core_prune_cached_versions || return 1
   log_ok "sing-box 已切换到 $(core_current_version)。"
 }
 
@@ -362,7 +373,7 @@ _core_update() {
     return 0
   fi
   if [[ "$current" == "$latest" ]]; then log_ok "sing-box 已是目标版本 $latest。"; return 0; fi
-  core_download_version "$latest" >/dev/null
+  core_download_version "$latest" >/dev/null || return 1
   core_switch_to "$latest"
 }
 core_update() { with_lock _core_update "${1:-latest}"; }
@@ -493,8 +504,8 @@ cloudflared_auto_update() {
   esac
 }
 
-core_rollback() {
-  local current candidate version history_line previous paired_snapshot safety
+_core_rollback() {
+  local current candidate version history_line previous paired_snapshot
   current=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
   if [[ -s "$SBM_VAR/core-history/sing-box.tsv" ]]; then
     history_line=$(awk -F '\t' -v cur="$current" '$3==cur && $2!="none" {line=$0} END {print line}' "$SBM_VAR/core-history/sing-box.tsv")
@@ -506,22 +517,11 @@ core_rollback() {
   if [[ -z ${candidate:-} ]]; then
     candidate=$(find "$SBM_CORE_DIR/sing-box" -mindepth 2 -maxdepth 2 -type f -name sing-box -perm -u+x -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk -v cur="$current" '$2!=cur {print $2; exit}')
   fi
-  [[ -n "$candidate" ]] || die "没有可回滚的旧核心。"
-  safety=$(snapshot_create core-rollback-safety)
-  if [[ -s "$SBM_CONFIG" ]] && ! core_validate_config_with "$candidate" "$SBM_CONFIG" "$SBM_RUN/core-rollback-check.log"; then
-    [[ -n ${paired_snapshot:-} && -d "$paired_snapshot" ]] || die "旧核心不兼容当前配置，且没有已知可用的配对快照。"
-    cp -a "$paired_snapshot/state.json" "$SBM_STATE"
-    cp -a "$paired_snapshot/config.json" "$SBM_CONFIG"
-    snapshot_restore_payload "$paired_snapshot"
-    if ! core_validate_config_with "$candidate" "$SBM_CONFIG" "$SBM_RUN/core-rollback-paired-check.log"; then
-      snapshot_restore "$safety" || true
-      die "旧核心与配对快照仍不兼容，已恢复回滚前状态。"
-    fi
-    log_warn "当前配置与旧核心不兼容，已恢复升级前配对快照：$paired_snapshot"
-  fi
+  [[ -n "$candidate" ]] || { log_error '默认仅保留当前核心；如需旧版，请运行 sb core update VERSION 指定官方版本。'; return 1; }
   version=$(basename "$(dirname "$candidate")")
-  core_switch_to "$version" || { snapshot_restore "$safety" || true; return 1; }
+  core_switch_to "$version"
 }
+core_rollback() { require_root; with_lock _core_rollback; }
 
 cloudflared_release_json() { github_api 'https://api.github.com/repos/cloudflare/cloudflared/releases/latest'; }
 cloudflared_latest_version() {
@@ -571,7 +571,7 @@ cloudflared_download_latest() {
   download_file_with_retries "$url" "$tmp" "cloudflared $version" 5
   [[ -n "$digest" && "$digest" == sha256:* ]] || { rm -f "$tmp"; die "Release API 未提供 cloudflared SHA-256 摘要，已拒绝安装。"; }
   verify_asset_digest "$tmp" "$digest" || { rm -f "$tmp"; die "cloudflared 校验失败。"; }
-  if ! install -m 0755 "$tmp" "$target"; then
+  if ! { chmod 0755 "$tmp" && mv -f "$tmp" "$target"; }; then
     rm -f "$tmp"
     die "无法写入 cloudflared，可能是磁盘空间不足：$target"
   fi
@@ -589,6 +589,7 @@ cloudflared_prune_cached_versions() {
   local keep=${SBM_CLOUDFLARED_RETENTION:-1} current path version
   local -a dirs=()
   [[ "$keep" =~ ^[0-9]+$ ]] || keep=1
+  [[ -z $(find "$SBM_BACKUPS" -maxdepth 4 -type f -name .recovery-pending -print -quit 2>/dev/null) ]] || return 0
   (( keep >= 1 )) || keep=1
   current=$(readlink -f "$SBM_CLOUDFLARED_BIN" 2>/dev/null || true)
   [[ -d "$SBM_CORE_DIR/cloudflared" ]] || return 0

@@ -171,7 +171,8 @@ def main():
                 recovery = Path(cache).parent / 'backups/caddy-apt-recovery'
                 recovery.mkdir(parents=True, exist_ok=True, mode=0o700)
                 shutil.copy2(old_archive, recovery / old_archive.name)
-                print('自动恢复未完成；旧包保留于 ' + str(recovery), file=sys.stderr)
+                (recovery / '.recovery-pending').touch()
+                print('自动恢复未完成；旧包最多保留 23 小时：' + str(recovery), file=sys.stderr)
                 raise
             print('更新失败，已恢复原 Caddy 软件包和服务。', file=sys.stderr)
             raise

@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_xray_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -244,6 +244,7 @@ ui_header() {
   fi
   printf '%s╭──────────────────── sb-manager ────────────────────╮%s\n' "$C_CYAN" "$C_RESET"
   printf '  版本 %-18s sing-box %-16s\n' "$SBM_VERSION" "$(core_current_version || echo '-')"
+  if [[ -x "$SBM_XRAY_BIN" ]]; then printf '  Xray %-16s VLESS %-16s\n' "$(xray_current_version || echo '-')" "$(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE")"; fi
   printf '  服务管理 %-16s\n' "$(init_system_label)"
   tunnel_state=$(jq -r '.tunnel.mode | if .=="none" then "未启用" elif .=="quick" then "临时域名" elif .=="fixed" then "固定域名" else "多域名路由" end' "$SBM_STATE")
   printf '  sing-box %-14s CF Tunnel %-18s\n' "$service_state" "$tunnel_state"
@@ -782,7 +783,7 @@ ui_update_menu() {
 ui_xray_menu() {
   local choice policy
   xray_status
-  printf '\n启用 Xray 会停止 sing-box 并接管兼容节点；停用 Xray 会恢复 sing-box。\n'
+  printf '\nXray 负责 VLESS，其他协议由 sing-box 运行；停用 Xray 仅暂停 VLESS。\n'
   printf '1. 安装 Xray 最新版\n2. 更新 Xray\n3. 生成并校验 Xray 配置\n4. 启用 Xray\n5. 停用 Xray\n6. 设置 Xray 更新策略\n0. 返回\n'
   ui_menu_choice choice '选择 Xray 操作' 6
   case "$choice" in
@@ -1077,8 +1078,8 @@ ui_firewall_menu() {
 ui_vps_menu() {
   local choice
   printf 'VPS 与网站运维：集中管理主机基础环境、防火墙、SSH 防护、网站入口和网络调优。\n'
-  printf '1. 新 VPS 一键初始化\n2. 查看基础环境状态\n3. 防火墙与 SSH 防护\n4. 网站与节点共用 443\n5. 网络性能与调优\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护\n8. 缓存与日志\n9. OpenList 网站\n0. 返回\n'
-  ui_menu_choice choice '选择服务器功能' 9
+  printf '1. 新 VPS 一键初始化\n2. 查看基础环境状态\n3. 防火墙与 SSH 防护\n4. 网站与节点共用 443\n5. 网络性能与调优\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护\n8. 缓存与日志\n9. OpenList 网站\n10. OpenList 与 Reality 共用 443\n0. 返回\n'
+  ui_menu_choice choice '选择服务器功能' 10
   case "$choice" in
     1) ui_open_submenu ui_vps_init_menu;;
     2) vps_init_status;;
@@ -1089,6 +1090,7 @@ ui_vps_menu() {
     7) ui_open_submenu ui_caddy_menu;;
     8) ui_open_submenu ui_maintenance_menu;;
     9) ui_open_submenu ui_openlist_menu;;
+    10) ui_open_submenu ui_reality_menu;;
   esac
 }
 
@@ -1121,6 +1123,26 @@ ui_openlist_menu() {
     5)
       prompt_value domain '要移除的 OpenList 域名' '' || return 1
       confirm "移除 $domain 的网站入口并保留数据？" N && openlist_detach "$domain";;
+  esac
+}
+
+ui_reality_menu() {
+  local choice domain server_choice server
+  reality_site_status
+  printf '\n1. 一键建站与基础防护\n2. 接入网站与 Reality\n3. 恢复网站直接使用 443\n0. 返回\n'
+  ui_menu_choice choice '选择 Reality 操作' 3
+  case "$choice" in
+    1|2)
+      prompt_value domain '网站域名' '' || return 1
+      printf '1. Nginx\n2. Caddy\n0. 返回\n'
+      ui_menu_choice server_choice '选择网站程序' 2
+      case "$server_choice" in 1) server=nginx;; 2) server=caddy;; *) return;; esac
+      if [[ "$choice" == 1 ]]; then
+        printf '安装并启用 UFW、Fail2ban，放行 SSH、80、443，保留已有规则。\n'
+        reality_site_setup "$domain" "$server" '' true
+      else reality_site_setup "$domain" "$server" '' false; fi;;
+    3)
+      confirm '恢复网站直接使用 443，并停用对应 Reality 节点？' N && reality_site_detach;;
   esac
 }
 

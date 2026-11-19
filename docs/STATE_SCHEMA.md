@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.71",
+  "manager_version": "0.1.0-alpha.72",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -115,9 +115,12 @@ Last-attempt state and logs live under `var/updates/`, not in topology state.
 `settings.xray_update_policy` is `manual`, `notify`, `patch`, or `stable` and
 defaults to `notify`. Xray-core is an optional service provider managed by
 `sb xray`; downloaded binaries and generated configuration remain outside
-topology state. The default sing-box service and its protocol extensions remain
-unchanged. Xray activation is explicit and stops sing-box first when ports
-would conflict. The state schema version remains 2.
+topology state. `settings.vless_engine` is `xray`, `sing-box`, or `disabled`. New installs use
+`xray`; old records without this field infer `xray` only when the managed Xray
+service is already active/enabled, otherwise they retain `sing-box`. Xray renders only
+VLESS; sing-box renders the other enabled nodes. `disabled` pauses VLESS without
+moving it into another engine. Both candidate configs validate before installation,
+and unchanged services keep running. The state schema version remains 2.
 
 Since alpha.64, optional `caddy_apt: {"enabled": true, "config": "/etc/caddy/Caddyfile"}`
 enrolls a standard official stable APT package in the same updater. It is
@@ -307,3 +310,15 @@ protected filesystem journals before updating this state; they do not restart
 sing-box. OpenList itself owns its SQLite/configuration data under
 `/var/lib/sb-openlist`; this independent application's data is not included in
 the manager's full backup. Initial admin output is stored as a protected secret.
+
+## Reality website entry
+
+Optional `reality_site` contains `enabled:true`, `node_id`, `domain`, `server`,
+`binary`, `config`, `backend_port` and `journal`. The selected node must remain an
+enabled Xray VLESS/Reality/raw listener on TCP443 with Vision flow and a
+`127.0.0.1:backend_port` target. Inbound/outbound overrides are refused for this
+managed entry. The active website journal under `var/reality-site/current` stores
+the minimal files needed to undo the current listener transformation; it is not
+a historical backup and is removed on detach. Ordinary node changes and backup
+restores cannot silently remove the entry. Detach restores public website TLS
+and disables the associated VLESS node while retaining credentials.

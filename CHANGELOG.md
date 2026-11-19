@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.72
+
+- Run Xray and sing-box together: Xray owns VLESS, while sing-box owns all other
+  protocols. Validate both candidate configurations before installing, preserve
+  unchanged services, and restore both configurations and services on failure.
+  New installs default to Xray; existing Xray services retain their engine,
+  while legacy sing-box VLESS deployments migrate explicitly.
+- Add `sb vps reality DOMAIN [nginx|caddy]` and the VPS panel entry to provision
+  OpenList plus VLESS Vision Reality on TCP443, optionally initializing UFW and
+  Fail2ban. Official Caddy needs no L4 plugin; both web servers use a loopback
+  TLS target with HTTP/2 and TLS1.3. Detach restores direct website HTTPS.
+- Keep existing node credentials when adopting VLESS/443, refresh subscriptions,
+  reject conflicting listeners and unsafe website transformations, and protect
+  the active website entry from ordinary node deletion or engine shutdown.
+- Remove persistent automatic backups and obsolete binaries after successful
+  operations. Bound file logs to one day with 1 MiB periodic truncation and
+  the dedicated journal to 4 MiB. Preserve current data and active website
+  configuration; incomplete recovery records expire after 23 hours.
+- Stream official archives into their final filesystem, check disk and tmpfs
+  memory headroom, omit unused Xray geo databases, use official musl OpenList
+  builds on Alpine, and apply a configurable 128 MiB OpenList Go memory target.
+- Fix Xray date version parsing, Vision flow and Reality target rendering,
+  OpenList version parsing, engine-aware diagnostics and certificate reloads.
+
 ## 0.1.0-alpha.71
 
 - Add OpenList installation, updates and Caddy/Nginx website setup to the CLI

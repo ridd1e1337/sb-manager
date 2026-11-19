@@ -2,11 +2,17 @@
 # shellcheck shell=bash
 
 protocol_vless_generate_reality_secret() {
-  local output private public
-  output=$("$SBM_SING_BOX_BIN" generate reality-keypair 2>/dev/null) || die 'Reality 密钥生成失败。'
+  local output private public engine
+  engine=${1:-$(jq -r '.settings.vless_engine // "sing-box"' "$SBM_STATE")} || return 1
+  if [[ "$engine" == xray ]]; then
+    [[ -x "$SBM_XRAY_BIN" ]] || { log_error '请先安装 Xray 再生成 Reality 密钥。'; return 1; }
+    output=$("$SBM_XRAY_BIN" x25519 2>/dev/null) || { log_error 'Xray Reality 密钥生成失败。'; return 1; }
+  else
+    output=$("$SBM_SING_BOX_BIN" generate reality-keypair 2>/dev/null) || { log_error 'Reality 密钥生成失败。'; return 1; }
+  fi
   private=$(awk -F': *' 'tolower($1) ~ /private/ {print $2; exit}' <<<"$output")
-  public=$(awk -F': *' 'tolower($1) ~ /public/ {print $2; exit}' <<<"$output")
-  [[ -n "$private" && -n "$public" ]] || die '无法解析 Reality 密钥。'
+  public=$(awk -F': *' 'tolower($1) ~ /public|password/ {print $2; exit}' <<<"$output")
+  [[ "$private" =~ ^[A-Za-z0-9_-]{43}$ && "$public" =~ ^[A-Za-z0-9_-]{43}$ ]] || { log_error '无法解析 Reality 密钥。'; return 1; }
   jq -n --arg private "$private" --arg public "$public" --arg short_id "$(random_hex 4)" \
     '{reality_private_key:$private,reality_public_key:$public,reality_short_id:$short_id}'
 }

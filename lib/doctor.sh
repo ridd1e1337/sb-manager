@@ -24,7 +24,7 @@ status_summary() {
   mode=$(jq -r '.tunnel.mode' "$SBM_STATE"); mux_state=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE"); mux_port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
   traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE"); backend=$(init_system_label)
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state='不接管服务'
-  elif (( enabled == 0 )) && [[ $(jq -r '.api.enabled // false' "$SBM_STATE") != true ]]; then service_state='待机（无启用节点）'
+  elif ! state_runtime_required; then service_state='待机（无启用节点）'
   elif service_active "$SBM_SERVICE"; then service_state='运行中'; else service_state='未运行'; fi
   printf '%sSB Manager %s%s\n' "$C_BOLD" "$SBM_VERSION" "$C_RESET"
   printf '服务管理      : %s\n' "$backend"
@@ -94,7 +94,7 @@ doctor_repair_runtime() {
         *) runtime_exec_diagnostics "$SBM_SING_BOX_BIN"; die 'sing-box 仍无法在 systemd 沙箱中完成实际启动。' ;;
       esac
     fi
-    singbox_service_reconcile
+    runtime_services_reconcile
     if declare -F nginx_stream_reconcile >/dev/null 2>&1; then nginx_stream_reconcile; fi
     if declare -F traffic_reconcile >/dev/null 2>&1; then traffic_reconcile; fi
     if [[ $(jq -r '.tunnel.mode' "$SBM_STATE") != none ]]; then tunnel_reconcile 1; fi
@@ -127,6 +127,9 @@ doctor_repair_safe() {
       log_error 'sing-box 重启后仍未进入运行状态。'
       rc=1
     fi
+  fi
+  if xray_runtime_required && ! service_active "$SBM_XRAY_SERVICE"; then
+    xray_service_reconcile || { log_error '恢复 Xray 服务失败。'; rc=1; }
   fi
   if [[ -f "$SBM_CONFIG" ]]; then chmod 0640 "$SBM_CONFIG" 2>/dev/null || rc=1; fi
   for path in "$SBM_TRAFFIC_USAGE" "$SBM_NOTIFICATION_EVENTS" "$SBM_HEALTH_EVENTS" "$SBM_HEALTH_REPORT"; do
@@ -449,7 +452,7 @@ doctor_run() {
     if ! service_exists "$SBM_SERVICE"; then
       check_line FAIL "服务定义缺失：$(service_file_path "$SBM_SERVICE")"
       failures=$((failures + 1))
-    elif (( enabled == 0 )) && [[ $(jq -r '.api.enabled // false' "$SBM_STATE") != true ]]; then
+    elif ! state_runtime_required; then
       if service_active "$SBM_SERVICE"; then
         check_line WARN "$(service_native_name "$SBM_SERVICE") 在无启用节点时仍运行；执行 sb repair 可切换到待机"
         warnings=$((warnings + 1))
@@ -477,14 +480,14 @@ doctor_run() {
     runtime_node=$node
     if declare -F nginx_stream_effective_node >/dev/null 2>&1; then runtime_node=$(nginx_stream_effective_node "$SBM_STATE" "$node"); fi
     port=$(jq -r '.port' <<<"$runtime_node")
-    if [[ $(jq -r '.enabled' <<<"$node") != true ]]; then
+    if [[ $(jq -r '.enabled' <<<"$node") != true || $(state_node_engine "$node") == disabled ]]; then
       check_line WARN "$id 已停用"
       warnings=$((warnings + 1))
       continue
     fi
-    (( port < 1024 )) && low_port_required=1
+    if (( port < 1024 )) && [[ $(state_node_engine "$node") == sing-box ]]; then low_port_required=1; fi
     while IFS= read -r kind; do
-      if singbox_port_in_use "$kind" "$port"; then check_line PASS "$id 由 sing-box 监听 ${port}/${kind^^}"
+      if node_runtime_port_in_use "$node" "$kind"; then check_line PASS "$id 由 $(state_node_engine "$node") 监听 ${port}/${kind^^}"
       elif host_port_in_use "$kind" "$port"; then check_line FAIL "$id 的 ${port}/${kind^^} 被其他进程占用"; failures=$((failures + 1))
       else check_line FAIL "$id 未监听 ${port}/${kind^^}"; failures=$((failures + 1)); fi
     done < <(node_transport_kinds "$runtime_node")

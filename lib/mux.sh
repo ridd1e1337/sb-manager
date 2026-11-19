@@ -40,6 +40,7 @@ mux_reserved_port() {
     or (.substore.enabled==true and .substore.port==$port)
     or (.nginx_stream.website.managed==true and
         (.nginx_stream.website.website_port==$port or .nginx_stream.website.relay_port==$port))
+    or (.reality_site.enabled==true and .reality_site.backend_port==$port)
   ' "$state" >/dev/null
 }
 

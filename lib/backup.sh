@@ -1,44 +1,43 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-_backup_create() {
-  local output=${1:-$SBM_BACKUPS/sb-manager-$(now_stamp).tar.gz} recipient=${2:-} stage plain output_tmp
+_backup_create() (
+  set -Eeuo pipefail
+  local output=${1:-$SBM_BACKUPS/sb-manager-$(now_stamp).tar.gz} recipient=${2:-} stage='' output_tmp=''
+  trap '[[ -z "$stage" ]] || rm -rf -- "$stage"; [[ -z "$output_tmp" ]] || rm -f -- "$output_tmp"' EXIT
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_checkpoint_unlocked >/dev/null 2>&1; then
-    traffic_checkpoint_unlocked
+    traffic_checkpoint_unlocked || return 1
   fi
-  mkdir -p "$(dirname "$output")"
-  stage=$(mktemp -d "$SBM_RUN/backup.XXXXXX")
-  plain=$(mktemp "$SBM_RUN/backup-archive.XXXXXX")
-  output_tmp=$(mktemp "$(dirname "$output")/.sb-manager-backup.XXXXXX")
-  rm -f "$output_tmp"
-  mkdir -p "$stage/etc" "$stage/meta" "$stage/var"
-  cp -a "$SBM_STATE" "$stage/etc/state.json"
-  [[ -d "$SBM_SECRETS" ]] && cp -a "$SBM_SECRETS" "$stage/etc/secrets"
-  [[ -d "$SBM_CERTS" ]] && cp -a "$SBM_CERTS" "$stage/etc/certs"
-  [[ -f "$SBM_CONFIG" ]] && cp -a "$SBM_CONFIG" "$stage/etc/config.json"
-  [[ -d "$SBM_SUBSCRIPTIONS" ]] && cp -a "$SBM_SUBSCRIPTIONS" "$stage/var/subscriptions"
-  [[ -f "$SBM_TRAFFIC_USAGE" ]] && cp -a "$SBM_TRAFFIC_USAGE" "$stage/var/traffic-usage.json"
-  [[ ! -d "$SBM_WEBSITE_MUX_DIR" ]] || cp -a "$SBM_WEBSITE_MUX_DIR" "$stage/var/website-mux"
+  mkdir -p "$(dirname "$output")" "$SBM_CACHE" || return 1
+  stage=$(mktemp -d "$SBM_CACHE/backup.XXXXXX") || return 1
+  output_tmp=$(mktemp "$(dirname "$output")/.sb-manager-backup.XXXXXX") || return 1
+  rm -f "$output_tmp" || return 1
+  mkdir -p "$stage/etc" "$stage/meta" "$stage/var" || return 1
+  cp -a "$SBM_STATE" "$stage/etc/state.json" || return 1
+  [[ ! -d "$SBM_SECRETS" ]] || cp -a "$SBM_SECRETS" "$stage/etc/secrets" || return 1
+  [[ ! -d "$SBM_CERTS" ]] || cp -a "$SBM_CERTS" "$stage/etc/certs" || return 1
+  [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$stage/etc/config.json" || return 1
+  [[ ! -d "$SBM_SUBSCRIPTIONS" ]] || cp -a "$SBM_SUBSCRIPTIONS" "$stage/var/subscriptions" || return 1
+  [[ ! -f "$SBM_TRAFFIC_USAGE" ]] || cp -a "$SBM_TRAFFIC_USAGE" "$stage/var/traffic-usage.json" || return 1
+  [[ ! -d "$SBM_WEBSITE_MUX_DIR" ]] || cp -a "$SBM_WEBSITE_MUX_DIR" "$stage/var/website-mux" || return 1
   if declare -F substore_backup_payload >/dev/null 2>&1; then substore_backup_payload "$stage/var/substore" || return 1; fi
   {
     printf 'manager_version=%s\n' "$SBM_VERSION"
     printf 'created_at=%s\n' "$(now_iso)"
     printf 'hostname=%s\n' "$(hostname 2>/dev/null || true)"
     printf 'sing_box_version=%s\n' "$(core_current_version || true)"
-  } >"$stage/meta/manifest.txt"
-  tar -C "$stage" -czf "$plain" .
+  } >"$stage/meta/manifest.txt" || return 1
   if [[ -n "$recipient" ]]; then
     require_command age
-    age --encrypt --recipient "$recipient" --output "$output_tmp" "$plain"
+    tar -C "$stage" -czf - . | age --encrypt --recipient "$recipient" --output "$output_tmp" || return 1
   else
-    mv -f "$plain" "$output_tmp"
+    tar -C "$stage" -czf "$output_tmp" . || return 1
   fi
-  chmod 0600 "$output_tmp"
-  mv -f "$output_tmp" "$output"
-  rm -rf "$stage"; rm -f "$plain"
+  chmod 0600 "$output_tmp" || return 1
+  mv -f "$output_tmp" "$output" || return 1
   log_ok "备份已创建：$output"
   log_warn "备份包含节点密码、通知/Webhook、Tunnel Token 和 DNS API Token，请妥善保管。"
-}
+)
 backup_create() { with_lock _backup_create "$@"; }
 
 backup_is_age() {
@@ -46,10 +45,11 @@ backup_is_age() {
   [[ "$archive" == *.age ]] || head -c 22 "$archive" 2>/dev/null | grep -q '^age-encryption.org/v1'
 }
 
-_restore_backup() {
-  local archive=$1 identity=${2:-} stage safety candidate extracted_kib source_archive
+_restore_backup() (
+  local archive=$1 identity=${2:-} stage candidate extracted_kib source_archive
   [[ -f "$archive" ]] || die "备份文件不存在：$archive"
-  stage=$(mktemp -d "$SBM_RUN/restore.XXXXXX")
+  mkdir -p "$SBM_CACHE" || return 1
+  stage=$(mktemp -d "$SBM_CACHE/restore.XXXXXX") || return 1
   trap "rm -rf -- $(printf '%q' "$stage")" EXIT
   source_archive="$stage/backup.tar.gz"
   if backup_is_age "$archive"; then
@@ -58,7 +58,7 @@ _restore_backup() {
     [[ -f "$identity" ]] || die "age 身份文件不存在：$identity"
     age --decrypt --identity "$identity" --output "$source_archive" "$archive"
   else
-    cp -f -- "$archive" "$source_archive"
+    source_archive=$(readlink -f "$archive") || return 1
   fi
   backup_validate_archive "$source_archive" || die "备份包包含不安全路径、链接或特殊文件。"
   if tar --version 2>/dev/null | head -n1 | grep -q 'GNU tar'; then
@@ -77,6 +77,9 @@ _restore_backup() {
     state_normalize_v2_file "$stage/etc/state.json"
   fi
   state_validate "$stage/etc/state.json"
+  if [[ $(jq -Sc '.reality_site // null' "$stage/etc/state.json") != "$(jq -Sc '.reality_site // null' "$SBM_STATE")" ]]; then
+    die '备份中的 Reality 网站入口与当前不同，请先解除入口；恢复不能隐式迁移网站端口。'
+  fi
   if [[ $(jq -Sc '.openlist.sites // [] | sort_by(.domain)' "$stage/etc/state.json") != "$(jq -Sc '.openlist.sites // [] | sort_by(.domain)' "$SBM_STATE")" ]]; then
     die '备份的 OpenList 站点记录与当前不同；请先对齐网站入口。管理器备份不会替换宿主机网站或 OpenList 数据库。'
   fi
@@ -90,7 +93,8 @@ _restore_backup() {
       die '网站自动接入备份只能恢复到同一接入配置；请先用 sb mux detach 恢复入口，或在目标主机重新接入网站。'
     fi
   fi
-  safety="$SBM_BACKUPS/pre-restore-$(now_stamp).tar.gz"; _backup_create "$safety" >/dev/null
+  # with_state_transaction already holds the operation-local recovery copy.
+  # Do not create a second permanent compressed copy of the same data.
 
   rm -rf "$SBM_SECRETS.restore" "$SBM_CERTS.restore"
   [[ -d "$stage/etc/secrets" ]] && cp -a "$stage/etc/secrets" "$SBM_SECRETS.restore" || mkdir -p "$SBM_SECRETS.restore/nodes"
@@ -144,8 +148,8 @@ _restore_backup() {
   tunnel_reconcile 1 || return 1
   if declare -F subscription_reconcile >/dev/null 2>&1; then subscription_reconcile 1 || return 1; fi
   if declare -F substore_reconcile >/dev/null 2>&1; then substore_reconcile 1 || return 1; fi
-  log_ok "恢复完成。恢复前备份：$safety"
-}
+  log_ok '恢复完成。临时恢复资料已交由状态事务清理。'
+)
 
 backup_validate_archive() {
   local archive=$1 entry path part members=0 max_members=10000 compressed_bytes expanded_bytes

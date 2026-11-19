@@ -13,11 +13,18 @@ openlist_arch() {
 
 openlist_release_json() { github_api 'https://api.github.com/repos/OpenListTeam/OpenList/releases/latest'; }
 
+openlist_binary_version() {
+  local output version
+  output=$("$1" version 2>/dev/null) || return 1
+  # OpenList prints Go Version before its own Version field.
+  version=$(awk '$1=="Version:" {sub(/^v/, "", $2); print $2; exit}' <<<"$output") || return 1
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s\n' "$version"
+}
+
 openlist_current_version() {
-  local output
   [[ -x "$SBM_OPENLIST_BIN" ]] || return 0
-  output=$("$SBM_OPENLIST_BIN" version 2>/dev/null) || return 1
-  extract_semver "$output"
+  openlist_binary_version "$SBM_OPENLIST_BIN"
 }
 
 openlist_port() {
@@ -46,33 +53,59 @@ openlist_require_runtime() {
 
 openlist_download_latest() (
   set -Eeuo pipefail
-  local arch json version name url digest target tmpdir archive member
+  local arch json version name musl_name url digest target tmpdir archive member archive_bytes expanded_bytes candidate='' available_memory recovery_bytes=${1:-0}
+  [[ "$recovery_bytes" =~ ^[0-9]+$ ]] || return 1
   arch=$(openlist_arch) || return 1
   json=$(openlist_release_json) || { log_error '无法获取 OpenList 官方 Release。'; return 1; }
   version=$(jq -er 'select(.draft==false and .prerelease==false)|.tag_name' <<<"$json") || return 1
   version=${version#v}
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   name="openlist-linux-$arch.tar.gz"
+  if [[ -f /etc/alpine-release ]]; then
+    case "$arch" in
+      amd64|arm64) musl_name="openlist-linux-musl-$arch.tar.gz";;
+      arm-7) musl_name='openlist-linux-musleabihf-armv7l.tar.gz';;
+      *) musl_name='';;
+    esac
+    if [[ -n "$musl_name" ]] && jq -e --arg name "$musl_name" 'any(.assets[]; .name==$name)' <<<"$json" >/dev/null; then name=$musl_name; fi
+  fi
   url=$(jq -er --arg n "$name" 'first(.assets[]|select(.name==$n)).browser_download_url' <<<"$json") || return 1
   digest=$(jq -er --arg n "$name" 'first(.assets[]|select(.name==$n)).digest' <<<"$json") || return 1
+  archive_bytes=$(jq -er --arg n "$name" 'first(.assets[]|select(.name==$n)).size | select(type=="number" and .>0)' <<<"$json") || return 1
   [[ "$url" == https://github.com/OpenListTeam/OpenList/releases/download/* && "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
     log_error 'OpenList Release 缺少有效的官方下载地址或 SHA-256 摘要。'; return 1;
   }
-  mkdir -p "$SBM_CACHE" || return 1
-  tmpdir=$(mktemp -d "$SBM_CACHE/openlist.XXXXXX") || return 1
-  trap 'rm -rf -- "$tmpdir"' EXIT
+  target="$SBM_CORE_DIR/openlist/$version-${digest:7:16}/openlist"
+  if [[ -x "$target" ]] && [[ $(openlist_binary_version "$target") == "$version" ]]; then
+    printf '%s\n' "$target"
+    return 0
+  fi
+  mkdir -p "$SBM_DOWNLOAD_TMP" || return 1
+  core_check_free_space "$SBM_DOWNLOAD_TMP" "$((archive_bytes + 8388608))" || return 1
+  if df -PT "$SBM_DOWNLOAD_TMP" | awk 'NR==2 {print $2}' | grep -qx tmpfs; then
+    available_memory=$(awk '/^MemAvailable:/ {printf "%.0f", $2*1024}' /proc/meminfo)
+    [[ "$available_memory" =~ ^[0-9]+$ ]] && (( available_memory > archive_bytes + 67108864 )) || {
+      log_error '内存不足以安全暂存 OpenList 官方压缩包；请设置 SBM_DOWNLOAD_TMP 为容量充足的磁盘目录。'; return 1;
+    }
+  fi
+  tmpdir=$(mktemp -d "$SBM_DOWNLOAD_TMP/sb-manager-openlist.XXXXXX") || return 1
+  trap 'rm -rf -- "$tmpdir"; [[ -z "$candidate" ]] || rm -f -- "$candidate"' EXIT
   archive="$tmpdir/$name"
   download_file_with_retries "$url" "$archive" "OpenList $version" 5 || return 1
   verify_asset_digest "$archive" "$digest" || { log_error 'OpenList 下载摘要校验失败。'; return 1; }
   # Stream only the executable; never extract archive paths as root.
   member=$(tar -tzf "$archive" | awk '$0=="openlist" || $0=="./openlist" {print}') || return 1
   [[ "$member" == openlist || "$member" == ./openlist ]] || { log_error 'OpenList 压缩包结构无法识别。'; return 1; }
-  tar -xOzf "$archive" "$member" >"$tmpdir/openlist" || return 1
-  chmod 0755 "$tmpdir/openlist" || return 1
-  [[ $(extract_semver "$("$tmpdir/openlist" version 2>/dev/null)") == "$version" ]] || return 1
-  target="$SBM_CORE_DIR/openlist/$version-${digest:7:16}/openlist"
+  expanded_bytes=$(tar -tvzf "$archive" | awk '$NF=="openlist" || $NF=="./openlist" {print $3}') || return 1
+  [[ "$expanded_bytes" =~ ^[1-9][0-9]*$ ]] || { log_error '无法确认 OpenList 展开大小，未写入程序。'; return 1; }
   install -d -m 0755 "$SBM_CORE_DIR/openlist" "$(dirname "$target")" || return 1
-  safe_install_file "$tmpdir/openlist" "$target" 0755 || return 1
+  core_check_free_space "$(dirname "$target")" "$((expanded_bytes + recovery_bytes + 33554432))" || return 1
+  candidate=$(mktemp "$(dirname "$target")/.openlist.XXXXXX") || return 1
+  tar -xOzf "$archive" "$member" >"$candidate" || return 1
+  chmod 0755 "$candidate" || return 1
+  [[ $(openlist_binary_version "$candidate") == "$version" ]] || return 1
+  mv -f "$candidate" "$target" || return 1
+  candidate=''
   artifact_record openlist "$version" "$url" "$digest" "$target" || return 1
   printf '%s\n' "$target"
 )
@@ -113,6 +146,8 @@ User=$SBM_OPENLIST_USER
 Group=$SBM_OPENLIST_USER
 WorkingDirectory=$SBM_OPENLIST_DATA
 ExecStart=$SBM_OPENLIST_BIN server --data $SBM_OPENLIST_DATA
+Environment=GOMEMLIMIT=128MiB
+EnvironmentFile=-/etc/default/sb-openlist
 Restart=on-failure
 RestartSec=3s
 UMask=0077
@@ -129,7 +164,8 @@ EOF_UNIT
       chmod 0644 "$unit" ;;
     openrc)
       local SBM_LOG_DIR=$SBM_OPENLIST_LOG_DIR
-      write_openrc_supervised_service "$unit" 'sb-manager openlist' 'sb-manager managed OpenList service' "$SBM_OPENLIST_BIN" "server --data $SBM_OPENLIST_DATA" "$SBM_OPENLIST_USER" "$SBM_OPENLIST_LOG" "$SBM_OPENLIST_ERROR_LOG" 'after firewall' '' "$SBM_OPENLIST_DATA"
+      write_openrc_supervised_service "$unit" 'sb-manager openlist' 'sb-manager managed OpenList service' "$SBM_OPENLIST_BIN" "server --data $SBM_OPENLIST_DATA" "$SBM_OPENLIST_USER" "$SBM_OPENLIST_LOG" "$SBM_OPENLIST_ERROR_LOG" 'after firewall' '' "$SBM_OPENLIST_DATA" || return 1
+      printf '\nexport GOMEMLIMIT="${GOMEMLIMIT:-128MiB}"\n' >>"$unit" || return 1
       ;;
   esac
 }
@@ -166,9 +202,22 @@ openlist_install_restore() {
   if [[ "$active" == true ]]; then service_start "$SBM_OPENLIST_SERVICE" && openlist_ready "$(openlist_port)" || return 1; fi
 }
 
+openlist_install_finish() {
+  local rc=$1 backup=$2 unit=$3 active=$4 enabled=$5 recovery_ready=$6
+  if (( rc != 0 )) && [[ "$recovery_ready" == true ]]; then
+    if ! openlist_install_restore "$backup" "$unit" "$active" "$enabled"; then
+      touch "$backup/.recovery-pending"
+      log_error "OpenList 自动恢复未完成：$backup；恢复资料最多保留 23 小时，请及时处理。"
+      return 0
+    fi
+  fi
+  rm -rf -- "$backup" || return 1
+  openlist_prune
+}
+
 _openlist_install() (
   set -Eeuo pipefail
-  local target port unit backup active=false enabled=false file config fresh=false
+  local target port unit backup active=false enabled=false file config fresh=false recovery_ready=false recovery_bytes=0 file_bytes
   openlist_require_runtime || return 1
   port=$(openlist_port) || return 1
   unit=$(service_file_path "$SBM_OPENLIST_SERVICE") || return 1
@@ -197,10 +246,18 @@ _openlist_install() (
   if [[ "$active" == false ]] && host_port_in_use tcp "$port"; then
     log_error "OpenList 端口 $port 已被占用。"; return 1
   fi
-  target=$(openlist_download_latest) || return 1
+  mkdir -p "$SBM_BACKUPS/openlist" || return 1
+  for file in config.json data.db data.db-wal data.db-shm; do
+    [[ -f "$SBM_OPENLIST_DATA/$file" ]] || continue
+    file_bytes=$(stat -c %s "$SBM_OPENLIST_DATA/$file") || return 1
+    recovery_bytes=$((recovery_bytes + file_bytes))
+  done
+  core_check_free_space "$SBM_BACKUPS/openlist" "$((recovery_bytes + 33554432))" || return 1
+  target=$(openlist_download_latest "$recovery_bytes") || return 1
   openlist_account || return 1
   mkdir -p "$SBM_BACKUPS/openlist" || return 1
   backup=$(mktemp -d "$SBM_BACKUPS/openlist/install-$(now_stamp).XXXXXX") || return 1
+  trap 'rc=$?; openlist_install_finish "$rc" "$backup" "$unit" "$active" "$enabled" "$recovery_ready" || log_warn "OpenList 临时恢复资料清理未完成：$backup"' EXIT
   chmod 0700 "$backup" || return 1
   [[ ! -e "$SBM_OPENLIST_BIN" && ! -L "$SBM_OPENLIST_BIN" ]] || cp -P "$SBM_OPENLIST_BIN" "$backup/binary-link" || return 1
   [[ ! -f "$unit" ]] || cp -p "$unit" "$backup/unit" || return 1
@@ -217,7 +274,7 @@ _openlist_install() (
       return 1
     fi
   done
-  trap 'rc=$?; if (( rc != 0 )); then openlist_install_restore "$backup" "$unit" "$active" "$enabled" || log_error "OpenList 恢复未完成，备份：$backup"; fi' EXIT
+  recovery_ready=true
   [[ -s "$SBM_OPENLIST_DATA/data.db" ]] || fresh=true
   if [[ ! -f "$config" ]]; then printf '{}\n' >"$config" || return 1; fi
   jq --argjson port "$port" --arg db "$SBM_OPENLIST_DATA/data.db" '
@@ -262,25 +319,23 @@ openlist_update() {
 }
 
 openlist_prune() {
-  local current previous='' path target kept=0
+  local current path
+  # Unfinished recovery temporarily pins its binaries. Successful operation
+  # snapshots are disposable; explicit backup archives are outside this tree.
+  for path in "$SBM_BACKUPS/openlist"/*/.recovery-pending; do
+    [[ ! -f "$path" ]] || return 0
+  done
+  for path in "$SBM_BACKUPS/openlist"/install-* "$SBM_BACKUPS/openlist"/site-* "$SBM_BACKUPS/openlist"/detach-*; do
+    [[ -d "$path" && ! -L "$path" ]] || continue
+    rm -rf -- "$path" || return 1
+  done
   [[ -L "$SBM_OPENLIST_BIN" ]] || return 0
   current=$(readlink -f "$SBM_OPENLIST_BIN") || return 1
   [[ "$current" == "$SBM_CORE_DIR/openlist/"* ]] || return 0
-  # Keep two database/service recovery snapshots and the current/previous
-  # verified binaries. Website journals are retained for explicit recovery.
-  while IFS= read -r path; do
-    [[ -d "$path" && ! -L "$path" ]] || continue
-    kept=$((kept + 1))
-    if (( kept > 2 )); then rm -rf -- "$path" || return 1; continue; fi
-    if [[ -L "$path/binary-link" && -z "$previous" ]]; then
-      target=$(readlink -f "$path/binary-link" || true)
-      [[ "$target" == "$current" ]] || previous=$target
-    fi
-  done < <(printf '%s\n' "$SBM_BACKUPS/openlist"/install-* | sort -r)
   for path in "$SBM_CORE_DIR/openlist"/*; do
     [[ -d "$path" && ! -L "$path" ]] || continue
     [[ "${path##*/}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{16}$ ]] || continue
-    [[ "$path/openlist" == "$current" || "$path/openlist" == "$previous" ]] || rm -rf -- "$path" || return 1
+    [[ "$path/openlist" == "$current" ]] || rm -rf -- "$path" || return 1
   done
 }
 
@@ -289,6 +344,12 @@ openlist_web_reload() {
   if [[ $(init_system) == systemd ]]; then systemctl reload "$server.service" || return 1
   else rc-service "$server" reload || return 1; fi
   service_wait_active "$server.service" 20 2
+}
+
+openlist_keep_recovery() {
+  local directory=$1
+  touch "$directory/.recovery-pending" || return 1
+  log_warn "未完成操作的恢复资料：$directory；最多保留 23 小时。"
 }
 
 openlist_record_site() (
@@ -317,7 +378,7 @@ openlist_cert_reload() {
 }
 
 openlist_proxy_context() {
-  local server=$1 binary config pid args owners row port flags prefix
+  local server=$1 allow_proxy443=${2:-false} binary config pid args owners row port flags prefix
   require_command "$server"
   service_active "$server.service" || { log_error "请先安装并启动 $server 网站服务。"; return 1; }
   binary=$(command -v "$server") || return 1
@@ -331,6 +392,7 @@ openlist_proxy_context() {
     while IFS= read -r row; do
       [[ -n "$row" ]] || continue
       if [[ "$row" != *"\"$server\""* ]]; then
+        if [[ "$port" == 443 && "$allow_proxy443" == true ]]; then continue; fi
         log_error "TCP/$port 已被其他程序占用，未修改网站。"; return 1
       fi
       pid=$(sed -n 's/.*pid=\([0-9]*\).*/\1/p' <<<"$row") || return 1
@@ -409,13 +471,20 @@ _openlist_setup() {
   backup=$(mktemp -d "$SBM_BACKUPS/openlist/site-$(now_stamp).XXXXXX") || return 1
   chmod 0700 "$backup" || return 1
   if ! python3 "$SBM_LIB/libexec/openlist_proxy.py" prepare "$server" "$binary" "$config" "$domain" "$port" "$SBM_CERTS/$domain/fullchain.pem" "$SBM_CERTS/$domain/key.pem" "$backup"; then
-    log_error "OpenList 网站配置未完成，记录：$backup"; return 1
+    openlist_keep_recovery "$backup"
+    log_error 'OpenList 网站配置未完成。'; return 1
   fi
   if ! openlist_web_reload "$server" || ! openlist_site_ready "$domain" || ! openlist_record_site "$domain" "$server" "$binary" "$config" "$port"; then
-    python3 "$SBM_LIB/libexec/openlist_proxy.py" rollback "$backup" && openlist_web_reload "$server" || log_error "网站恢复未完成，请检查 $backup。"
+    if python3 "$SBM_LIB/libexec/openlist_proxy.py" rollback "$backup" && openlist_web_reload "$server"; then
+      rm -rf -- "$backup" || return 1
+    else
+      openlist_keep_recovery "$backup"
+      log_error '网站恢复未完成。'
+    fi
     return 1
   fi
-  log_ok "OpenList 网站已配置：https://$domain；备份：$backup"
+  rm -rf -- "$backup" || return 1
+  log_ok "OpenList 网站已配置：https://$domain"
 }
 
 openlist_setup() {
@@ -438,6 +507,10 @@ openlist_forget_site() (
 
 _openlist_detach() {
   local domain=$1 site server binary config port backup active=false
+  if jq -e --arg domain "$domain" '.reality_site.enabled==true and .reality_site.domain==$domain' "$SBM_STATE" >/dev/null; then
+    log_error '此网站仍由 Reality 入口使用；请先运行 sb reality detach，再移除 OpenList 网站。'
+    return 1
+  fi
   site=$(jq -c --arg domain "$domain" 'first(.openlist.sites[]? | select(.domain==$domain)) // empty' "$SBM_STATE") || return 1
   [[ -n "$site" ]] || { log_error '此域名未登记为 OpenList 网站。'; return 1; }
   website_mux_managed && { log_error '请先解除网站分流，再移除 OpenList 网站。'; return 1; }
@@ -448,12 +521,14 @@ _openlist_detach() {
   mkdir -p "$SBM_BACKUPS/openlist" || return 1
   backup=$(mktemp -d "$SBM_BACKUPS/openlist/detach-$(now_stamp).XXXXXX") || return 1
   chmod 0700 "$backup" || return 1
-  python3 "$SBM_LIB/libexec/openlist_proxy.py" detach "$server" "$binary" "$config" "$domain" "$port" "$SBM_CERTS/$domain/fullchain.pem" "$SBM_CERTS/$domain/key.pem" "$backup" || return 1
+  python3 "$SBM_LIB/libexec/openlist_proxy.py" detach "$server" "$binary" "$config" "$domain" "$port" "$SBM_CERTS/$domain/fullchain.pem" "$SBM_CERTS/$domain/key.pem" "$backup" || { openlist_keep_recovery "$backup"; return 1; }
   if { [[ "$active" != true ]] || openlist_web_reload "$server"; } && openlist_forget_site "$domain"; then
+    rm -rf -- "$backup" || return 1
     log_ok "已移除 OpenList 网站入口：$domain；数据已保留。"
   else
-    python3 "$SBM_LIB/libexec/openlist_proxy.py" rollback "$backup" || { log_error "站点恢复未完成：$backup"; return 1; }
-    [[ "$active" != true ]] || openlist_web_reload "$server" || return 1
+    python3 "$SBM_LIB/libexec/openlist_proxy.py" rollback "$backup" || { openlist_keep_recovery "$backup"; return 1; }
+    [[ "$active" != true ]] || openlist_web_reload "$server" || { openlist_keep_recovery "$backup"; return 1; }
+    rm -rf -- "$backup" || return 1
     return 1
   fi
 }

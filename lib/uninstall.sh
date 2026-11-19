@@ -43,6 +43,9 @@ uninstall_manager() {
   if [[ -s "$SBM_STATE" ]] && website_mux_managed; then
     website_mux_detach || die '无法恢复现有网站入口，卸载已取消。'
   fi
+  if [[ -s "$SBM_STATE" ]] && jq -e '.reality_site.enabled==true' "$SBM_STATE" >/dev/null; then
+    reality_site_detach || die '无法恢复 Reality 网站入口，卸载已取消。'
+  fi
   openlist_detach_all || die '无法安全移除 OpenList 站点，卸载已取消，请检查配置。'
 
   if [[ -f "$SBM_SHAPING_DIR/baseline.json" ]]; then

@@ -108,11 +108,13 @@ def nginx_site(domain, port, cert, key, ipv6=None):
 server {{
   listen 80;{http6}
   server_name {domain};
+  access_log off;
   return 308 https://{domain}$request_uri;
 }}
 server {{
   listen 443 ssl;{https6}
   server_name {domain};
+  access_log off;
   ssl_certificate {cert};
   ssl_certificate_key {key};
   ssl_protocols TLSv1.2 TLSv1.3;
@@ -204,8 +206,9 @@ def detach_plan(server, binary, main, domain, port, cert, key, log):
     content = snippet.read_bytes()
     # IPv6 may have been enabled or disabled since setup. Both exact original
     # renderings are safe to remove; arbitrary edits must be handled manually.
-    if content.decode() not in (nginx_site(domain, port, cert, key, False),
-                                nginx_site(domain, port, cert, key, True)):
+    originals = [nginx_site(domain, port, cert, key, ipv6) for ipv6 in (False, True)]
+    originals += [value.replace('  access_log off;\n', '') for value in originals]
+    if content.decode() not in originals:
         fail('Nginx OpenList 站点已被修改，拒绝自动移除')
     include = f'\n  include {snippet};\n'
     blocks = [node for node in parse(text, 'nginx')
@@ -316,6 +319,7 @@ def prepare(server, binary, main_name, domain, port_text, cert, key, backup_name
         validate(binary, server, main, log)
     except Exception:
         tx.restore(strict=True)
+        (backup / 'rolled-back').touch(mode=0o600)
         raise
 
 
@@ -328,7 +332,8 @@ def main():
         backup = safe_path(args[1])
         if not (backup / 'files.json').is_file():
             fail('网站恢复记录不存在')
-        Journal(backup).restore(strict=True)
+        if not (backup / 'rolled-back').is_file():
+            Journal(backup).restore(strict=True)
     else:
         fail('用法：prepare|detach SERVER BINARY MAIN DOMAIN PORT CERT KEY BACKUP | rollback BACKUP')
 
