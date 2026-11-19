@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.78
+
+- Fix `sb xray warp --register`: decode the WARP `client_id` as raw bytes for
+  the WireGuard `reserved` field (jq `@base64d` decoded it as text and broke
+  values above 127). Verified against Cloudflare registration with live
+  traffic reporting `warp=on` through Xray's userspace WireGuard stack.
+
 ## 0.1.0-alpha.77
 
 - Fix Xray configuration checks on Xray 26.x: the core now infers the config

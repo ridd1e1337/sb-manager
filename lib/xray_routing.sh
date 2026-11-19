@@ -162,8 +162,18 @@ xray_warp_register() {
     .config as $c | select($c.peers[0].public_key!=null and $c.interface.addresses.v4!=null) |
     {private:$private,v4:$c.interface.addresses.v4,v6:($c.interface.addresses.v6 // ""),
      peer:$c.peers[0].public_key,endpoint:($c.peers[0].endpoint.host // "engage.cloudflareclient.com:2408"),
-     reserved:(($c.client_id // "")|if .=="" then "" else (@base64d|explode|map(tostring)|join(",")) end)}
-  ' <<<"$response" || { log_error 'WARP 注册返回格式无法识别。'; return 1; }
+     client_id:($c.client_id // "")}
+  ' <<<"$response" | {
+    # client_id is 3 raw bytes; jq @base64d decodes text, so decode bytes here.
+    local info client reserved=''
+    info=$(cat) && [[ -n "$info" ]] || return 1
+    client=$(jq -r '.client_id' <<<"$info")
+    if [[ -n "$client" ]]; then
+      reserved=$(printf '%s' "$client" | base64 -d 2>/dev/null | od -An -tu1 | tr -s ' \n' ',' | sed 's/^,//; s/,$//')
+      [[ "$reserved" =~ ^[0-9]{1,3},[0-9]{1,3},[0-9]{1,3}$ ]] || { log_error 'WARP client_id 无法解析为 reserved。'; return 1; }
+    fi
+    jq -c --arg reserved "$reserved" 'del(.client_id) + {reserved:$reserved}' <<<"$info"
+  } || { log_error 'WARP 注册返回格式无法识别。'; return 1; }
 }
 
 xray_warp_cli() {
