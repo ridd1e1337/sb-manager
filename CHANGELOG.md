@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.84
+
+- Add mihomo client export for every protocol (`export_mihomo_client_config`,
+  panel client-config option 3, `mihomo` subscription format and bot `/sub`):
+  the effective sing-box client outbound is converted by
+  `libexec/singbox_to_mihomo.jq`, shared with xray-manager; fields mihomo cannot
+  express are refused with a reason. Verified with mihomo v1.19.34 against
+  sing-box VLESS TCP/gRPC Reality nodes.
+
 ## 0.1.0-alpha.83
 
 - Split the project: sb-manager now runs every protocol, including VLESS, on

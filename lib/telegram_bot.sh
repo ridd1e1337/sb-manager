@@ -47,7 +47,7 @@ sb-manager 机器人命令：
 /users [节点] 用户状态与到期时间
 /enable 节点 用户 · /disable 节点 用户
 /renew 节点 用户 天数
-/sub 节点 用户 [mixed|tun] 生成该用户动态订阅
+/sub 节点 用户 [mixed|tun|mihomo] 生成该用户动态订阅
 EOF
 }
 
@@ -73,7 +73,7 @@ telegram_bot_argv() {
     /sub:3|/sub:4)
       [[ ${w[1]} =~ $id && ${w[2]} =~ $id ]] || return 1
       local mode=${w[3]:-mixed}
-      case "$mode" in mixed|tun) ;; *) return 1;; esac
+      case "$mode" in mixed|tun|mihomo) ;; *) return 1;; esac
       printf '%s\0' subscription create never "$mode" --live --user "${w[1]}:${w[2]}";;
     *) return 1;;
   esac

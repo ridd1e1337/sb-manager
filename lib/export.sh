@@ -271,3 +271,41 @@ export_client_config() {
   log_ok "已导出 $mode 模式 sing-box 客户端配置：$output"
 }
 
+
+# mihomo export for every protocol: convert the effective sing-box client
+# outbound (shared converter with xray-manager).
+node_mihomo_client_outbound() {
+  local id=$1 user_id=${2:-} node outbound result
+  node=$(state_get_node "$id") || return 1
+  [[ -n "$node" ]] || return 1
+  [[ -n "$user_id" ]] || user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
+  [[ -n "$user_id" ]] || return 1
+  outbound=$(node_client_outbound "$id" "$user_id") || return 1
+  if [[ $(jq -r 'type' <<<"$outbound") == array ]]; then log_warn "mihomo 导出暂不转换复合协议节点：$id。"; return 1; fi
+  if ! result=$(jq -c --arg name "$(jq -r '.name' <<<"$node") [$id/$user_id]" -f "$SBM_LIB/libexec/singbox_to_mihomo.jq" <<<"$outbound" 2>&1); then
+    log_warn "$(sed -n 's/.*"sb_reason":"\([^"]*\)".*/\1/p' <<<"$result" | head -1)"; return 1
+  fi
+  printf '%s\n' "$result"
+}
+
+export_mihomo_client_config() (
+  local output=${1:-$SBM_EXPORTS/mihomo-client.json} selected_node=${2:-} selected_user=${3:-}
+  local node id user_id proxy proxies='[]' tmp
+  mkdir -p "$(dirname "$output")" || return 1
+  while IFS= read -r node; do
+    id=$(jq -r '.id' <<<"$node") || return 1
+    while IFS= read -r user_id; do
+      if proxy=$(node_mihomo_client_outbound "$id" "$user_id"); then
+        proxies=$(jq --argjson proxy "$proxy" '. + [$proxy]' <<<"$proxies") || return 1
+      elif [[ -n "$selected_node" ]]; then return 1
+      else log_warn "mihomo 配置已排除无法转换的节点：$id/$user_id。"; fi
+    done < <(jq -r --arg user "$selected_user" '.users[]|select(if $user=="" then .enabled else .id==$user end)|.id' <<<"$node")
+  done < <(jq -c --arg id "$selected_node" '.nodes[]?|select(if $id=="" then .enabled else .id==$id end)' "$SBM_STATE")
+  [[ "$proxies" != '[]' ]] || { log_error '没有可导出的 mihomo 节点。'; return 1; }
+  tmp=$(mktemp "$(dirname "$output")/.mihomo-client.XXXXXX") || return 1
+  trap 'rm -f -- "$tmp"' EXIT
+  jq -n --argjson proxies "$proxies" '{"mixed-port":2080,"allow-lan":false,mode:"rule","log-level":"warning",
+    proxies:$proxies,"proxy-groups":[{name:"代理选择",type:"select",proxies:($proxies|map(.name))}],rules:["MATCH,代理选择"]}' >"$tmp" || return 1
+  chmod 0600 "$tmp" && mv -f "$tmp" "$output" || return 1
+  log_ok "已导出 mihomo 客户端配置：$output；JSON 可直接作为 YAML 导入。"
+)

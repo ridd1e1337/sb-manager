@@ -562,9 +562,9 @@ ui_user_menu() {
       user_limit_cli "$id" "$user_id" "${args[@]}";;
     7) user_limit_cli "$id" "$user_id" --no-expiry;;
     8)
-      printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n'
-      ui_menu_choice value '订阅格式' 2 || return 0
-      case "$value" in 1) value=mixed;; 2) value=tun;; *) return 0;; esac
+      printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n3. mihomo\n'
+      ui_menu_choice value '订阅格式' 3 || return 0
+      case "$value" in 1) value=mixed;; 2) value=tun;; 3) value=mihomo;; *) return 0;; esac
       subscription_create_cli never "$value" --live --user "$id:$user_id";;
   esac
 }
@@ -764,11 +764,15 @@ ui_client_export_menu() {
   directory=$SBM_EXPORTS
   [[ -z "$selected_node" ]] || directory="$SBM_EXPORTS/nodes/$selected_node/${selected_user:-default}"
   printf '选择客户端；不支持的节点会给出原因，不会生成错误的兼容参数。\n'
-  printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n0. 返回\n'
-  ui_menu_choice mode_choice '选择客户端配置' 2
+  printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n3. mihomo 配置\n0. 返回\n'
+  ui_menu_choice mode_choice '选择客户端配置' 3
   case "$mode_choice" in
     1) mode=mixed; output="$directory/client-mixed.json";;
     2) mode=tun; output="$directory/client-tun.json";;
+    3)
+      prompt_value output 'mihomo 配置文件' "$directory/client-mihomo.json" || return 1
+      export_mihomo_client_config "$output" "$selected_node" "$selected_user"
+      return;;
     0) return;;
     *) log_error '选择无效'; return;;
   esac

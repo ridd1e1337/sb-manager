@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。所有协议（含 VLESS）只由 sing-box 运行；需要 Xray-core 专属能力（XHTTP、mKCP、VLESS 加密、用户级流量配额等）时请使用姊妹项目 xray-manager，两者可以装在同一台服务器上。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.83`
+当前版本：`0.1.0-alpha.84`
 
 ## 第一步：安装
 
@@ -106,7 +106,7 @@ sb user stats [edge] [--json]
 `3 → 节点 → 12` 可管理用户。用户级流量配额与在线 IP 上限需要 Xray 统计，属于
 xray-manager；sb-manager 提供节点级配额与限速（`sb traffic set`）。
 
-`sb subscription create never mixed --user edge:alice` 生成只含该用户的动态订阅，
+`sb subscription create never mixed --user edge:alice`（或 `mihomo`）生成只含该用户的动态订阅，
 响应带 `Subscription-Userinfo`（含到期时间），用户暂停后订阅不再返回节点配置。
 
 ### Telegram 命令机器人

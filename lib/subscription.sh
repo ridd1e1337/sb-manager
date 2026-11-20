@@ -57,7 +57,7 @@ subscription_build_bundle() (
   fi
   if [[ "$active" != true ]]; then
     : >"$stage/links"
-    for format in mixed tun; do printf 'null\n' >"$stage/$format.json"; done
+    for format in mixed tun mihomo; do printf 'null\n' >"$stage/$format.json"; done
   elif [[ -n "$user_id" ]]; then
     # The formats are independent read-only exports; build them concurrently.
     local -a jobs=()
@@ -65,6 +65,7 @@ subscription_build_bundle() (
     for format in mixed tun; do
       { export_client_config "$stage/$format.json" "$format" hijack '' "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/$format.json"; } & jobs+=($!)
     done
+    { export_mihomo_client_config "$stage/mihomo.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/mihomo.json"; } & jobs+=($!)
     wait "${jobs[@]}" || true
   else
     export_substore_links "$stage/links" || return 1
@@ -75,14 +76,15 @@ subscription_build_bundle() (
         printf 'null\n' >"$stage/$format.json" || return 1
       fi
     done
+    if ! export_mihomo_client_config "$stage/mihomo.json" >/dev/null; then printf 'null\n' >"$stage/mihomo.json" || return 1; fi
   fi
   local fingerprint=''
   [[ -z "$user_id" ]] || fingerprint=$(subscription_user_fingerprint "$node_id" "$user_id") || return 1
   jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" --argjson userinfo "$userinfo" --argjson active "$active" --arg fingerprint "$fingerprint" \
-    --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" \
+    --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" --slurpfile mihomo "$stage/mihomo.json" \
     '
       {schema_version:1,updated_at:$updated,substore:$links,compatibility:[],
-       profiles:{mixed:$mixed[0],tun:$tun[0]}} |
+       profiles:{mixed:$mixed[0],tun:$tun[0],mihomo:$mihomo[0]}} |
       (if $userinfo==null then . else .userinfo=$userinfo end) |
       (if $fingerprint=="" then . else .fingerprint=$fingerprint end) |
       .errors=(.profiles|to_entries|map(select(.value==null)|{key:.key,value:(if $active then "没有兼容节点，或此格式的客户端配置无法生成。" else "该用户已停用、到期或流量用尽。" end)})|from_entries)
@@ -123,10 +125,10 @@ subscription_refresh_live() {
       else rm -f "${meta%.meta.json}.user.json"; fi
       continue
     fi
-    case "$mode" in mixed|tun) needed=true;; *) log_error '动态订阅模式无效。'; return 1;; esac
+    case "$mode" in mixed|tun|mihomo) needed=true;; *) log_error '动态订阅模式无效。'; return 1;; esac
   done
   if [[ -n "$extra_mode" ]]; then
-    case "$extra_mode" in mixed|tun) needed=true;; *) return 1;; esac
+    case "$extra_mode" in mixed|tun|mihomo) needed=true;; *) return 1;; esac
   fi
   [[ "$needed" == true ]] || return 0
   subscription_build_bundle "$SBM_SUBSCRIPTIONS/live.json"
@@ -211,7 +213,7 @@ subscription_reconcile() {
 
 _subscription_create() {
   local duration=${1:-7d} mode=${2:-mixed} live=${3:-false} base=${4:-} node_id=${5:-} user_id=${6:-} seconds now expires token digest profile substore_profile meta bundle
-  [[ "$mode" == mixed || "$mode" == tun ]] || usage_die '客户端模式必须是 mixed 或 tun。'
+  [[ "$mode" == mixed || "$mode" == tun || "$mode" == mihomo ]] || usage_die '客户端模式必须是 mixed、tun 或 mihomo。'
   [[ "$live" == true || "$live" == false ]] || return 1
   now=$(date +%s)
   if [[ "$duration" == never && "$live" == true ]]; then expires=null
@@ -238,7 +240,7 @@ _subscription_create() {
   fi
   printf '订阅 ID：%s\n有效期至 epoch：%s\n本机 URL：http://127.0.0.1:%s/sub/%s\nSub-Store URL：http://127.0.0.1:%s/sub/%s?format=substore\n' \
     "${digest:0:12}" "$expires" "$SBM_SUBSCRIPTION_PORT" "$token" "$SBM_SUBSCRIPTION_PORT" "$token"
-  printf '格式参数：?format=sing-box / ?format=substore\n'
+  printf '格式参数：?format=sing-box / ?format=mihomo / ?format=substore\n'
   [[ "$live" != true ]] || printf '更新方式：动态（节点变更后自动更新，URL 不变）\n'
   [[ -z "$base" ]] || printf '远程 Sub-Store URL：%s/sub/%s?format=substore\n' "${base%/}" "$token"
   log_warn '订阅令牌只显示一次。不要直接向公网开放该端口；请使用 SSH 转发或受认证的 TLS 代理。'
@@ -257,7 +259,7 @@ subscription_create_cli() {
         [[ $# -ge 2 && "$2" == *:* ]] || usage_die '--user 格式为 NODE_ID:USER_ID'
         node_id=${2%%:*}; user_id=${2#*:}; shift 2;;
       --base-url) [[ $# -ge 2 ]] || usage_die '--base-url 缺少地址'; base=$2; shift 2;;
-      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]';;
+      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun|mihomo] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]';;
       *)
         case "$positional" in 0) duration=$1;; 1) mode=$1;; *) usage_die '订阅参数过多。';; esac
         positional=$((positional+1)); shift;;
