@@ -552,25 +552,28 @@ traffic_status_json_unlocked() {
 }
 
 _traffic_status() {
-  local target=${1:-all} json=${2:-0} data row id state total upload download quota rates reset mode
+  local target=${1:-all} json=${2:-0} data id state total upload download quota rates reset
   traffic_checkpoint_unlocked
   traffic_reset_due_unlocked
   (( TRAFFIC_RESET_CHANGED == 0 )) || traffic_apply_unlocked
   data=$(traffic_status_json_unlocked "$target")
   if [[ "$json" == 1 ]]; then printf '%s\n' "$data"; return 0; fi
   printf '%-18s %-8s %-13s %-13s %-13s %-18s %s\n' 'ID' '状态' '周期用量' '上行' '下行' '配额' '速率(上/下)'
-  while IFS= read -r row; do
-    id=$(jq -r '.id' <<<"$row")
-    state=$(jq -r 'if .traffic_enabled and .node_enabled then "生效" elif .traffic_enabled then "节点停用" elif .configured then "已停用" else "未配置" end' <<<"$row")
-    total=$(traffic_format_bytes "$(jq -r '.total_bytes' <<<"$row")")
-    upload=$(traffic_format_bytes "$(jq -r '.upload_bytes' <<<"$row")")
-    download=$(traffic_format_bytes "$(jq -r '.download_bytes' <<<"$row")")
-    quota=$(jq -r '.quota_bytes' <<<"$row"); mode=$(jq -r '.quota_mode' <<<"$row")
-    if [[ "$quota" == null ]]; then quota='不限'; else quota="$(traffic_format_bytes "$quota")/$([[ "$mode" == total ]] && echo 双向 || echo 下行)"; fi
-    rates="$(traffic_format_rate "$(jq -r '.upload_rate_bps' <<<"$row")")/$(traffic_format_rate "$(jq -r '.download_rate_bps' <<<"$row")")"
-    reset=$(jq -r '.reset_day' <<<"$row")
+  # One jq pass formats every row (same output as traffic_format_bytes/rate).
+  while IFS=$'\t' read -r id state total upload download quota rates reset; do
     printf '%-18s %-8s %-13s %-13s %-13s %-18s %s（每月 %s 日）\n' "$id" "$state" "$total" "$upload" "$download" "$quota" "$rates" "$reset"
-  done < <(jq -c '.[]' <<<"$data")
+  done < <(jq -r '
+    def dec2: (. * 100 | round) as $x | "\($x / 100 | floor).\($x % 100 | tostring | if length < 2 then "0" + . else . end)";
+    def unit($base; $names): . as $n | {n:$n, i:0} | until(.n < $base or .i >= ($names|length) - 1; .n /= $base | .i += 1);
+    def bytes: (. // 0) | unit(1024; ["B","KiB","MiB","GiB","TiB","PiB"]) |
+      if .i == 0 then "\(.n | round) B" else "\(.n | dec2) \(["B","KiB","MiB","GiB","TiB","PiB"][.i])" end;
+    def rate: if . == null then "不限" else unit(1000; ["bit/s","Kbit/s","Mbit/s","Gbit/s","Tbit/s"]) |
+      "\(if .n == (.n|floor) then (.n|tostring) else (.n|dec2) end) \(["bit/s","Kbit/s","Mbit/s","Gbit/s","Tbit/s"][.i])" end;
+    .[] | [.id,
+      (if .traffic_enabled and .node_enabled then "生效" elif .traffic_enabled then "节点停用" elif .configured then "已停用" else "未配置" end),
+      (.total_bytes|bytes), (.upload_bytes|bytes), (.download_bytes|bytes),
+      (if .quota_bytes == null then "不限" else "\(.quota_bytes|bytes)/\(if .quota_mode == "total" then "双向" else "下行" end)" end),
+      "\(.upload_rate_bps|rate)/\(.download_rate_bps|rate)", (.reset_day|tostring)] | join("\t")' <<<"$data")
 }
 
 traffic_status() { with_lock _traffic_status "${1:-all}" "${2:-0}"; }

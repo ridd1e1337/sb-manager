@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.87
+
+- Performance: `sb traffic status` (panel menu 16) formats the whole table in
+  one jq pass instead of ~10 jq/awk calls per node (5.6 s → 0.7 s on a
+  23-node test host, identical output); the panel node picker lists nodes
+  with one jq call (2.6 s → 0.45 s).
+
 ## 0.1.0-alpha.86
 
 - Fix: enabling Salamander/Gecko obfs on a Hysteria2 node created without

@@ -255,16 +255,14 @@ ui_header() {
 }
 
 ui_select_node() {
-  local __var=$1 allow_all=${2:-0} selected_id choice node i
+  local __var=$1 allow_all=${2:-0} selected_id choice name protocol state i
   local -a ids=()
-  while IFS= read -r node; do
-    [[ -n "$node" ]] || continue
-    selected_id=$(jq -r '.id' <<<"$node")
+  # One jq call for the whole list; this page is redrawn after every action.
+  while IFS=$'\t' read -r selected_id name protocol state; do
+    [[ -n "$selected_id" ]] || continue
     ids+=("$selected_id")
-    printf '%d. %s | %s | %s | ID: %s\n' "${#ids[@]}" "$(jq -r '.name' <<<"$node")" \
-      "$(node_protocol_label "$(jq -r '.protocol' <<<"$node")")" \
-      "$(jq -r '(if .enabled then "启用" else "停用" end)+" / "+(.port|tostring)' <<<"$node")" "$selected_id"
-  done < <(state_list_nodes)
+    printf '%d. %s | %s | %s | ID: %s\n' "${#ids[@]}" "$name" "$(node_protocol_label "$protocol")" "$state" "$selected_id"
+  done < <(jq -r '.nodes[]? | [.id, .name, .protocol, ((if .enabled then "启用" else "停用" end)+" / "+(.port|tostring))] | join("\t")' "$SBM_STATE")
   ((${#ids[@]} > 0)) || { log_warn '当前没有节点。'; return 1; }
   [[ "$allow_all" == 1 ]] && printf 'a. 全部节点\n'
   printf 'm. 输入 ID\n0. 返回\n'
