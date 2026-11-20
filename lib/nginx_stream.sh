@@ -474,7 +474,7 @@ nginx_stream_status() {
     elif service_active "$service"; then service_state=running
     else service_state=stopped; fi
     jq --arg state "$service_state" '.nginx_stream + {service_state:$state}' "$SBM_STATE"
-    return
+    return $?
   fi
   printf 'TCP/SNI 复用：%s，方式：%s，公网端口：%s/TCP，路由：%s 条\n' "$([[ "$enabled" == true ]] && echo '启用' || echo '停用')" "$(mux_backend_label)" "$port" "$routes"
   if [[ $(mux_backend) == sing-box ]]; then printf '复用现有 sing-box 核心，无需额外代理进程；仅转发已登记的 TLS SNI。\n'; fi

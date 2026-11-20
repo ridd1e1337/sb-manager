@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.102
+
+- 修复：失败操作回滚时可能误报“自动恢复未完成”。trap 中调用的函数里，裸 `return` 继承的是触发回滚的失败状态；
+  现统一改为 `return $?`（trap 外行为不变）。
+
 ## 0.1.0-alpha.101
 
 - 新增 `sb substore remote set|push|status|disable` 与面板 `20 → 13`：接入已有的中心 Sub-Store，本机不必安装

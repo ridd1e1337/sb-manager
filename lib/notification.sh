@@ -108,7 +108,7 @@ notification_send() {
   [[ $(jq -r '.provider' <<<"$secret") == "$provider" ]] || { log_warn '通知配置与凭据渠道不一致，消息未发送。'; return 1; }
   if [[ -n ${SBM_NOTIFICATION_SENDER:-} ]]; then
     "$SBM_NOTIFICATION_SENDER" "$provider" "$event" "$message"
-    return
+    return $?
   fi
   require_command curl
   case "$provider" in

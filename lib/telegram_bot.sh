@@ -87,11 +87,11 @@ telegram_bot_handle() {
   local token=$1 chat=$2 text=$3 output rc=0
   local -a argv=()
   case "${text%%[ @]*}" in
-    /start|/help) telegram_bot_reply "$token" "$chat" "$(telegram_bot_help)"; return;;
-    /backup) telegram_bot_send_backup "$token" "$chat"; return;;
+    /start|/help) telegram_bot_reply "$token" "$chat" "$(telegram_bot_help)"; return $?;;
+    /backup) telegram_bot_send_backup "$token" "$chat"; return $?;;
   esac
   mapfile -d '' -t argv < <(telegram_bot_argv "$text") || true
-  if ((${#argv[@]} == 0)); then telegram_bot_reply "$token" "$chat" "无法识别或参数无效。发送 /help 查看命令。"; return; fi
+  if ((${#argv[@]} == 0)); then telegram_bot_reply "$token" "$chat" "无法识别或参数无效。发送 /help 查看命令。"; return $?; fi
   output=$(NO_COLOR=1 SBM_ASSUME_YES=1 timeout 120 "$SBM_BIN_DIR/sb" "${argv[@]}" </dev/null 2>&1) || rc=$?
   output=$(sed 's/\x1b\[[0-9;]*m//g' <<<"$output")
   telegram_bot_reply "$token" "$chat" "$( ((rc == 0)) && printf '✅' || printf '❌（%s）' "$rc") ${output:-完成}"
@@ -102,8 +102,8 @@ telegram_bot_handle() {
 telegram_bot_send_backup() {
   local token=$1 chat=$2 file
   [[ $(jq -r '.notifications.bot.backup // false' "$SBM_STATE") == true ]] \
-    || { telegram_bot_reply "$token" "$chat" '备份发送未开启；在服务器运行 sb notify bot backup on。'; return; }
-  file=$(mktemp "$SBM_RUN/tg-backup.XXXXXX") || return
+    || { telegram_bot_reply "$token" "$chat" '备份发送未开启；在服务器运行 sb notify bot backup on。'; return $?; }
+  file=$(mktemp "$SBM_RUN/tg-backup.XXXXXX") || return $?
   if NO_COLOR=1 SBM_ASSUME_YES=1 timeout 300 "$SBM_BIN_DIR/sb" backup "$file" </dev/null >/dev/null 2>&1; then
     printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$token" |
       curl --fail --silent --connect-timeout 10 --max-time 120 --config - -F "chat_id=$chat" \

@@ -115,7 +115,7 @@ substore_reconcile() {
     fi
     return 0
   fi
-  [[ -f "$SBM_SUBSTORE_DIR/app/manifest.json" ]] || { [[ "$enabled" == false ]]; return; }
+  [[ -f "$SBM_SUBSTORE_DIR/app/manifest.json" ]] || { [[ "$enabled" == false ]]; return $?; }
   substore_permissions && substore_write_service "$port" || return 1
   [[ "$SBM_SKIP_INIT" == 1 || "$start" == 0 ]] && return 0
   service_reload_manager || return 1

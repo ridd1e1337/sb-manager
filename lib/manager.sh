@@ -176,7 +176,7 @@ manager_auto_status() {
   if [[ ${1:-0} == 1 ]]; then
     jq -n --argjson enabled "$enabled" --arg time "$time" --arg scheduler "$scheduler" --argjson last "$record" \
       '{enabled:$enabled,local_time:$time,scheduler:$scheduler,last_attempt:$last}'
-    return
+    return $?
   fi
   printf '脚本与受管 Caddy 自动更新：%s\n每日时间：%s（服务器本地时间；OpenRC 最多延后 15 分钟）\n调度器：%s\n' \
     "$([[ "$enabled" == true ]] && printf '开启' || printf '关闭')" "$time" "$scheduler"
@@ -241,7 +241,7 @@ manager_auto_run() (
 )
 
 manager_update_cli() {
-  if [[ ${1:-} != auto ]]; then manager_update "$@"; return; fi
+  if [[ ${1:-} != auto ]]; then manager_update "$@"; return $?; fi
   shift
   local action=${1:-status} json=${SBM_OUTPUT_JSON:-0} scheduled=0
   (($# == 0)) || shift

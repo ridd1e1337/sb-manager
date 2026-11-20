@@ -30,7 +30,7 @@ tools_reality_check() {
 tools_cert_hash() {
   local target=${1:?用法：sb tools cert-hash FILE|HOST[:PORT]} host port
   if [[ -r "$target" ]]; then
-    openssl x509 -in "$target" -noout -fingerprint -sha256 | sed 's/.*=//; s/://g' | tr 'A-F' 'a-f'; return
+    openssl x509 -in "$target" -noout -fingerprint -sha256 | sed 's/.*=//; s/://g' | tr 'A-F' 'a-f'; return $?
   fi
   host=${target%:*}; port=${target##*:}; [[ "$port" != "$target" ]] || port=443
   validate_port "$port" || die "无效端口：$port"

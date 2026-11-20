@@ -98,7 +98,7 @@ tcp_tuning_plan() {
 }
 
 tcp_tuning_show_plan() {
-  if [[ ${2:-0} == 1 ]]; then printf '%s\n' "$1"; return; fi
+  if [[ ${2:-0} == 1 ]]; then printf '%s\n' "$1"; return $?; fi
   jq -r '"TCP 调优预览：\(.bandwidth_mbps) Mbps / RTT \(.rtt_ms) ms",
     "每方向缓冲区上限：\(.buffer_bytes/1048576) MiB（内存限制：\(.memory_cap_bytes/1048576) MiB）",
     (if .capped then "已按内存/64 MiB 上限限制；大带宽高延迟线路可能仍受缓冲区限制。" else empty end),

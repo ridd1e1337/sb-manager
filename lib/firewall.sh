@@ -56,7 +56,7 @@ firewall_list_protocol_ports() {
   local json=${1:-0} node id protocol name enabled port kind route public_port
   if [[ "$json" == 1 ]]; then
     firewall_collect_protocol_ports | sort -u | awk -F '\t' '{printf "{\"port\":%s,\"transport\":\"%s\"}\n",$1,$2}' | jq -s .
-    return
+    return $?
   fi
   printf '%-18s %-18s %-8s %-6s %-8s %s\n' 'ID' '协议' '状态' '协议' '端口' '客户端地址'
   printf '%-18s %-18s %-8s %-6s %-8s %s\n' '------------------' '------------------' '--------' '------' '--------' '------------'

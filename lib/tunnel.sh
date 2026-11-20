@@ -382,7 +382,7 @@ tunnel_status() {
       if [[ "$SBM_SKIP_INIT" == 1 ]]; then state=unmanaged; elif service_active "$SBM_TUNNEL_SERVICE"; then state=running; else state=stopped; fi
     fi
     jq --arg state "$state" '.tunnel + {service_state:$state}' "$SBM_STATE"
-    return
+    return $?
   fi
   printf '模式：%s\n节点：%s\n域名：%s\n客户端地址：%s\n' \
     "$(jq -r '.tunnel.mode' "$SBM_STATE")" "$(jq -r '.tunnel.node_id // "-"' "$SBM_STATE")" \

@@ -54,7 +54,7 @@ dependency_package_hint() {
       packages=$(dependency_feature_packages "$feature" | paste -sd ' ' -) || packages=''
       if [[ -z "$packages" ]]; then
         printf '%s\n' '请使用当前发行版的包管理器安装缺少的依赖。'
-        return
+        return $?
       fi
       case "$distro" in
         dnf|yum) printf '%s install %s\n' "$distro" "$packages";;

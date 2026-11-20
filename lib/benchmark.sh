@@ -76,11 +76,11 @@ network_benchmark_cli() {
   local action=$1 host='' port=5201 seconds=10 streams=1 direction=up json=${SBM_OUTPUT_JSON:-0}
   shift
   case "$action" in
-    history) [[ $# == 0 || ( $# == 1 && "$1" == --json ) ]] || usage_die '用法：sb network history [--json]'; network_history; return;;
+    history) [[ $# == 0 || ( $# == 1 && "$1" == --json ) ]] || usage_die '用法：sb network history [--json]'; network_history; return $?;;
     compare)
       [[ $# == 2 || ( $# == 3 && "$3" == --json ) ]] || usage_die '用法：sb network compare BEFORE AFTER [--json]'
       [[ $# != 3 ]] || json=1
-      network_compare "$1" "$2" "$json"; return;;
+      network_compare "$1" "$2" "$json"; return $?;;
     speed) [[ $# -ge 1 ]] || usage_die '用法：sb network speed HOST [--port N] [--seconds 1-30] [--streams 1-16] [--direction up|down] [--json]'; host=$1; shift;;
     *) return 2;;
   esac

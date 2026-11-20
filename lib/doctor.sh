@@ -16,7 +16,7 @@ check_line() {
 status_summary() {
   if declare -F status_show >/dev/null 2>&1; then
     status_show
-    return
+    return $?
   fi
   local sb_ver cf_ver nodes enabled certs mode backend service_state mux_state mux_port traffic_count
   sb_ver=$(core_current_version || true); cf_ver=$(cloudflared_current_version || true)
@@ -602,7 +602,7 @@ doctor_run() {
 
 show_logs() {
   local target=${1:-all} lines=${2:-100}
-  [[ "$SBM_SKIP_INIT" != 1 ]] || { log_warn '未接管服务管理器，无法读取服务日志。'; return; }
+  [[ "$SBM_SKIP_INIT" != 1 ]] || { log_warn '未接管服务管理器，无法读取服务日志。'; return $?; }
   case "$target" in
     singbox|core) service_logs "$SBM_SERVICE" "$lines" 0 ;;
     tunnel|cloudflared) service_logs "$SBM_TUNNEL_SERVICE" "$lines" 0 ;;

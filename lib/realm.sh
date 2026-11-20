@@ -59,7 +59,7 @@ _realm_disable() {
 realm_disable() { with_state_transaction realm-disable _realm_disable; }
 
 realm_status() {
-  if [[ ${1:-0} == 1 ]]; then jq '.realm' "$SBM_STATE"; return; fi
+  if [[ ${1:-0} == 1 ]]; then jq '.realm' "$SBM_STATE"; return $?; fi
   jq -r '"Hysteria Realm：" + (if .realm.enabled then "启用" else "停用" end) + "\n监听：\(.realm.listen):\(.realm.port)\n公网 URL：\(.realm.public_url // "-")\nTLS 域名：\(.realm.tls_domain // "-")\n最大 Realm 数：\(.realm.max_realms // 0)"' "$SBM_STATE"
 }
 

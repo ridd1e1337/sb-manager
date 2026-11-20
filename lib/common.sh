@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.101}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.102}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -194,20 +194,20 @@ validate_ipv6() {
 
 detect_public_ipv4() {
   local value=${SBM_PUBLIC_IPV4:-} url
-  validate_ipv4 "$value" && { printf '%s\n' "$value"; return; }
+  validate_ipv4 "$value" && { printf '%s\n' "$value"; return $?; }
   for url in https://api.ipify.org https://ipv4.icanhazip.com https://ifconfig.co/ip; do
     value=$(curl -4 --fail --silent --show-error --location --connect-timeout 3 --max-time 6 "$url" 2>/dev/null | tr -d '\r[:space:]' || true)
-    validate_ipv4 "$value" && { printf '%s\n' "$value"; return; }
+    validate_ipv4 "$value" && { printf '%s\n' "$value"; return $?; }
   done
   return 1
 }
 detect_public_ipv6() {
   local value=${SBM_PUBLIC_IPV6:-} url
   [[ ${SBM_DISABLE_IPV6_DETECTION:-0} != 1 ]] || return 1
-  validate_ipv6 "$value" && { printf '%s\n' "$value"; return; }
+  validate_ipv6 "$value" && { printf '%s\n' "$value"; return $?; }
   for url in https://api64.ipify.org https://ipv6.icanhazip.com https://ifconfig.co/ip; do
     value=$(curl -6 --fail --silent --show-error --location --connect-timeout 3 --max-time 6 "$url" 2>/dev/null | tr -d '\r[:space:]' || true)
-    validate_ipv6 "$value" && { printf '%s\n' "$value"; return; }
+    validate_ipv6 "$value" && { printf '%s\n' "$value"; return $?; }
   done
   return 1
 }
@@ -345,7 +345,7 @@ version_ge() { ! version_lt "$1" "$2"; }
 confirm() {
   local prompt=$1 default=${2:-N} reply
   [[ ${SBM_ASSUME_YES:-0} != 1 ]] || return 0
-  if [[ ! -t 0 ]]; then [[ "$default" =~ ^[Yy]$ ]]; return; fi
+  if [[ ! -t 0 ]]; then [[ "$default" =~ ^[Yy]$ ]]; return $?; fi
   if [[ "$default" =~ ^[Yy]$ ]]; then
     read -r -p "$prompt [Y/n] " reply || { prompt_input_closed; return 1; }; reply=${reply:-Y}
   else

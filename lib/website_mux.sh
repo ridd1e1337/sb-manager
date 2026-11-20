@@ -72,7 +72,7 @@ website_mux_compile_caddy() {
   version_ge "${version#v}" 2.11.7 || version=v2.11.8
   digest=$(printf '%s' "$plugins" | sha256sum | cut -c1-12) || return 1
   target="$SBM_PREFIX/lib/sb-manager-web/caddy-$version-${SBM_WEBSITE_L4_COMMIT:0:12}-$digest"
-  if [[ -x "$target" ]] && "$target" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then printf '%s\n' "$target"; return; fi
+  if [[ -x "$target" ]] && "$target" list-modules 2>/dev/null | grep -Fx caddy.listeners.layer4 >/dev/null; then printf '%s\n' "$target"; return $?; fi
   core_check_free_space "$SBM_CACHE" 1800000000 || return 1
   work=$(mktemp -d "$SBM_CACHE/caddy-build.XXXXXX") || return 1
   chmod 0700 "$work"

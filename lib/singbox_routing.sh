@@ -256,7 +256,7 @@ _singbox_route_default() {
 
 singbox_routing_show() {
   local json=${1:-0}
-  if [[ "$json" == 1 ]]; then jq '.routing // {outbounds:[],groups:[],rules:[],default:null}' "$SBM_STATE"; return; fi
+  if [[ "$json" == 1 ]]; then jq '.routing // {outbounds:[],groups:[],rules:[],default:null}' "$SBM_STATE"; return $?; fi
   jq -r '(.routing // {}) as $r |
     "出站：", (($r.outbounds // [])[] | "  \(.tag)  \(.type)" + (if .via then "  经由 \(.via)" else "" end)),
     "分组：", (($r.groups // [])[] | "  \(.tag)  \(.type)  [\(.outbounds|join(","))]"),

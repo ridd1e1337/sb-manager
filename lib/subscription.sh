@@ -293,7 +293,7 @@ subscription_list() {
       status=$(subscription_meta_status "$meta" "$now")
       jq --arg status "$status" '{id,mode,live:(.live // false),expires_at_epoch,status:$status} + (if .user_id then {user:(.node_id+":"+.user_id)} else {} end)' "$meta"
     done | jq -s .
-    return
+    return $?
   fi
   printf '%-14s %-8s %-14s %s\n' ID MODE EXPIRES_EPOCH STATUS
   for meta in "$SBM_SUBSCRIPTIONS"/*.meta.json; do

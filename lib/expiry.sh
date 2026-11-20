@@ -16,7 +16,7 @@ _node_expiry_set() {
   jq --arg id "$id" --argjson at "$at" '.nodes |= map(if .id==$id then
     .enabled=(if (.expiry.suspended // false) then (.expiry.resume_enabled // false) else .enabled end)
     | .expiry={at:$at,suspended:false,resume_enabled:false} else . end)' "$SBM_STATE" >"$candidate" || return 1
-  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return; fi
+  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return $?; fi
   if ! apply_candidate_state "$candidate" "expiry-$id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
   log_ok "已更新节点到期策略：$id"
@@ -57,7 +57,7 @@ node_expiry_cli() {
   local id=${1:-} option=${2:-} value=${3:-} at now
   [[ -n "$id" ]] || usage_die '用法：sb node expiry ID [--days N|--at UTC_TIMESTAMP|--clear]'
   state_node_exists "$id" || usage_die "节点不存在：$id"
-  if [[ $# == 1 ]]; then state_get_node "$id" | jq '{id,enabled,expiry:(.expiry // {at:null,suspended:false,resume_enabled:false})}'; return; fi
+  if [[ $# == 1 ]]; then state_get_node "$id" | jq '{id,enabled,expiry:(.expiry // {at:null,suspended:false,resume_enabled:false})}'; return $?; fi
   now=$(date +%s)
   case "$option" in
     --clear) [[ $# == 2 ]] || usage_die '--clear 不接受额外参数'; at=null;;

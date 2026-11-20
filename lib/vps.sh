@@ -322,7 +322,7 @@ vps_cli() {
     require_root; require_command jq; require_command openssl; require_command flock
     state_init || return 1
     reality_site_cli setup "$@" --init-vps
-    return
+    return $?
   fi
   while (($#)); do
     case "$1" in --dry-run) dry_run=1;; --json) json=1;; --yes|-y) ;; *) usage_die '用法：sb vps init [--dry-run] | status [--json] | systems';; esac
@@ -331,7 +331,7 @@ vps_cli() {
   if [[ "$action" == systems ]]; then
     [[ "$json" == 0 ]] || usage_die '系统支持说明不接受 --json。'
     vps_system_support
-    return
+    return $?
   fi
   require_root; require_command jq
   case "$action" in

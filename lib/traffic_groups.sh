@@ -91,7 +91,7 @@ _traffic_group_set() {
     .traffic_groups=((.traffic_groups // [])|map(select(.id!=$id)))+[{id:$id,nodes:$nodes,quota_bytes:$quota,reset_day:$day,quota_mode:$mode}]
     | .nodes |= map(if (.id as $id|$nodes|index($id))!=null then .traffic.configured=true | .traffic.enabled=true else . end)' "$SBM_STATE" >"$candidate" || return 1
   traffic_groups_validate "$candidate" || { rm -f "$candidate"; return 1; }
-  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return; fi
+  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return $?; fi
   # Preserve this cycle when changing membership, mode, quota or reset day.
   traffic_checkpoint_unlocked || return 1
   traffic_reset_due_unlocked || return 1
@@ -140,11 +140,11 @@ traffic_group_cli() {
   local action=${1:-status} id='' members='' quota='' day=1 mode=total
   (($# == 0)) || shift
   case "$action" in
-    status|list) [[ $# == 0 || ( $# == 1 && "$1" == --json ) ]] || usage_die '用法：sb traffic group status [--json]'; with_lock _traffic_group_status; return;;
+    status|list) [[ $# == 0 || ( $# == 1 && "$1" == --json ) ]] || usage_die '用法：sb traffic group status [--json]'; with_lock _traffic_group_status; return $?;;
     remove|reset)
       [[ $# == 1 ]] || usage_die '用法：sb traffic group remove|reset ID'
       [[ ${SBM_DRY_RUN:-0} == 0 ]] || usage_die '该操作不接受 --dry-run'
-      with_state_transaction "group-$action" "_traffic_group_$action" "$1"; return;;
+      with_state_transaction "group-$action" "_traffic_group_$action" "$1"; return $?;;
     set) [[ $# -ge 1 ]] || usage_die '缺少配额组 ID'; id=$1; shift;;
     *) usage_die '用法：sb traffic group set|remove|reset|status';;
   esac

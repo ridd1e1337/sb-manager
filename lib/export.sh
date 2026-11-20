@@ -64,7 +64,7 @@ node_substore_line() {
   protocol=$(jq -r '.protocol' <<<"$node")
   if [[ "$protocol" != snell ]]; then
     node_share_uri "$id" "$user_id"
-    return
+    return $?
   fi
   user=$(state_get_user "$id" "$user_id")
   secret=$(jq -s '.[0]+.[1]' <(printf '%s\n' "$user") <(state_get_user_secret "$id" "$user_id"))
