@@ -356,6 +356,11 @@ state_migrate_v1_to_v2() {
 
 state_validate() {
   local f=$1
+  # One full validation per state content per process: an operation checks the
+  # same candidate several times (init, install, render).
+  local __sv_key
+  __sv_key=$(sha256sum "$f" 2>/dev/null | awk '{print $1}') || __sv_key=''
+  if [[ -n "$__sv_key" && "${SBM_STATE_VALIDATED:-}" == *" $__sv_key "* ]]; then return 0; fi
   if declare -F shaping_validate_state >/dev/null 2>&1; then shaping_validate_state "$f" || die '整形设置无效。'; fi
   if declare -F substore_validate_state >/dev/null 2>&1; then substore_validate_state "$f" || die 'Sub-Store 状态无效。'; fi
   if declare -F tunnel_routes_validate >/dev/null 2>&1; then tunnel_routes_validate "$f" || die 'Tunnel 路由状态无效。'; fi
@@ -596,6 +601,7 @@ state_validate() {
         and (.created_at | timestamp)))
   ' "$f" >/dev/null || die "状态文件结构无效或字段不符合 schema v2：$f"
   if declare -F reality_site_validate_state >/dev/null 2>&1; then reality_site_validate_state "$f" || return 1; fi
+  [[ -z "$__sv_key" ]] || SBM_STATE_VALIDATED="${SBM_STATE_VALIDATED:- } $__sv_key "
 }
 
 state_candidate() {

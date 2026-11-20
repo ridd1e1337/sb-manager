@@ -68,11 +68,8 @@ nginx_stream_public_node() {
 nginx_stream_validate_state() {
   local state=$1 cfg enabled listen port routes route node node_id sni expected_sni backend protocol engine
   local route_count=0
-  cfg=$(jq -c '.nginx_stream' "$state" 2>/dev/null) || return 1
-  enabled=$(jq -r '.enabled // false' <<<"$cfg")
-  listen=$(jq -r '.listen // ""' <<<"$cfg")
-  port=$(jq -r '.port // 0' <<<"$cfg")
-  routes=$(jq -c '.routes // []' <<<"$cfg")
+  # One read of the mux settings; \x1f keeps empty fields.
+  IFS=$'\x1f' read -r enabled listen port routes < <(jq -r '.nginx_stream | [(.enabled // false), (.listen // ""), (.port // 0), ((.routes // []) | tojson)] | map(tostring) | join("\u001f")' "$state" 2>/dev/null) || return 1
   engine=$(mux_backend "$state") || return 1
   case "$engine" in sing-box|nginx|caddy|nginx-site) ;; *) log_error '无效的 TCP/SNI 复用方式。'; return 1;; esac
   if [[ "$enabled" == true && "$engine" == sing-box ]]; then

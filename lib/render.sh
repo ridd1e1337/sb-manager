@@ -212,7 +212,7 @@ render_config_from_state() {
       files=(); for u in $users; do files+=("$(state_user_secret_path "$node_id" "$u")"); done
       # Hysteria2 Realm blocks embed the global Realm URL and token.
       realm_part=''
-      if [[ $(jq -r '.realm_enabled // false' <<<"$node") == true ]]; then
+      if [[ "$node" == *'"realm_enabled":true'* ]]; then
         realm_part="$(jq -c '.realm // {}' "$state")$(cat -- "$SBM_REALM_SECRET" 2>/dev/null)"
       fi
       key=$({ printf '%s\0' render "$SBM_VERSION" "$SBM_CERTS" "$node" "$realm_part"; cat -- "${files[@]}" 2>/dev/null; [[ ! -r "$nsec" ]] || cat -- "$nsec"; } | sha256sum | awk '{print $1}')
@@ -236,22 +236,18 @@ render_config_from_state() {
   if (( ${#rendered[@]} )); then
     inbounds=$(printf '%s\n' "${rendered[@]}" | jq -cs 'map(if type=="array" then .[] else . end)') || return 1
   fi
-  log_level=$(jq -r '.settings.log_level // "info"' "$state")
-  api_enabled=$(jq -r '.api.enabled // false' "$state")
-  api_secret=''; api_port=$(jq -r '.api.port // 9090' "$state"); dashboard=$(jq -r '.api.dashboard // false' "$state")
-  strategy=$(jq -r '.settings.outbound_ip_strategy // "prefer_ipv4"' "$state")
-  realm_enabled=$(jq -r '.realm.enabled // false' "$state")
-  realm_listen=$(jq -r '.realm.listen // "::"' "$state")
-  realm_port=$(jq -r '.realm.port // 9443' "$state")
-  realm_url=$(jq -r '.realm.public_url // ""' "$state")
-  realm_user=$(jq -r '.realm.user_name // "default"' "$state")
-  realm_max=$(jq -r '.realm.max_realms // 0' "$state")
-  realm_domain=$(jq -r '.realm.tls_domain // ""' "$state")
+  # All scalar settings in one jq call (one process instead of fifteen).
+  # \x1f is not IFS whitespace, so empty fields are preserved.
+  IFS=$'\x1f' read -r log_level api_enabled api_port dashboard strategy realm_enabled realm_listen realm_port realm_url realm_user realm_max realm_domain \
+    dns_optimistic dns_optimistic_timeout dns_timeout < <(jq -r '[
+      (.settings.log_level // "info"), (.api.enabled // false), (.api.port // 9090), (.api.dashboard // false),
+      (.settings.outbound_ip_strategy // "prefer_ipv4"), (.realm.enabled // false), (.realm.listen // "::"), (.realm.port // 9443),
+      (.realm.public_url // ""), (.realm.user_name // "default"), (.realm.max_realms // 0), (.realm.tls_domain // ""),
+      (.settings.dns_optimistic // false), (.settings.dns_optimistic_timeout // "3d"), (.settings.dns_timeout // "10s")]
+      | map(tostring) | join("\u001f")' "$state")
+  api_secret=''
   realm_token=''
   [[ "$realm_enabled" != true ]] || realm_token=$(jq -r '.token' "$SBM_REALM_SECRET")
-  dns_optimistic=$(jq -r '.settings.dns_optimistic // false' "$state")
-  dns_optimistic_timeout=$(jq -r '.settings.dns_optimistic_timeout // "3d"' "$state")
-  dns_timeout=$(jq -r '.settings.dns_timeout // "10s"' "$state")
   dns_advanced=false
   if [[ "$dns_optimistic" == true || "$dns_timeout" != 10s ]]; then
     core_version=$(core_current_version || true)
@@ -262,13 +258,14 @@ render_config_from_state() {
   local routing='{"outbounds":[],"endpoints":[],"rules":[],"rule_set":[],"final":"direct","dns_servers":null}'
   if declare -F singbox_routing_render >/dev/null 2>&1; then routing=$(singbox_routing_render "$state") || return 1; fi
   # Remote rule-sets are cached by sing-box itself in a service-writable dir.
-  if [[ $(jq '.rule_set|length' <<<"$routing") != 0 && "$SBM_SKIP_INIT" != 1 ]]; then
+  local rule_sets; rule_sets=$(jq '.rule_set|length' <<<"$routing")
+  if [[ "$rule_sets" != 0 && "$SBM_SKIP_INIT" != 1 ]]; then
     install -d -m 0750 "$SBM_VAR/sing-box" && set_owner_if_exists "$SBM_SERVICE_USER" "$SBM_VAR/sing-box" || return 1
   fi
   # sing-box 1.14 requires an explicit HTTP client for remote rule-sets;
   # older cores use download_detour.
   local http_clients=false
-  if [[ $(jq '.rule_set|length' <<<"$routing") != 0 ]]; then
+  if [[ "$rule_sets" != 0 ]]; then
     [[ -n "${core_version:-}" ]] || core_version=$(core_current_version || true)
     if version_ge "$core_version" 1.14.0-alpha.1; then http_clients=true; fi
   fi

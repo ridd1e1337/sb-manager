@@ -33,7 +33,7 @@ health_resource_metrics_json() {
   if [[ -r /proc/sys/fs/file-nr ]]; then read -r fd_used _ fd_max < /proc/sys/fs/file-nr; fi
   if [[ "$fd_max" =~ ^[0-9]+$ && "$fd_max" -gt 0 ]]; then fd_pct=$((fd_used*100/fd_max)); fi
   banned=0
-  if command_exists fail2ban-client; then banned=$(fail2ban-client status sshd 2>/dev/null | awk -F: '/Currently banned/ {gsub(/ /,"",$2); print $2; exit}'); fi
+  banned=$(host_f2b_banned); [[ -n "$banned" ]] || banned=0
   [[ "$banned" =~ ^[0-9]+$ ]] || banned=0
   restarts=0
   if [[ "$SBM_SKIP_INIT" != 1 ]] && command_exists systemctl; then restarts=$(systemctl show "$SBM_SERVICE" -p NRestarts --value 2>/dev/null || printf 0); fi
@@ -124,10 +124,10 @@ health_collect_json() {
       fi
     done < <(jq -c '.certificates[]?' "$SBM_STATE")
 
-    if command_exists ufw && ! ufw status 2>/dev/null | grep -qi '^status: active'; then
+    if [[ $(host_ufw_state) == inactive ]]; then
       health_issue warning ufw_inactive ufw 'UFW 已安装但未启用。'
     fi
-    if command_exists fail2ban-client && ! fail2ban-client status sshd >/dev/null 2>&1; then
+    if [[ $(host_f2b_state) == inactive ]]; then
       health_issue warning fail2ban_sshd_inactive fail2ban 'Fail2ban 的 sshd jail 未运行。'
     fi
     if (( $(jq '[.nodes[]? | select(.enabled==true and .traffic.enabled==true)] | length' "$SBM_STATE") > 0 )); then

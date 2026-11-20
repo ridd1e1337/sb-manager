@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.95
+
+- Performance (14 nodes): node add 5.0 → 2.8 s, node delete 3.1 → 2.75 s,
+  `sb config validate` 2.4 → 1.2 s, `sb share` 3.6 → 2.6 s, `sb status`
+  1.7 → 1.4 s. Render reads all scalar settings in one jq call; a state
+  content is fully validated once per process (it was validated up to three
+  times per operation); share exports run in parallel while the link is
+  shown; status and health probe UFW/Fail2ban once per page instead of up to
+  six times. Outputs are unchanged.
+
 ## 0.1.0-alpha.94
 
 - Outbounds and routing (same model as xray-manager, implemented with

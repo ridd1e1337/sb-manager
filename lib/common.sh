@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.94}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.95}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -391,3 +391,21 @@ mask_secret() {
   local s=$1
   if ((${#s} <= 10)); then printf '********'; else printf '%s****%s' "${s:0:4}" "${s: -4}"; fi
 }
+
+
+# Host security probes for read-only status/health pages. `ufw status` and
+# `fail2ban-client` take ~0.1 s each and were run several times per page; one
+# probe is exported so subshells reuse it. Mutating commands never use this.
+host_probe_init() {
+  [[ -z "${SBM_PROBE_DONE:-}" ]] || return 0
+  if command_exists ufw; then
+    if ufw status 2>/dev/null | grep -qi '^status: active'; then SBM_PROBE_UFW=active; else SBM_PROBE_UFW=inactive; fi
+  else SBM_PROBE_UFW=not_installed; fi
+  if command_exists fail2ban-client; then SBM_PROBE_F2B=$(fail2ban-client status sshd 2>/dev/null) || SBM_PROBE_F2B=__inactive__
+  else SBM_PROBE_F2B=__missing__; fi
+  SBM_PROBE_DONE=1
+  export SBM_PROBE_UFW SBM_PROBE_F2B SBM_PROBE_DONE
+}
+host_ufw_state() { host_probe_init; printf '%s\n' "$SBM_PROBE_UFW"; }
+host_f2b_state() { host_probe_init; case "$SBM_PROBE_F2B" in __missing__) echo not_installed;; __inactive__) echo inactive;; *) echo active;; esac; }
+host_f2b_banned() { host_probe_init; case "$SBM_PROBE_F2B" in __*) echo 0;; *) awk -F: '/Currently banned/ {gsub(/ /,"",$2); print $2; exit}' <<<"$SBM_PROBE_F2B";; esac; }

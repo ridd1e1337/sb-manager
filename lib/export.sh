@@ -124,6 +124,17 @@ node_share() {
   # independently, so one that cannot express the node never hides the rest.
   rm -f "$out_dir/share.txt" "$out_dir/substore.txt" "$out_dir/outbound.json" "$out_dir/client.json"
   [[ "$protocol" == snell ]] || rm -f "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"
+  # The client formats are independent read-only exports: build them in
+  # parallel, then report in a fixed order.
+  local -a jobs=()
+  { if outbound=$(node_client_outbound "$id" "$user_id" 2>/dev/null); then
+      printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
+      export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null 2>&1 || rm -f "$out_dir/client.json"
+    fi; } & jobs+=($!)
+  if [[ ! -r "$out_dir/mihomo.yaml" ]]; then
+    { export_mihomo_client_config "$out_dir/mihomo.json" "$id" "$user_id" >/dev/null 2>&1 \
+        && cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml" && chmod 0600 "$out_dir/mihomo.yaml" || rm -f "$out_dir/mihomo.json"; } & jobs+=($!)
+  fi
   if (( surge_ready == 0 )); then printf '\n%s节点/用户：%s/%s%s\n' "$C_BOLD" "$id" "$user_id" "$C_RESET"; fi
   if uri=$(node_share_uri "$id" "$user_id" 2>/dev/null) && [[ -n "$uri" ]]; then
     printf '%s\n' "$uri" >"$out_dir/share.txt"; chmod 0600 "$out_dir/share.txt"
@@ -137,15 +148,9 @@ node_share() {
   elif (( surge_ready == 0 )); then
     log_info '该节点没有通用分享链接格式，请使用下方客户端配置文件。'
   fi
-  if outbound=$(node_client_outbound "$id" "$user_id" 2>/dev/null); then
-    printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
-    if export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null 2>&1; then
-      printf 'sing-box 客户端配置：%s\n' "$out_dir/client.json"
-    else rm -f "$out_dir/client.json"; printf 'sing-box 节点 JSON：%s\n' "$out_dir/outbound.json"; fi
-  fi
-  if [[ ! -r "$out_dir/mihomo.yaml" ]] && export_mihomo_client_config "$out_dir/mihomo.json" "$id" "$user_id" >/dev/null 2>&1; then
-    cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"; chmod 0600 "$out_dir/mihomo.yaml"
-  fi
+  wait "${jobs[@]}" 2>/dev/null || true
+  if [[ -r "$out_dir/client.json" ]]; then printf 'sing-box 客户端配置：%s\n' "$out_dir/client.json"
+  elif [[ -r "$out_dir/outbound.json" ]]; then printf 'sing-box 节点 JSON：%s\n' "$out_dir/outbound.json"; fi
   [[ ! -r "$out_dir/mihomo.yaml" ]] || printf 'mihomo 客户端配置（Clash Verge/FlClash）：%s\n' "$out_dir/mihomo.yaml"
   if [[ "$protocol" == shadowtls ]]; then
     printf 'ShadowTLS 文件包含 Shadowsocks 内层与 ShadowTLS 外层两个 outbound，须一起导入；分享链接需要客户端支持 shadow-tls 插件。\n'

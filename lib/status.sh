@@ -60,6 +60,7 @@ status_nodes_json() {
 status_collect_json_unlocked() {
   local sb_ver cf_ver openlist_ver nodes certs issues enabled_count service_state openlist_state tunnel_mode nginx_enabled nginx_state tunnel_state
   local ufw_state fail2ban_state traffic_count traffic_state pending=''
+  host_probe_init
   traffic_usage_init_unlocked
   nodes=$(status_nodes_json)
   certs=$(status_certificates_json)
@@ -78,12 +79,7 @@ status_collect_json_unlocked() {
   if (( traffic_count == 0 )); then traffic_state=off
   elif traffic_runtime_complete; then traffic_state=running
   else traffic_state=degraded; fi
-  if command_exists ufw; then
-    if ufw status 2>/dev/null | grep -qi '^status: active'; then ufw_state=active; else ufw_state=inactive; fi
-  else ufw_state=not_installed; fi
-  if command_exists fail2ban-client; then
-    if fail2ban-client status sshd >/dev/null 2>&1; then fail2ban_state=active; else fail2ban_state=inactive; fi
-  else fail2ban_state=not_installed; fi
+  ufw_state=$(host_ufw_state); fail2ban_state=$(host_f2b_state)
   if [[ -s "$SBM_VAR/updates/sing-box.json" ]]; then pending=$(jq -r '.latest // ""' "$SBM_VAR/updates/sing-box.json" 2>/dev/null || true); fi
   jq -n --arg now "$(now_iso)" --arg version "$SBM_VERSION" --arg init "$(init_system_label)" \
     --arg sb_ver "$sb_ver" --arg service_state "$service_state" --arg cf_ver "$cf_ver" \
