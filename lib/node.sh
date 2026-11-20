@@ -432,6 +432,7 @@ _node_delete() {
   if ! apply_candidate_state "$candidate" "delete-$id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate" "$(state_secret_path "$id")"
   rm -rf -- "$(state_user_secret_dir "$id")"
+  rm -rf -- "$SBM_EXPORTS/nodes/$id"
   log_ok "已删除节点：$id"
 }
 node_delete() { with_state_transaction node-delete _node_delete "$1"; }
@@ -696,6 +697,7 @@ _node_user_delete() {
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "user-delete-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate" "$(state_user_secret_path "$node_id" "$user_id")"
+  rm -rf -- "$SBM_EXPORTS/nodes/$node_id/$user_id"
   log_ok "已删除用户：$node_id/$user_id"
 }
 node_user_delete() { with_state_transaction user-delete _node_user_delete "$@"; }

@@ -138,6 +138,18 @@ node_substore_line() {
   protocol_snell_surge_share "$node" "$secret" "$node_secret"
 }
 
+# Exported client files hold credentials: remove those of nodes and users
+# that no longer exist (deleted, or dropped by a rollback).
+export_prune_orphans() {
+  local dir="$SBM_EXPORTS/nodes" keep path rel
+  [[ -d "$dir" && ! -L "$dir" ]] || return 0
+  keep=$(jq -r '.nodes[]? | .id as $n | $n, (.users[]? | "\($n)/\(.id)")' "$SBM_STATE") || return 0
+  while IFS= read -r -d '' path; do
+    rel=${path#"$dir"/}
+    grep -Fxq -- "$rel" <<<"$keep" || rm -rf -- "$path"
+  done < <(find "$dir" -mindepth 1 -maxdepth 2 -type d -print0 2>/dev/null)
+}
+
 # Link cache: a link depends only on the node, its credentials and the public
 # entry settings, so unchanged links cost one hash instead of ~30 jq runs.
 share_cache_dir() {

@@ -175,6 +175,7 @@ _maintenance_run() {
   # transition. The Caddy helper keeps those references, without old releases.
   if declare -F caddy_prune_versions >/dev/null 2>&1; then caddy_prune_versions || return 1; fi
   if declare -F snapshot_prune >/dev/null 2>&1; then snapshot_prune || return 1; fi
+  if declare -F export_prune_orphans >/dev/null 2>&1; then export_prune_orphans || return 1; fi
   if declare -F core_prune_cached_versions >/dev/null 2>&1; then core_prune_cached_versions || return 1; fi
   if declare -F cloudflared_prune_cached_versions >/dev/null 2>&1; then cloudflared_prune_cached_versions || return 1; fi
   now_iso >"$SBM_MAINTENANCE_DIR/last-run"
