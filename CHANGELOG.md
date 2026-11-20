@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.89
+
+- Panel onboarding (same as xray-manager): wizard steps accept Enter for the
+  recommended choice instead of leaving the wizard; the VLESS wizard starts
+  with a one-question REALITY + Vision path (port only, public IP detected).
+  Verified: `2` → `7` → Enter → Enter yields a working node for sing-box and
+  mihomo clients.
+
 ## 0.1.0-alpha.88
 
 - Performance: rendered sing-box inbounds are cached by content (manager
