@@ -1337,9 +1337,13 @@ ui_substore_remote_menu() {
       printf '后端地址 = 中心 Sub-Store 网页“设置 → 后端”里的地址：https://域名/后端路径。\n'
       printf '它相当于密码，只保存在本机 0600 文件中。\n'
       prompt_secret url '中心 Sub-Store 后端地址' || return 0
-      name=$(substore_remote_default_name)
-      prompt_value name '在中心显示的来源名（英文小写）' "$name"
-      prompt_value display '显示名（例如 US Oracle）' "$name"
+      name=$(substore_remote_default_name); display=$name
+      # Reconnecting keeps the current source unless a new name is typed.
+      if substore_remote_configured; then
+        name=$(jq -r '.name' "$SBM_SUBSTORE_REMOTE_SECRET"); display=$(jq -r '.display // .name' "$SBM_SUBSTORE_REMOTE_SECRET")
+      fi
+      prompt_value name '在中心显示的来源名（英文小写；改名会在中心新建一个来源）' "$name"
+      prompt_value display '显示名（例如 US Oracle）' "$display"
       prompt_value tag '新建时附加的标签（例如 主节点库，留空不加）' ''
       if [[ -n "$tag" ]]; then substore_remote_cli set "$url" --name "$name" --display "$display" --tag "$tag"
       else substore_remote_cli set "$url" --name "$name" --display "$display"; fi;;
@@ -1405,7 +1409,7 @@ ui_substore_menu() {
   local c port version frontend file name current current_frontend
   printf 'Sub-Store 用来合并订阅、整理节点和转换客户端格式；不使用它也能直接导入节点。\n'
   printf '已经有一台统一使用的 Sub-Store：选 13，本机节点自动推送过去，本机无需安装。\n'
-  substore_remote_cli status 2>/dev/null | head -1
+  substore_remote_brief
   printf '1. 查看 Sub-Store 安装与运行状态\n2. 安装/升级 Sub-Store 网页和后端\n3. 启动订阅管理服务\n4. 停止订阅管理服务\n5. 打开管理网页\n6. 将本机节点接入订阅组合\n7. 备份订阅来源和处理规则\n8. 恢复 Sub-Store 数据\n9. 接入其他 VPS/订阅并合并来源\n10. 管理本机动态订阅 URL\n11. 首次设置：安装 + 接入本机节点 + 显示访问方法\n12. 使用指南：用途、来源、组合和客户端导入\n13. 接入已有中心 Sub-Store（推荐，多台 VPS 共用一个）\n0. 返回\n'
   ui_menu_choice c '选择订阅管理操作' 13
   case "$c" in

@@ -111,6 +111,13 @@ _substore_remote_set() {
   substore_remote_push 1
 }
 
+# One status line for menu headers (no pipes: a closed reader must never abort the menu).
+substore_remote_brief() {
+  if substore_remote_configured; then
+    jq -r '"中心 Sub-Store：已连接，本机节点作为来源 \(.display // .name) 自动推送"' "$SBM_SUBSTORE_REMOTE_SECRET" 2>/dev/null || printf '中心 Sub-Store：已连接\n'
+  else printf '中心 Sub-Store：未连接\n'; fi
+}
+
 substore_remote_cli() {
   local action=${1:-status}; shift || true
   case "$action" in
