@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.96
+
+- Remove the unused `/run/sb-manager/vless-cache` left by alpha.81/82 during
+  the legacy cleanup on load.
+
 ## 0.1.0-alpha.95
 
 - Performance (14 nodes): node add 5.0 → 2.8 s, node delete 3.1 → 2.75 s,

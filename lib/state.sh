@@ -659,6 +659,8 @@ runtime_services_reconcile() {
 # Remove the Xray runtime left by sb-manager alpha.72-82. The managed unit is
 # recognised by its description; a user-installed Xray is never touched.
 legacy_xray_cleanup() {
+  # alpha.81/82 kept a VLESS profile cache here; nothing reads it any more.
+  [[ ! -d "$SBM_RUN/vless-cache" ]] || rm -rf -- "$SBM_RUN/vless-cache"
   local unit='' link="$SBM_BIN_DIR/xray"
   unit=$(service_file_path "$SBM_LEGACY_XRAY_SERVICE" 2>/dev/null || true)
   if [[ -n "$unit" && -f "$unit" ]] && grep -Eq 'sb-manager .*Xray' "$unit"; then
