@@ -144,7 +144,7 @@ state_prepare_protocol_credentials() {
         secret=$(jq --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '.shadowsocks_password=$key' <<<"$secret") || return 1
         state_write_user_secret "$id" "$user_id" "$secret" || return 1
       done < <(jq -r '.users[].id' <<<"$node")
-      log_warn "ShadowTLS 节点 $id 已补齐 Shadowsocks 2022 内层；请重新导入完整客户端配置。"
+      log_warn "ShadowTLS 节点 $id 已补齐 Shadowsocks 2022 内层；请重新导入分享链接或刷新订阅。"
     else
       secret=$(state_get_secret "$id") || return 1
       # A legacy single-user node may have deleted former users, so the old

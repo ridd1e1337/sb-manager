@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -424,27 +424,22 @@ ui_prompt_server_address() {
 }
 
 ui_node_finish_menu() {
-  local id=$1 choice node user_id output max_choice=5
+  local id=$1 choice node user_id output max_choice=4
   node=$(state_get_node "$id")
   [[ -n "$node" ]] || { ui_page_back; return $?; }
   printf '\n%s（%s）\n' "$(jq -r '.name' <<<"$node")" "$id"
   if [[ $(jq -r '.protocol' <<<"$node") == snell ]]; then printf '1. 再次显示 Surge 原生配置\n'
   else printf '1. 再次显示节点分享链接和二维码\n'; fi
-  printf '2. 生成完整客户端配置\n3. 生成动态订阅地址\n4. 管理这个节点\n5. VPS 运维：查看防火墙与协议端口\n'
-  if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '6. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=6; fi
+  printf '2. 生成动态订阅地址\n3. 管理这个节点\n4. VPS 运维：查看防火墙与协议端口\n'
+  if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then printf '5. 为这个节点配置 Cloudflare Tunnel\n'; max_choice=5; fi
   printf '0. 返回主菜单\n'
   ui_menu_choice choice '下一步' "$max_choice"
   case "$choice" in
     1) node_share "$id" 1;;
-    2)
-      user_id=$(jq -r 'first(.users[]|select(.enabled)|.id) // empty' <<<"$node")
-      [[ -n "$user_id" ]] || die '该节点没有启用用户。'
-      ui_open_submenu ui_client_export_menu "$id" "$user_id"
-      ;;
-    3) ui_open_submenu ui_subscription_menu;;
-    4) ui_open_submenu ui_manage_nodes "$id";;
-    5) ui_open_submenu ui_firewall_menu;;
-    6)
+    2) ui_open_submenu ui_subscription_menu;;
+    3) ui_open_submenu ui_manage_nodes "$id";;
+    4) ui_open_submenu ui_firewall_menu;;
+    5)
       if [[ $(jq -r '.protocol' <<<"$node") == vmess-ws-cf ]]; then ui_open_submenu ui_tunnel_menu "$id"
       else log_error '当前节点不使用 Cloudflare Tunnel。'; fi;;
   esac
@@ -783,34 +778,6 @@ ui_share_export_menu() {
   fi
 }
 
-ui_client_export_menu() {
-  local selected_node=${1:-} selected_user=${2:-} mode_choice mode output dns_mode dns_address directory
-  directory=$SBM_EXPORTS
-  [[ -z "$selected_node" ]] || directory="$SBM_EXPORTS/nodes/$selected_node/${selected_user:-default}"
-  printf '选择客户端；不支持的节点会给出原因，不会生成错误的兼容参数。\n'
-  printf '1. sing-box 本机代理\n2. sing-box 虚拟网卡\n3. mihomo 配置\n0. 返回\n'
-  ui_menu_choice mode_choice '选择客户端配置' 3
-  case "$mode_choice" in
-    1) mode=mixed; output="$directory/client-mixed.json";;
-    2) mode=tun; output="$directory/client-tun.json";;
-    3)
-      prompt_value output 'mihomo 配置文件' "$directory/client-mihomo.json" || return 1
-      export_mihomo_client_config "$output" "$selected_node" "$selected_user"
-      return $?;;
-    0) return $?;;
-    *) log_error '选择无效'; return $?;;
-  esac
-  prompt_value output '输出文件' "$output"
-  dns_mode=hijack; dns_address=''
-  if [[ "$mode" == tun ]] && version_ge "$(core_current_version)" 1.14.0-rc.1; then
-    printf '1. hijack\n2. native\n3. disabled\n'
-    ui_menu_choice dns_mode 'TUN DNS 模式' 3
-    case "$dns_mode" in 1) dns_mode=hijack;; 2) dns_mode=native;; 3) dns_mode=disabled;; *) log_error '选择无效'; return $?;; esac
-    if [[ "$dns_mode" != disabled ]]; then prompt_value dns_address 'DNS 地址（留空使用自动地址）' ''; fi
-  fi
-  export_client_config "$output" "$mode" "$dns_mode" "$dns_address" "$selected_node" "$selected_user"
-}
-
 ui_cert_menu() {
   local c token zone email domain
   printf 'TLS 证书用于节点加密和身份验证；域名由 Cloudflare 托管时可自动申请。\n'
@@ -1018,7 +985,7 @@ ui_nginx_stream_menu() {
 
 ui_settings_menu() {
   local c v
-  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 14。\n'
+  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 13。\n'
   printf '1. 默认客户端连接地址\n2. 日志详细程度\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n0. 返回\n'
   ui_menu_choice c '选择设置' 5
   case "$c" in
@@ -1398,7 +1365,7 @@ Sub-Store 是订阅整理工具：把本机、其他 VPS 或已有订阅里的�
   3. 选择“打开网页”，在自己的电脑上建立 SSH 转发，再打开浏览器地址。
      服务器只需要现有 SSH 端口，无需为 3001 开放 UFW。
   4. 在网页中打开 sb-manager-all 组合，选择你的客户端格式并导出/复制内容，
-     然后导入客户端。Snell 单用户选择 Surge；多用户 Snell 请用主菜单 5 直接导出。
+     然后导入客户端。Snell 单用户选择 Surge；多用户 Snell 请在主菜单 4 按用户导出。
   5. 要合并其他 VPS，选择“其他服务器来源”，填入那台服务器的动态订阅地址。
      来源机不必安装 Sub-Store，只需提供中心机可访问的订阅 URL。
 
@@ -1592,27 +1559,24 @@ ui_routing_menu() {
 
 ui_main_options() {
   cat <<'EOF_MENU'
-节点与客户端
  1. 运行状态
  2. 添加代理节点
  3. 管理节点
  4. 节点分享与导出
- 5. 完整客户端配置
- 6. TLS 域名证书
- 7. CF Tunnel
-维护与扩展
- 8. 更新管理器与核心
- 9. sing-box API 与网页仪表盘
-10. Hysteria Realm
-11. 运行日志
-12. 故障诊断与修复
-13. 核心通用设置
-14. VPS 与网站运维
-15. 节点流量与限速
-16. 通知与健康监控
-17. 卸载管理器
-18. Sub-Store 订阅管理
-19. 出站、WARP 与分流
+ 5. TLS 域名证书
+ 6. CF Tunnel
+ 7. 更新管理器与核心
+ 8. sing-box API 与网页仪表盘
+ 9. Hysteria Realm
+10. 运行日志
+11. 故障诊断与修复
+12. 核心通用设置
+13. VPS 与网站运维
+14. 节点流量与限速
+15. 通知与健康监控
+16. 卸载管理器
+17. Sub-Store 订阅管理
+18. 出站、WARP 与分流
  0. 退出面板
 EOF_MENU
 }
@@ -1642,13 +1606,13 @@ ui_main() {
     case "$choice" in
       1) page=status_summary;;
       2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
-      5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
-      8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
-      11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;;
-      13) page=ui_settings_menu;; 14) page=ui_vps_menu;; 15) page=ui_traffic_menu;;
-      16) page=ui_notification_health_menu;;
-      17) page=ui_uninstall_menu;; 18) page=ui_substore_menu;;
-      19) page=ui_routing_menu;;
+      5) page=ui_cert_menu;; 6) page=ui_tunnel_menu;;
+      7) page=ui_update_menu;; 8) page=ui_api_menu;; 9) page=ui_realm_menu;;
+      10) page=show_logs; page_args=(all 100);; 11) page=ui_doctor_menu;;
+      12) page=ui_settings_menu;; 13) page=ui_vps_menu;; 14) page=ui_traffic_menu;;
+      15) page=ui_notification_health_menu;;
+      16) page=ui_uninstall_menu;; 17) page=ui_substore_menu;;
+      18) page=ui_routing_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

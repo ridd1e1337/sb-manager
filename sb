@@ -110,7 +110,6 @@ sb_help_full() {
   sb share <ID> [--user USER_ID] [--qr]
   sb share all
   sb export outbounds
-  sb export config [文件] [--mode mixed|tun] [--tun-dns-mode disabled|native|hijack] [--tun-dns-address IP]
   sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]
   sb subscription list|status|revoke <ID_OR_TOKEN>
   sb subscription remark show|set TEMPLATE|clear   用户订阅节点名模板，如 '{name} | {days} 天'
@@ -473,20 +472,7 @@ main() {
     export)
       case ${2:-outbounds} in
         outbounds) export_all_outbounds ;;
-        config)
-          local output="$SBM_EXPORTS/client-config.json" mode=mixed tun_dns_mode=hijack tun_dns_address=''
-          shift 2
-          while (($#)); do
-            case "$1" in
-              --mode) mode=${2:?缺少模式}; shift 2;;
-              --tun-dns-mode) tun_dns_mode=${2:?缺少 TUN DNS 模式}; shift 2;;
-              --tun-dns-address) tun_dns_address=${2:?缺少 TUN DNS 地址}; shift 2;;
-              -*) die "未知导出参数：$1";; *) output=$1; shift;;
-            esac
-          done
-          export_client_config "$output" "$mode" "$tun_dns_mode" "$tun_dns_address"
-          ;;
-        *) die '当前支持：sb export outbounds|config [文件]' ;;
+        *) die '当前支持：sb export outbounds' ;;
       esac
       ;;
     cert)

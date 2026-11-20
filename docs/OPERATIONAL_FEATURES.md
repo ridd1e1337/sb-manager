@@ -14,15 +14,14 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 认证代理向导按监听地址建议客户端地址：本机监听保留 loopback，公网监听
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
 
-从 alpha.57 起，主菜单按“功能名＋用途”展示；7 为 CF Tunnel（Cloudflare
-隧道），13 为 sing-box 设置，14 为 VPS 与网站运维，18 为 Sub-Store 订阅管理，19 为出站、WARP 与分流（备份与恢复、节点模板与批量操作已移除，其后各项前移）。
+主菜单是一个不分组的连续列表：5 为 TLS 证书，6 为 CF Tunnel（Cloudflare 隧道），12 为 sing-box 设置，13 为 VPS 与网站运维，17 为 Sub-Store 订阅管理，18 为出站、WARP 与分流。
 VPS 分类集中提供初始化、基础环境状态、UFW/Fail2ban、Nginx/Caddy 共用 443、
 BBR/TCP/QUIC 网络调优、测速和系统支持说明。
 
 ## 系统支持说明
 
 `sb vps systems` 显示当前内核架构、包管理器分支、服务管理器和功能范围，
-也可在“15. VPS 与网站运维 → 支持的 Linux 系统与当前环境”查看。
+也可在“13. VPS 与网站运维 → 支持的 Linux 系统与当前环境”查看。
 此命令只显示信息，不需要 root，也不会创建状态、安装软件或更改服务。
 
 | 发行版 | 包管理器 | 常用服务管理器 | sing-box 安装与节点管理 | 新 VPS 整体初始化 |
@@ -52,7 +51,7 @@ sb vps init
 sb vps status
 ```
 
-也可在首次安装时传入 `--init-vps`，或选择“15. VPS 与网站运维 → 新 VPS 一键初始化”。
+也可在首次安装时传入 `--init-vps`，或选择“13. VPS 与网站运维 → 新 VPS 一键初始化”。
 支持 Debian/Ubuntu + systemd、Alpine + OpenRC，使用发行版已配置的签名软件源
 安装 Caddy、UFW、Fail2ban。Alpine 需要可用的 community 软件源；缺少包时会
 报错，不自动添加第三方源。新 VPS 的基础初始化与网站 443 共存接入是两个功能：
@@ -130,7 +129,7 @@ sb mux setup
 sb node add anytls --id any-main --domain node.example.com
 ```
 
-面板入口：“15. VPS 与网站运维 → 网站与节点共用 443 → 一键接入现有 Nginx/Caddy
+面板入口：“13. VPS 与网站运维 → 网站与节点共用 443 → 一键接入现有 Nginx/Caddy
 网站并自动同步”。自动接入后，全部启用的 AnyTLS、Trojan、VLESS TLS/Reality、
 Naive TCP、ShadowTLS 都按唯一 SNI 分流；添加、删除、启停、修改域名会自动更新
 网站入口。节点只监听本机，分享与订阅使用公网 443，UFW 无需额外放行。
@@ -191,7 +190,7 @@ APT 更新会刷新索引、确认官方源、核对包摘要、保留原版本�
 日志沿用一天保留策略。`--check` 仅查询本机 APT 索引，不刷新索引或重启。
 此维护方式不使用插件构建接口；Alpine/OpenRC 的原有定制程序流程保持不变。
 
-面板入口：“15. VPS 与网站运维 → Caddy 程序维护”。已有 alpha.53–58 网站接入
+面板入口：“13. VPS 与网站运维 → Caddy 程序维护”。已有 alpha.53–58 网站接入
 使用 `sb caddy manage` 迁移；网站、节点凭据和 DNS 保持原值。新的网站接入自动
 执行这一操作。接入需要正在运行、可验证的网站服务，不会接管其他工具已有的
 diversion/alternatives 配置。
@@ -280,7 +279,7 @@ sb reality detach
 ```
 
 前两条是二选一的新 VPS 初始化入口，会安装网站、OpenList、UFW 和 Fail2ban。
-面板入口为 `14 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
+面板入口为 `13 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
 或使用 `sb vps reality` 才显式配置基础防护。新主机只放行 22/TCP、80/TCP、443/TCP、
 443/UDP，同时保留当前 SSH 端口和已有规则，不会清空现有主机规则。
 支持 Debian/Ubuntu systemd 与 Alpine OpenRC；默认选择更节省磁盘的 Nginx。
@@ -314,7 +313,7 @@ OpenList 官方 v4.2.10 amd64 解压程序约 162.3 MiB。
 
 ## OpenList 网站配置（alpha.71）
 
-面板 `14 → 9` 可安装、更新 OpenList，并选择 Caddy 或 Nginx 配置域名。
+面板 `13 → 9` 可安装、更新 OpenList，并选择 Caddy 或 Nginx 配置域名。
 命令为 `sb openlist install|update|status`、`sb openlist setup DOMAIN caddy|nginx`
 和 `sb openlist detach DOMAIN`。网站服务需已安装、运行并使用标准配置路径。
 支持 Debian/Ubuntu 的 systemd 和 Alpine 的 OpenRC；检测到自定义启动配置、
@@ -469,7 +468,7 @@ sb tunnel route remove api
 末尾添加 404。调用 Cloudflared 校验 ingress，失败时恢复状态和原服务。
 既有 fixed/quick 模式保留，同一时间运行一个模式。
 
-面板：“7. CF Tunnel → 配置多域名/路径转发到本机 HTTP 服务”。
+面板：“6. CF Tunnel → 配置多域名/路径转发到本机 HTTP 服务”。
 
 ## Snell 分享与客户端导入
 
@@ -483,8 +482,8 @@ Surge 配置文件的 `[Proxy]` 段即可。单节点还保存 `surge.conf`；�
 其 [Snell 实现](https://github.com/MetaCubeX/mihomo/blob/v1.19.33/adapter/outbound/snell.go)
 仅将 v5 转为 v4 兼容连接，版本检查会拒绝 v6。因此 mihomo 导出只提供可兼容
 的单用户 v5，不会把 v6 改写成 v4。客户端版本号和 Snell 协议版本是两回事。
-sing-box 多用户 Snell 不兼容 Surge，不生成误导的原生行；请用主菜单 5 或
-节点菜单导出 sing-box 配置。Snell 分享页不再重复显示通用 URI 和二维码，
+sing-box 多用户 Snell 不兼容 Surge，不生成误导的原生行；请在主菜单 4 按用户
+导出 sing-box 配置。Snell 分享页不再重复显示通用 URI 和二维码，
 程序使用的 `share.txt` / `links.txt`、sing-box JSON 和 Sub-Store 兼容订阅仍保留。
 此次调整不更改节点凭据或已有客户端连接。
 
@@ -507,7 +506,7 @@ Sub-Store 是**订阅整理工具**。它把本机、其他 VPS 或已有订阅�
 支持的格式导出。它不创建代理线路，也不会给客户端增加原本不支持的协议。
 只使用一个节点时直接导入分享内容即可，无需安装 Sub-Store。
 
-在“20. Sub-Store 订阅管理”选择“11. 首次设置”，会安装或启用组件，把本机
+在“17. Sub-Store 订阅管理”选择“11. 首次设置”，会安装或启用组件，把本机
 节点接入 `sb-manager` 来源，加入 `sb-manager-all` 组合，并显示访问方法。
 已有安装会复用，节点变更后无需重新运行向导。选“12. 使用指南”可随时查看说明。
 
@@ -519,7 +518,7 @@ Sub-Store 是**订阅整理工具**。它把本机、其他 VPS 或已有订阅�
 3. 保持连接，在该电脑浏览器打开 `http://127.0.0.1:3001/`；网页要求后端地址时，
    填入面板显示的完整后端 URL（含随机访问路径）。无需在 UFW 开放 3001。
 4. 打开 `sb-manager-all` 组合，选择客户端格式，导出内容并导入客户端。
-   单用户 Snell 可选择 Surge；多用户 Snell 请通过主菜单 5 直接导出 sing-box 配置。
+   单用户 Snell 可选择 Surge；多用户 Snell 请在主菜单 4 按用户导出 sing-box 配置。
 5. 合并其他服务器时，选择“9. 接入其他 VPS/订阅并合并来源”，填写中心机
    能访问的订阅地址。来源服务器无需安装 Sub-Store。
 
@@ -557,7 +556,7 @@ sb substore enable
 的 Sub-Store 以取得一致副本，再恢复服务。备份含访问路径和订阅凭据，权限为
 0600。普通卸载停止组件并保留数据，彻底卸载才删除。恢复上限为 128 MiB 压缩 / 256 MiB 解压。
 
-面板主菜单：“18. Sub-Store 订阅管理”。
+面板主菜单：“17. Sub-Store 订阅管理”。
 
 ## 多服务器接入与动态订阅（alpha.34）
 
@@ -598,7 +597,7 @@ sb substore source add server-c 'https://other.example.com/sub/TOKEN?format=subs
 来源地址不接受 URL 用户名/密码、空白或 `#` 片段；系统自动添加 `#noCache`
 参数，确保拉取时读取最新内容。源站不可达时由 Sub-Store 报告拉取失败。
 
-面板入口：“20. Sub-Store 订阅管理 → 将本机节点接入订阅组合/接入其他 VPS
+面板入口：“17. Sub-Store 订阅管理 → 将本机节点接入订阅组合/接入其他 VPS
 与订阅并合并来源/管理本机动态订阅 URL”。来源 URL 在输入时隐藏，列表不显示 URL 或令牌。
 面板会根据已有的整域名 Tunnel 路由建议 HTTPS 入口；首次仍须配置网络可达性。
 
