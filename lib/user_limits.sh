@@ -10,7 +10,6 @@
 # renderer and exporter already excludes it, and `.limits.resume_enabled`
 # remembers the operator's intent for automatic recovery.
 
-user_limits_key() { printf '%s:%s\n' "$1" "$2"; }
 
 user_limits_validate_state() {
   jq -e '

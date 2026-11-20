@@ -99,15 +99,6 @@ traffic_format_bytes() {
   }'
 }
 
-traffic_format_rate() {
-  local bps=${1:-null}
-  [[ "$bps" != null ]] || { printf '不限'; return; }
-  awk -v n="$bps" 'BEGIN {
-    split("bit/s Kbit/s Mbit/s Gbit/s Tbit/s", u, " "); i=1;
-    while (n >= 1000 && i < 5) {n/=1000; i++}
-    if (n == int(n)) printf "%.0f %s", n, u[i]; else printf "%.2f %s", n, u[i]
-  }'
-}
 
 traffic_nft_table_exists() {
   command_exists nft && nft list table inet "$SBM_TRAFFIC_TABLE" >/dev/null 2>&1

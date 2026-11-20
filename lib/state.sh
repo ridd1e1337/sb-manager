@@ -287,7 +287,7 @@ state_normalize_v2_file() {
             | .realm_port_mapping //= false
           else . end
       )
-  ' "$file" >"$tmp"
+  ' "$file" >"$tmp" || { rm -f "$tmp"; return 1; }
   chmod 0600 "$tmp"
   if cmp -s "$tmp" "$file"; then rm -f "$tmp"; else mv -f "$tmp" "$file"; fi
 }
@@ -642,9 +642,6 @@ state_enabled_count() {
   local state=${1:-$SBM_STATE}
   jq '[.nodes[]? | select(.enabled==true)] | length' "$state"
 }
-state_singbox_nodes() {
-  jq -c '.nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true))' "${1:-$SBM_STATE}"
-}
 
 # Every node runs in sing-box; kept for status/health/doctor callers.
 state_node_engine() { printf 'sing-box\n'; }
@@ -684,8 +681,10 @@ runtime_services_reconcile() {
 # Remove the Xray runtime left by sb-manager alpha.72-82. The managed unit is
 # recognised by its description; a user-installed Xray is never touched.
 legacy_xray_cleanup() {
-  # alpha.81/82 kept a VLESS profile cache here; nothing reads it any more.
+  # Xray-era (alpha.72-82) leftovers that nothing reads any more: the VLESS
+  # profile cache, the Xray config-check log and the per-user usage ledger.
   [[ ! -d "$SBM_RUN/vless-cache" ]] || rm -rf -- "$SBM_RUN/vless-cache"
+  rm -f -- "$SBM_RUN/xray-config-check.log" "$SBM_VAR/user-usage.json"
   local unit='' link="$SBM_BIN_DIR/xray"
   unit=$(service_file_path "$SBM_LEGACY_XRAY_SERVICE" 2>/dev/null || true)
   if [[ -n "$unit" && -f "$unit" ]] && grep -Eq 'sb-manager .*Xray' "$unit"; then

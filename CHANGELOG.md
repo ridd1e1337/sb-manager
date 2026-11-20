@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.98
+
+- No leftover files: a failed state normalization no longer leaves an empty
+  `.state-normalize.*` in `/etc/sb-manager`; stale dot-temp files in the config
+  and secrets directories are removed under the manager lock; the Xray-era
+  `xray-config-check.log` and unused `user-usage.json` are removed by the
+  legacy cleanup.
+- Removed 13 unused functions.
+
 ## 0.1.0-alpha.97
 
 - Performance: the state schema and the seven module validators run

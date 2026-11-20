@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.97}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.98}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -116,6 +116,7 @@ with_lock() {
   # nothing is writing them, and the age guard spares unlocked readers.
   find "$SBM_RUN" -maxdepth 1 -mmin +10 \( -name 'state.candidate.*' -o -name 'user-limits-before.*' -o -name 'xray-test.*' -o -name '*.tmp.*' \) \
     -exec rm -rf {} + 2>/dev/null || true
+  find "$SBM_ETC" "$SBM_SECRETS" -maxdepth 1 -mmin +10 -name '.*.??????' -type f -exec rm -f {} + 2>/dev/null || true
   local rc=0
   "$fn" "$@" || rc=$?
   flock -u 9 || true
@@ -126,8 +127,6 @@ with_lock() {
 now_iso() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
 now_stamp() { date -u +'%Y%m%dT%H%M%SZ'; }
 
-json_compact() { jq -c .; }
-json_pretty() { jq .; }
 
 extract_semver() {
   local text=$1
@@ -287,13 +286,6 @@ must_install() {
 must_mv() {
   mv "$@" || { log_error "文件替换失败：$*"; return 1; }
 }
-must_cp() {
-  cp "$@" || { log_error "文件复制失败：$*"; return 1; }
-}
-must_write() {
-  local target=$1; shift
-  cat >"$target" || { log_error "文件写入失败：$target"; return 1; };
-}
 
 group_exists() {
   local group=$1
@@ -387,10 +379,6 @@ prompt_secret() {
   printf -v "$__var" '%s' "$value"
 }
 
-mask_secret() {
-  local s=$1
-  if ((${#s} <= 10)); then printf '********'; else printf '%s****%s' "${s:0:4}" "${s: -4}"; fi
-}
 
 
 # Host security probes for read-only status/health pages. `ufw status` and

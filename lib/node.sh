@@ -800,17 +800,6 @@ _settings_detect_public_ip() {
 }
 settings_detect_public_ip() { with_state_transaction settings-detect-ip _settings_detect_public_ip; }
 
-settings_default_address() {
-  local address source
-  address=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
-  source=$(jq -r '.settings.default_server_address_source // "manual"' "$SBM_STATE")
-  if [[ -z "$address" && "$source" == auto ]]; then
-    _settings_detect_public_ip
-    address=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
-  fi
-  [[ -n "$address" ]] || die '未配置服务器地址；请使用 sb settings detect-ip 或 sb settings address HOST。'
-  printf '%s\n' "$address"
-}
 
 settings_show_addresses() {
   if [[ ${1:-0} == 1 ]]; then jq '.settings | {default_server_address,default_server_address_source,public_ipv4,public_ipv6,outbound_ip_strategy,dns_optimistic,dns_optimistic_timeout,dns_timeout,public_ip_detected_at}' "$SBM_STATE"; return; fi
