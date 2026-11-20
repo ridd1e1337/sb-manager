@@ -1385,6 +1385,26 @@ ui_tunnel_routes_menu() {
   esac
 }
 
+ui_substore_remote_menu() {
+  local c url name display tag
+  substore_remote_cli status
+  printf '1. 连接/更换中心 Sub-Store\n2. 立即推送本机节点\n3. 断开\n0. 返回\n'
+  ui_menu_choice c '选择操作' 3
+  case "$c" in
+    1)
+      printf '后端地址 = 中心 Sub-Store 网页“设置 → 后端”里的地址：https://域名/后端路径。\n'
+      printf '它相当于密码，只保存在本机 0600 文件中。\n'
+      prompt_secret url '中心 Sub-Store 后端地址' || return 0
+      name=$(substore_remote_default_name)
+      prompt_value name '在中心显示的来源名（英文小写）' "$name"
+      prompt_value display '显示名（例如 US Oracle）' "$name"
+      prompt_value tag '新建时附加的标签（例如 主节点库，留空不加）' ''
+      if [[ -n "$tag" ]]; then substore_remote_cli set "$url" --name "$name" --display "$display" --tag "$tag"
+      else substore_remote_cli set "$url" --name "$name" --display "$display"; fi;;
+    2) substore_remote_cli push;;
+    3) confirm '断开后不再自动推送，继续？' N && substore_remote_cli disable;;
+  esac
+}
 ui_substore_guide() {
   cat <<'EOF_GUIDE'
 Sub-Store 是订阅整理工具：把本机、其他 VPS 或已有订阅里的节点合并成一份，
@@ -1442,10 +1462,12 @@ ui_substore_onboard() {
 ui_substore_menu() {
   local c port version frontend file name current current_frontend
   printf 'Sub-Store 用来合并订阅、整理节点和转换客户端格式；不使用它也能直接导入节点。\n'
-  printf '新手先选 12 看说明，或选 11 完成安装和本机节点接入。\n'
-  printf '1. 查看 Sub-Store 安装与运行状态\n2. 安装/升级 Sub-Store 网页和后端\n3. 启动订阅管理服务\n4. 停止订阅管理服务\n5. 打开管理网页\n6. 将本机节点接入订阅组合\n7. 备份订阅来源和处理规则\n8. 恢复 Sub-Store 数据\n9. 接入其他 VPS/订阅并合并来源\n10. 管理本机动态订阅 URL\n11. 首次设置：安装 + 接入本机节点 + 显示访问方法\n12. 使用指南：用途、来源、组合和客户端导入\n0. 返回\n'
-  ui_menu_choice c '选择订阅管理操作' 12
+  printf '已经有一台统一使用的 Sub-Store：选 13，本机节点自动推送过去，本机无需安装。\n'
+  substore_remote_cli status 2>/dev/null | head -1
+  printf '1. 查看 Sub-Store 安装与运行状态\n2. 安装/升级 Sub-Store 网页和后端\n3. 启动订阅管理服务\n4. 停止订阅管理服务\n5. 打开管理网页\n6. 将本机节点接入订阅组合\n7. 备份订阅来源和处理规则\n8. 恢复 Sub-Store 数据\n9. 接入其他 VPS/订阅并合并来源\n10. 管理本机动态订阅 URL\n11. 首次设置：安装 + 接入本机节点 + 显示访问方法\n12. 使用指南：用途、来源、组合和客户端导入\n13. 接入已有中心 Sub-Store（推荐，多台 VPS 共用一个）\n0. 返回\n'
+  ui_menu_choice c '选择订阅管理操作' 13
   case "$c" in
+    13) ui_substore_remote_menu;;
     1) jq -r '(.substore // {enabled:false,port:3001,version:"",frontend_version:""})|"Sub-Store：\(if .version=="" then "未安装" elif .enabled then "已启用" else "已停用" end)；本机端口：\(.port)","后端版本：\(.version)；前端版本：\(.frontend_version)"' "$SBM_STATE";;
     2)
       port=$(jq -r '.substore.port // 3001' "$SBM_STATE")

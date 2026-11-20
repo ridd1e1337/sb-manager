@@ -491,6 +491,18 @@ sing-box 多用户 Snell 不兼容 Surge，不生成误导的原生行；请用�
 
 ## Sub-Store 使用入门
 
+### 接入已有的中心 Sub-Store（推荐多台 VPS 使用）
+
+```bash
+echo 'https://sub.example.com/后端路径' | sb substore remote set - --name us-oracle --display 'US Oracle' --tag 主节点库
+sb substore remote status | push | disable
+```
+
+后端地址保存在 `secrets/substore-remote.json`（0600），不进入状态文件或进程参数。连接时先校验地址，再把本机全部启用用户的
+分享链接写成中心的一个 `local` 来源。每次修改操作成功后计算节点/凭据指纹；有变化才在后台推送（等待管理锁，
+不拖慢当前操作），结果写入 `/var/log/sb-manager/substore-remote.log`，`remote status` 会显示最近一次失败原因。
+已存在的来源只更新 `content`。断开不会删除中心那边的来源。
+
 Sub-Store 是**订阅整理工具**。它把本机、其他 VPS 或已有订阅的节点整理成
 一份，可在网页里筛选、改名，再按 Surge、mihomo/Clash、sing-box 等客户端
 支持的格式导出。它不创建代理线路，也不会给客户端增加原本不支持的协议。

@@ -410,6 +410,7 @@ substore_cli() {
     backup) [[ $# == 1 ]] || usage_die '用法：sb substore backup FILE'; with_lock _substore_backup "$1";;
     restore) [[ $# == 1 ]] || usage_die '用法：sb substore restore FILE'; substore_restore "$1";;
     sync) [[ $# -le 1 ]] || usage_die '用法：sb substore sync [NAME]'; with_lock _substore_sync "${1:-sb-manager}";;
+    remote) substore_remote_cli "$@";;
     source)
       case "${1:-list}" in
         list) [[ $# -le 2 && ${2:---json} == --json ]] || usage_die '用法：sb substore source list [--json]'; substore_source_list "$([[ ${2:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)";;
@@ -418,6 +419,6 @@ substore_cli() {
         check) [[ $# == 2 ]] || usage_die '用法：sb substore source check NAME'; substore_source_check "$2";;
         *) usage_die '用法：sb substore source list|add|remove|check';;
       esac;;
-    *) usage_die '用法：sb substore install|update|enable|disable|status|access|backup|restore|sync|source';;
+    *) usage_die '用法：sb substore remote set|push|status|disable（推荐：接入已有中心 Sub-Store）| install|update|enable|disable|status|access|backup|restore|sync|source';;
   esac
 }

@@ -2,7 +2,7 @@
 
 `sb-manager` 是只使用 sing-box 内核的一键安装与多协议节点管理脚本（VLESS 也由 sing-box 运行），支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.100`
+当前版本：`0.1.0-alpha.101`
 
 ## 第一步：安装
 
@@ -48,7 +48,11 @@ sb
 
 面板按节点管理和维护功能分组，菜单使用简短名称：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **15. VPS 与网站运维**。
 
-**20. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容；需要管理多份订阅时，进入 Sub-Store 后选 **11. 首次设置**完成安装和本机节点接入，选 **12. 使用指南**查看网页访问、组合与客户端导入方法。详见[Sub-Store 使用入门](docs/OPERATIONAL_FEATURES.md#sub-store-使用入门)。
+**20. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容。
+已经有一台统一使用的 Sub-Store 时，每台 VPS 选 **20 → 13 接入已有中心 Sub-Store**（或 `sb substore remote set -`，从标准输入读取后端地址），
+填入中心 Sub-Store 的后端地址：本机不安装 Sub-Store，节点作为一个本地来源推送过去，之后节点变化时在后台自动更新。
+只在首次创建时设置显示名和标签（如 `主节点库`），之后只更新节点内容，中心网页上的改名、标签和处理规则都会保留。
+需要在本机自建 Sub-Store 时选 **11. 首次设置**。详见[Sub-Store 使用入门](docs/OPERATIONAL_FEATURES.md#sub-store-使用入门)。
 
 Token 需要目标区域的「Zone:Read」和「DNS:Edit」权限。已有可用证书直接复用；已有 DNS 指向其他地址或开启橙云时会提示处理，建议为节点使用独立子域名。命令行添加 TLS 节点也支持自动准备 DNS 和证书，详见[域名与证书自动准备](docs/OPERATIONAL_FEATURES.md#节点域名与证书自动准备alpha52)。
 

@@ -858,6 +858,8 @@ _state_transaction_run() {
   ); then
     rm -rf -- "$backup" || return 1
     snapshot_prune
+    # Keep the central Sub-Store source in step with this server's nodes.
+    if declare -F substore_remote_auto_push >/dev/null 2>&1; then substore_remote_auto_push; fi
     return 0
   else
     rc=$?

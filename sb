@@ -57,6 +57,7 @@ source "$SBM_LIB/lib/tunnel.sh"
 source "$SBM_LIB/lib/tunnel_routes.sh"
 source "$SBM_LIB/lib/subscription.sh"
 source "$SBM_LIB/lib/substore.sh"
+source "$SBM_LIB/lib/substore_remote.sh"
 source "$SBM_LIB/lib/api.sh"
 source "$SBM_LIB/lib/realm.sh"
 source "$SBM_LIB/lib/bbr.sh"
@@ -168,6 +169,9 @@ sb_help_full() {
   sb cert issue <DOMAIN> [EMAIL]
   sb cert list [--json]|renew|inspect <DOMAIN>
 
+  sb substore remote set -|https://域名/后端路径 [--name 来源名] [--display 显示名] [--tag 主节点库]
+                                 接入已有的中心 Sub-Store：本机节点作为一个来源推送过去，节点变化后自动更新
+  sb substore remote push|status|disable
   sb substore install|update [--version VERSION] [--frontend-version VERSION] [--port PORT]
   sb substore enable|disable|status [--json]|access|sync [NAME]|backup FILE|restore FILE
   sb substore source add NAME URL [COLLECTION]|list [--json]|remove NAME|check NAME

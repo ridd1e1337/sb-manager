@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.101
+
+- 新增 `sb substore remote set|push|status|disable` 与面板 `20 → 13`：接入已有的中心 Sub-Store，本机不必安装
+  Sub-Store。本机节点作为中心的一个本地来源推送；首次创建时设置显示名和标签，之后只更新节点内容，保留中心的改名、
+  标签与处理规则。每次成功的修改操作后按节点/凭据指纹判断，有变化才在后台推送，不拖慢操作；中心不可达只记录并在
+  状态中提示。后端地址仅存于 0600 secret，可从标准输入读取。
+
 ## 0.1.0-alpha.100
 
 - sb-manager uses sing-box only. Removed every remaining Xray code path: the
