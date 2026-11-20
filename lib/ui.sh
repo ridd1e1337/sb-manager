@@ -230,29 +230,26 @@ ui_proxy_address_default() {
   esac
 }
 ui_header() {
-  local service_state enabled mux_state traffic_count notify_state health_state tunnel_state
+  local service_state enabled tunnel_state mux_state traffic_count notify_state health_state
   ui_clear
-  enabled=$(state_enabled_count)
-  if [[ "$SBM_SKIP_INIT" == 1 ]]; then
-    service_state='不接管服务'
-  elif ! state_runtime_required; then
-    service_state='待机'
-  elif service_active "$SBM_SERVICE"; then
-    service_state='运行中'
-  else
-    service_state='未运行'
-  fi
+  # The core version only changes through update/rollback, which reset this.
+  [[ -n "${SBM_UI_CORE_VERSION:-}" ]] || SBM_UI_CORE_VERSION=$(core_current_version 2>/dev/null || echo -)
+  IFS=$'\t' read -r enabled tunnel_state mux_state traffic_count notify_state health_state < <(jq -r '[
+    ([.nodes[]? | select(.enabled)] | length),
+    (.tunnel.mode | if .=="none" then "未启用" elif .=="quick" then "临时域名" elif .=="fixed" then "固定域名" else "多域名路由" end),
+    (if .nginx_stream.enabled then ((.nginx_stream.port|tostring) + "/TCP") else "未启用" end),
+    ([.nodes[]? | select(.traffic.enabled==true)] | length),
+    (if .notifications.enabled then .notifications.provider else "未启用" end),
+    (if .health.enabled then "已启用" else "未启用" end)] | @tsv' "$SBM_STATE")
+  if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state='不接管服务'
+  elif ! state_runtime_required; then service_state='待机'
+  elif service_active "$SBM_SERVICE"; then service_state='运行中'
+  else service_state='未运行'; fi
   printf '%s╭──────────────────── sb-manager ────────────────────╮%s\n' "$C_CYAN" "$C_RESET"
-  printf '  版本 %-18s sing-box %-16s\n' "$SBM_VERSION" "$(core_current_version || echo '-')"
-  printf '  服务管理 %-16s\n' "$(init_system_label)"
-  tunnel_state=$(jq -r '.tunnel.mode | if .=="none" then "未启用" elif .=="quick" then "临时域名" elif .=="fixed" then "固定域名" else "多域名路由" end' "$SBM_STATE")
-  printf '  sing-box %-14s CF Tunnel %-18s\n' "$service_state" "$tunnel_state"
-  mux_state=$(jq -r 'if .nginx_stream.enabled then ((.nginx_stream.port|tostring) + "/TCP") else "未启用" end' "$SBM_STATE")
-  printf '  TCP 端口共用 %-36s\n' "$mux_state"
-  traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
-  printf '  流量控制 %-36s\n' "${traffic_count} 个节点"
-  notify_state=$(jq -r 'if .notifications.enabled then .notifications.provider else "未启用" end' "$SBM_STATE")
-  health_state=$(jq -r 'if .health.enabled then "已启用" else "未启用" end' "$SBM_STATE")
+  printf '  版本 %-18s sing-box %-16s\n' "$SBM_VERSION" "$SBM_UI_CORE_VERSION"
+  printf '  sing-box 服务 %-9s 启用节点 %-16s\n' "$service_state" "$enabled"
+  printf '  服务管理 %-14s CF Tunnel %-18s\n' "$(init_system_label)" "$tunnel_state"
+  printf '  TCP 端口共用 %-10s 流量控制 %s 个节点\n' "$mux_state" "$traffic_count"
   printf '  通知 %-18s 健康检查 %-16s\n' "$notify_state" "$health_state"
   printf '%s╰─────────────────────────────────────────────────────╯%s\n\n' "$C_CYAN" "$C_RESET"
 }
@@ -1546,6 +1543,7 @@ ui_main() {
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"
+    [[ "$choice" != 8 ]] || SBM_UI_CORE_VERSION=''  # core may have changed
     case "$SBM_UI_RESULT" in
       201|202) return 0;;
       203) ui_reload;;

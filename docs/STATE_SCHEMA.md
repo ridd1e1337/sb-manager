@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.85",
+  "manager_version": "0.1.0-alpha.86",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",

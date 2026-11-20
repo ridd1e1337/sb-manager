@@ -103,22 +103,22 @@ node_list_json() {
 }
 
 node_list() {
-  local json=${1:-0} tag=${2:-} region=${3:-}
+  local json=${1:-0} tag=${2:-} region=${3:-} id p enabled port endpoint metadata name
   if [[ "$json" == "1" ]]; then node_list_json "$tag" "$region"; return; fi
   printf '%-18s %-18s %-8s %-10s %-20s %-14s %s\n' 'ID' '协议' '状态' '端口' '域名/地址' '地区/标签' '名称'
   printf '%-18s %-18s %-8s %-10s %-20s %-14s %s\n' '------------------' '------------------' '--------' '----------' '--------------------' '--------------' '----'
-  local node id p enabled port endpoint name route public_port metadata
-  public_port=$(jq -r '.nginx_stream.port // 443' "$SBM_STATE")
-  while IFS= read -r node; do
-    id=$(jq -r '.id' <<<"$node"); p=$(jq -r '.protocol' <<<"$node"); enabled=$(jq -r 'if .enabled then "启用" else "停用" end' <<<"$node")
-    port=$(jq -r '.port' <<<"$node"); endpoint=$(jq -r '(.domain // .server_address // "-")' <<<"$node"); name=$(jq -r '.name' <<<"$node")
-    metadata=$(jq -r '([.metadata.region] + .metadata.tags | map(select(length>0)) | join(",")) // ""' <<<"$node")
-    if declare -F nginx_stream_route_for_node >/dev/null 2>&1 && nginx_stream_state_enabled "$SBM_STATE"; then
-      route=$(nginx_stream_route_for_node "$SBM_STATE" "$id")
-      [[ -z "$route" ]] || port="${public_port}→$(jq -r '.backend_port' <<<"$route")"
-    fi
-    printf '%-18s %-18s %-8s %-10s %-20s %-14s %s\n' "$id" "$(node_protocol_label "$p")" "$enabled" "$port" "$endpoint" "${metadata:--}" "$name"
-  done < <(node_list_json "$tag" "$region" | jq -c '.[]')
+  # One jq pass for the whole table: per-node jq calls dominated latency.
+  while IFS=$'\t' read -r id p enabled port endpoint metadata name; do
+    printf '%-18s %-18s %-8s %-10s %-20s %-14s %s\n' "$id" "$(node_protocol_label "$p")" "$enabled" "$port" "$endpoint" "$metadata" "$name"
+  done < <(node_list_json "$tag" "$region" | jq -r --slurpfile state "$SBM_STATE" '
+    ($state[0]) as $s | ($s.nginx_stream.port // 443) as $pub |
+    (if ($s.nginx_stream.enabled // false) then ($s.nginx_stream.routes // []) else [] end) as $routes |
+    .[] | . as $n | ([$routes[] | select(.node_id==$n.id)] | first) as $r |
+    [.id, .protocol, (if .enabled then "启用" else "停用" end),
+     (if $r then "\($pub)→\($r.backend_port)" else (.port|tostring) end),
+     (.domain // .server_address // "-" | if .=="" then "-" else . end),
+     (([.metadata.region] + (.metadata.tags // []) | map(select(. != null and length>0)) | join(",")) | if .=="" then "-" else . end),
+     .name] | @tsv')
 }
 
 node_show() {
@@ -525,7 +525,13 @@ _node_set() {
       --path) value=$(normalize_ws_path "$value"); tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.ws_path)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --method) case "$value" in 2022-blake3-aes-128-gcm|2022-blake3-aes-256-gcm|2022-blake3-chacha20-poly1305) ;; *) rm -f "$candidate"; die "无效 Shadowsocks 2022 方法：$value";; esac; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.method)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --network) [[ "$value" == tcp || "$value" == udp ]] || { rm -f "$candidate"; die "network 必须是 tcp 或 udp"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.network)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
-      --obfs) [[ "$value" == salamander || "$value" == gecko || "$value" == none || "$value" == http || -z "$value" ]] || { rm -f "$candidate"; die "无效 obfs 类型"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)) |= if .protocol=="hysteria2" then .obfs=(if ($v=="" or $v=="none") then {} elif $v=="gecko" then (.obfs // {}) + {type:$v} else {type:$v} end) elif .protocol=="snell" then .obfs_mode=(if $v=="" then "none" else $v end) else . end' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
+      --obfs) [[ "$value" == salamander || "$value" == gecko || "$value" == none || "$value" == http || -z "$value" ]] || { rm -f "$candidate"; die "无效 obfs 类型"; }
+        # Nodes created without obfs have no password; create one when enabling it.
+        if [[ "$value" == salamander || "$value" == gecko ]] && [[ $(jq -r '.protocol' <<<"$node") == hysteria2 ]] \
+          && [[ -z "$(state_get_secret "$id" 2>/dev/null | jq -r '.obfs_password // ""')" ]]; then
+          state_write_secret "$id" "$( (state_get_secret "$id" 2>/dev/null || echo '{}') | jq -c --arg p "$(random_password 18)" '(. // {}) + {obfs_password:$p}')" || { rm -f "$candidate"; return 1; }
+        fi
+        tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)) |= if .protocol=="hysteria2" then .obfs=(if ($v=="" or $v=="none") then {} elif $v=="gecko" then (.obfs // {}) + {type:$v} else {type:$v} end) elif .protocol=="snell" then .obfs_mode=(if $v=="" then "none" else $v end) else . end' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --obfs-host) validate_domain "$value" || die "无效 obfs Host：$value"; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.obfs_host)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --obfs-min-packet-size|--obfs-max-packet-size) [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 64 && value <= 1500 )) || { rm -f "$candidate"; die "Gecko 包长必须是 64-1500"; }; local packet_field=${key#--obfs-}; packet_field=${packet_field//-/_}; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg field "$packet_field" --argjson v "$value" '(.nodes[]|select(.id==$id)|.obfs[$field])=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --disable-chrome-parrot|--enable-chrome-parrot) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.disable_chrome_parrot)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;

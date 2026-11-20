@@ -47,28 +47,23 @@ health_resource_metrics_json() {
 }
 
 health_resource_issues() {
-  local metrics disk_min inode_max mem_max load_max fd_max banned_max restart_max load cores
+  local metrics disk_used inode mem load cores fd banned restarts disk_min inode_max mem_max load_max fd_max banned_max restart_max
   metrics=$(health_resource_metrics_json)
   # Metrics can be unavailable during a partial installation; emit no
   # threshold alerts rather than treating null as zero or aborting arithmetic.
-  if ! jq -e '.disk_used_percent|numbers' <<<"$metrics" >/dev/null 2>&1; then
-    return 0
-  fi
-  disk_min=$(jq -r '.health.resources.disk_min_free_percent' "$SBM_STATE")
-  inode_max=$(jq -r '.health.resources.inode_max_percent' "$SBM_STATE")
-  mem_max=$(jq -r '.health.resources.memory_max_percent' "$SBM_STATE")
-  load_max=$(jq -r '.health.resources.cpu_load_per_core_max' "$SBM_STATE")
-  fd_max=$(jq -r '.health.resources.file_descriptors_max_percent' "$SBM_STATE")
-  banned_max=$(jq -r '.health.resources.fail2ban_banned_warn' "$SBM_STATE")
-  restart_max=$(jq -r '.health.resources.service_restart_warn' "$SBM_STATE")
-  load=$(jq -r '.load_1m' <<<"$metrics"); cores=$(jq -r '.cpu_cores' <<<"$metrics")
-  awk -v value="$(jq -r '.disk_used_percent' <<<"$metrics")" -v max="$((100-disk_min))" 'BEGIN {exit !(value > max)}' && health_issue warning resource_disk_low resource "数据目录剩余磁盘空间低于 ${disk_min}%。"
-  (( $(jq -r '.inode_used_percent' <<<"$metrics") > inode_max )) && health_issue warning resource_inode_high resource "数据目录 inode 使用率超过 ${inode_max}%。"
-  (( $(jq -r '.memory_used_percent' <<<"$metrics") > mem_max )) && health_issue warning resource_memory_high resource "内存使用率超过 ${mem_max}%。"
+  jq -e '.disk_used_percent|numbers' <<<"$metrics" >/dev/null 2>&1 || return 0
+  # Two jq calls instead of fifteen: thresholds and metrics in one read each.
+  read -r disk_min inode_max mem_max load_max fd_max banned_max restart_max < <(jq -r '.health.resources |
+    [.disk_min_free_percent,.inode_max_percent,.memory_max_percent,.cpu_load_per_core_max,.file_descriptors_max_percent,.fail2ban_banned_warn,.service_restart_warn] | @tsv' "$SBM_STATE")
+  read -r disk_used inode mem load cores fd banned restarts < <(jq -r '
+    [.disk_used_percent,.inode_used_percent,.memory_used_percent,.load_1m,.cpu_cores,.file_descriptors.used_percent,.fail2ban_banned,.service_restarts] | map(. // 0) | @tsv' <<<"$metrics")
+  awk -v value="$disk_used" -v max="$((100-disk_min))" 'BEGIN {exit !(value > max)}' && health_issue warning resource_disk_low resource "数据目录剩余磁盘空间低于 ${disk_min}%。"
+  (( ${inode%.*} > inode_max )) && health_issue warning resource_inode_high resource "数据目录 inode 使用率超过 ${inode_max}%。"
+  (( ${mem%.*} > mem_max )) && health_issue warning resource_memory_high resource "内存使用率超过 ${mem_max}%。"
   awk -v value="$load" -v max="$load_max" -v cores="$cores" 'BEGIN {exit !(value > max*cores)}' && health_issue warning resource_load_high resource "系统 1 分钟负载超过每核 ${load_max}。"
-  (( $(jq -r '.file_descriptors.used_percent' <<<"$metrics") > fd_max )) && health_issue warning resource_fd_high resource "系统文件描述符使用率超过 ${fd_max}%。"
-  (( $(jq -r '.fail2ban_banned' <<<"$metrics") >= banned_max )) && health_issue warning security_banned_high fail2ban "Fail2ban 当前封禁 IP 数达到 $(jq -r '.fail2ban_banned' <<<"$metrics")。"
-  (( $(jq -r '.service_restarts' <<<"$metrics") >= restart_max )) && health_issue warning service_restart_high sing-box "sing-box 累计自动重启次数达到 $(jq -r '.service_restarts' <<<"$metrics")。"
+  (( ${fd%.*} > fd_max )) && health_issue warning resource_fd_high resource "系统文件描述符使用率超过 ${fd_max}%。"
+  (( ${banned%.*} >= banned_max )) && health_issue warning security_banned_high fail2ban "Fail2ban 当前封禁 IP 数达到 ${banned}。"
+  (( ${restarts%.*} >= restart_max )) && health_issue warning service_restart_high sing-box "sing-box 累计自动重启次数达到 ${restarts}。"
   return 0
 }
 

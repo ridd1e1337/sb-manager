@@ -29,34 +29,38 @@ status_certificates_json() {
   } | jq -s .
 }
 
+# Listening sockets of sing-box, sampled once per status call. Alpine's
+# gcompat launcher reports the process as ld-musl/ld-linux.
+singbox_listeners_json() {
+  if [[ "$SBM_SKIP_INIT" == 1 ]] || ! command_exists ss; then printf 'null\n'; return 0; fi
+  ss -H -lntup 2>/dev/null | awk '/sing-box|ld-(musl|linux)/ { n=split($5,a,":"); print $1 "\t" a[n] }' |
+    jq -R -s -c 'split("\n") | map(select(length>0) | split("\t") | {p:.[0], port:(.[1]|tonumber? // 0)})'
+}
+
+# One jq pass over all nodes (per-node jq calls dominated status latency).
 status_nodes_json() {
-  local traffic_data node runtime_node id kind listening endpoint engine
+  local traffic_data listeners
   traffic_data=$(traffic_status_json_unlocked all)
-  {
-    while IFS= read -r node; do
-      [[ -n "$node" ]] || continue
-      id=$(jq -r '.id' <<<"$node"); runtime_node=$node
-      engine=$(state_node_engine "$node")
-      if declare -F nginx_stream_effective_node >/dev/null 2>&1; then runtime_node=$(nginx_stream_effective_node "$SBM_STATE" "$node"); fi
-      if [[ $(jq -r '.enabled' <<<"$node") != true || "$engine" == disabled ]]; then
-        listening=false
-      elif [[ "$SBM_SKIP_INIT" == 1 ]]; then
-        listening=null
-      else
-        listening=true
-        while IFS= read -r kind; do
-          node_runtime_port_in_use "$node" "$kind" || listening=false
-        done < <(node_transport_kinds "$runtime_node")
-      fi
-      endpoint=$(jq -r '(.domain // .server_address // .client_address // "")' <<<"$node")
-      jq -cn --argjson node "$node" --argjson runtime "$runtime_node" --argjson listening "$listening" \
-        --arg endpoint "$endpoint" --arg engine "$engine" --argjson traffic "$(jq -c --arg id "$id" '.[]|select(.id==$id)' <<<"$traffic_data")" '
-        {id:$node.id,name:$node.name,protocol:$node.protocol,engine:$engine,enabled:$node.enabled,listening:$listening,
-         listen:$runtime.listen,port:$runtime.port,endpoint:$endpoint,metadata:$node.metadata,
-         traffic:($traffic + {percent_used:(if $traffic.quota_bytes==null then null else (($traffic.billable_bytes*10000/$traffic.quota_bytes|floor)/100) end)})}
-      '
-    done < <(state_list_nodes)
-  } | jq -s .
+  listeners=$(singbox_listeners_json) || listeners=null
+  jq -c --argjson traffic "$traffic_data" --argjson listeners "$listeners" '
+    def kinds:
+      if .protocol|IN("hysteria2","tuic") then ["udp"]
+      elif .protocol=="naive" then [.network // "tcp"]
+      elif .protocol=="shadowsocks" then
+        (.network // "tcp" | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
+      else ["tcp"] end;
+    (.nginx_stream.enabled // false) as $mux | (.nginx_stream.routes // []) as $routes |
+    [ .nodes[]? | . as $n | ([$routes[] | select(.node_id==$n.id)] | first) as $r |
+      (if $mux and $r != null then {listen:"127.0.0.1", port:$r.backend_port} else {listen:$n.listen, port:$n.port} end) as $rt |
+      ([$traffic[]? | select(.id==$n.id)] | first // {}) as $t |
+      {id:$n.id, name:$n.name, protocol:$n.protocol, engine:"sing-box", enabled:$n.enabled,
+       listening:(if ($n.enabled|not) then false elif $listeners==null then null
+                  else all($n|kinds[]; . as $k | any($listeners[]; .p==$k and .port==$rt.port)) end),
+       listen:$rt.listen, port:$rt.port,
+       endpoint:($n.domain // $n.server_address // $n.client_address // ""),
+       metadata:$n.metadata,
+       traffic:($t + {percent_used:(if ($t.quota_bytes // null)==null then null else (($t.billable_bytes*10000/$t.quota_bytes|floor)/100) end)})} ]
+  ' "$SBM_STATE"
 }
 
 status_collect_json_unlocked() {
@@ -72,12 +76,11 @@ status_collect_json_unlocked() {
   if [[ "$SBM_SKIP_INIT" == 1 ]]; then service_state=test
   elif ! state_runtime_required; then service_state=standby
   else service_state=$(status_service_state "$SBM_SERVICE"); fi
-  tunnel_mode=$(jq -r '.tunnel.mode' "$SBM_STATE")
+  # One read of the scalar settings used below.
+  read -r tunnel_mode nginx_enabled traffic_count < <(jq -r '[.tunnel.mode, (.nginx_stream.enabled // false), ([.nodes[]? | select(.traffic.enabled==true)] | length)] | @tsv' "$SBM_STATE")
   if [[ "$tunnel_mode" == none ]]; then tunnel_state=off; else tunnel_state=$(status_service_state "$SBM_TUNNEL_SERVICE"); fi
   openlist_state=$(status_service_state "$SBM_OPENLIST_SERVICE")
-  nginx_enabled=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE")
   if [[ "$nginx_enabled" == true ]]; then nginx_state=$(status_service_state "$(mux_service)"); else nginx_state=off; fi
-  traffic_count=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
   if (( traffic_count == 0 )); then traffic_state=off
   elif traffic_runtime_complete; then traffic_state=running
   else traffic_state=degraded; fi
@@ -120,29 +123,29 @@ status_exit_code() {
 }
 
 status_show() {
-  local data row usage quota
+  local data id protocol state port usage tags name
   data=$(status_json)
-  printf '%sSB Manager %s%s\n' "$C_BOLD" "$(jq -r '.manager.version' <<<"$data")" "$C_RESET"
-  printf '服务管理      : %s\n' "$(jq -r '.manager.init_system' <<<"$data")"
-  printf 'sing-box     : %s (%s)\n' "$(jq -r '.components.sing_box.version // "未安装"' <<<"$data")" "$(jq -r '.components.sing_box.state' <<<"$data")"
-  printf 'OpenList     : %s (%s)\n' "$(jq -r '.components.openlist.version // "未安装"' <<<"$data")" "$(jq -r '.components.openlist.state' <<<"$data")"
-  printf 'cloudflared  : %s (Tunnel: %s/%s)\n' "$(jq -r '.components.cloudflared.version // "未安装"' <<<"$data")" "$(jq -r '.components.cloudflared.mode' <<<"$data")" "$(jq -r '.components.cloudflared.state' <<<"$data")"
-  printf 'TCP/SNI 复用 : %s (%s/TCP, %s)\n' "$(jq -r '.components.nginx_stream.state' <<<"$data")" "$(jq -r '.components.nginx_stream.port' <<<"$data")" "$(jq -r '.components.nginx_stream.backend' <<<"$data")"
-  printf '安全组件      : UFW %s，Fail2ban %s\n' "$(jq -r '.components.ufw.state' <<<"$data")" "$(jq -r '.components.fail2ban.state' <<<"$data")"
-  printf '通知/健康检查 : %s/%s\n' "$(jq -r 'if .components.notifications.enabled then .components.notifications.provider else "off" end' <<<"$data")" "$(jq -r 'if .components.health.enabled then "on" else "off" end' <<<"$data")"
-  printf '节点/证书/异常: %s（启用 %s）/%s/%s\n\n' "$(jq -r '.summary.nodes' <<<"$data")" "$(jq -r '.summary.enabled_nodes' <<<"$data")" "$(jq -r '.summary.certificates' <<<"$data")" "$(jq -r '.summary.issues' <<<"$data")"
+  # Header and rows in one jq pass each; the panel calls this on every refresh.
+  jq -r --arg bold "$C_BOLD" --arg reset "$C_RESET" '
+    "\($bold)SB Manager \(.manager.version)\($reset)",
+    "服务管理      : \(.manager.init_system)",
+    "sing-box     : \(.components.sing_box.version // "未安装") (\(.components.sing_box.state))",
+    "OpenList     : \(.components.openlist.version // "未安装") (\(.components.openlist.state))",
+    "cloudflared  : \(.components.cloudflared.version // "未安装") (Tunnel: \(.components.cloudflared.mode)/\(.components.cloudflared.state))",
+    "TCP/SNI 复用 : \(.components.nginx_stream.state) (\(.components.nginx_stream.port)/TCP, \(.components.nginx_stream.backend))",
+    "安全组件      : UFW \(.components.ufw.state)，Fail2ban \(.components.fail2ban.state)",
+    "通知/健康检查 : \(if .components.notifications.enabled then .components.notifications.provider else "off" end)/\(if .components.health.enabled then "on" else "off" end)",
+    "节点/证书/异常: \(.summary.nodes)（启用 \(.summary.enabled_nodes)）/\(.summary.certificates)/\(.summary.issues)", ""' <<<"$data"
   printf '%-17s %-15s %-7s %-9s %-10s %-12s %s\n' 'ID' '协议' '状态' '端口' '流量' '地区/标签' '名称'
-  while IFS= read -r row; do
-    usage=$(jq -r 'if .traffic.percent_used==null then "-" else (.traffic.percent_used|tostring)+"%" end' <<<"$row")
-    quota=$(jq -r '([.metadata.region]+.metadata.tags | map(select(length>0)) | join(","))' <<<"$row")
-    printf '%-17s %-15s %-7s %-9s %-10s %-12s %s\n' "$(jq -r '.id' <<<"$row")" "$(node_protocol_label "$(jq -r '.protocol' <<<"$row")")" \
-      "$(jq -r 'if .engine=="disabled" then "暂停" elif .enabled then (if .listening==false then "异常" else "启用" end) else "停用" end' <<<"$row")" \
-      "$(jq -r '.port' <<<"$row")" "$usage" "${quota:--}" "$(jq -r '.name' <<<"$row")"
-  done < <(jq -c '.nodes[]' <<<"$data")
-  if [[ $(jq -r '.issues|length' <<<"$data") != 0 ]]; then
-    printf '\n待处理异常：\n'
-    jq -r '.issues[] | "- [\(.severity)] \(.message)"' <<<"$data"
-  fi
+  while IFS=$'\t' read -r id protocol state port usage tags name; do
+    printf '%-17s %-15s %-7s %-9s %-10s %-12s %s\n' "$id" "$(node_protocol_label "$protocol")" "$state" "$port" "$usage" "$tags" "$name"
+  done < <(jq -r '.nodes[] | [.id, .protocol,
+      (if .engine=="disabled" then "暂停" elif .enabled then (if .listening==false then "异常" else "启用" end) else "停用" end),
+      (.port|tostring),
+      (if .traffic.percent_used==null then "-" else (.traffic.percent_used|tostring)+"%" end),
+      (([.metadata.region] + (.metadata.tags // []) | map(select(. != null and length>0)) | join(",")) | if .=="" then "-" else . end),
+      .name] | @tsv' <<<"$data")
+  jq -r 'if (.issues|length)>0 then "\n待处理异常：", (.issues[] | "- [\(.severity)] \(.message)") else empty end' <<<"$data"
   status_exit_code "$data"
 }
 

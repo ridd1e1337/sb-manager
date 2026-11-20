@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.86
+
+- Fix: enabling Salamander/Gecko obfs on a Hysteria2 node created without
+  obfs now generates the obfs password; previously the node rendered with an
+  empty password. Verified with sing-box client traffic.
+- Performance: `sb node list`, `sb status`, resource health checks and the
+  panel header use one jq pass instead of several per node; listening
+  sockets are sampled once per status call. Panel header refresh drops to
+  ~0.03 s, status from 2.7 s to 1.5 s on the test host.
+
 ## 0.1.0-alpha.85
 
 - Remove scratch files (`state.candidate.*`, `user-limits-before.*`,
