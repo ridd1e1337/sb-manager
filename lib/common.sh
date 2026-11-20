@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.79}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.80}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -67,6 +67,8 @@ SBM_NGINX_STREAM_BIN="${SBM_NGINX_STREAM_BIN:-/usr/sbin/nginx}"
 SBM_NGINX_STREAM_OPENRC_BIN="${SBM_NGINX_STREAM_OPENRC_BIN:-$SBM_VAR/nginx-stream/nginx}"
 SBM_TRAFFIC_USAGE="${SBM_TRAFFIC_USAGE:-$SBM_VAR/traffic-usage.json}"
 SBM_USER_USAGE="${SBM_USER_USAGE:-$SBM_VAR/user-usage.json}"
+# Reality handshake/SNI suggested by wizards; any TLS 1.3 + H2 site works.
+SBM_RECOMMENDED_REALITY_SNI="${SBM_RECOMMENDED_REALITY_SNI:-www.apple.com}"
 SBM_TRAFFIC_TABLE="${SBM_TRAFFIC_TABLE:-sb_manager_traffic}"
 SBM_TRAFFIC_SERVICE="${SBM_TRAFFIC_SERVICE:-sb-traffic.service}"
 SBM_FAIL2BAN_SERVICE="${SBM_FAIL2BAN_SERVICE:-fail2ban.service}"

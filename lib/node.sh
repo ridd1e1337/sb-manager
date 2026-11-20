@@ -170,7 +170,7 @@ node_validate_json_object() {
 _node_add() {
   local type=$1; shift
   local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
-  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_preview='' vless_network=''
+  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_preview='' vless_network='' vless_listen='::'
   local -a vless_options=()
   while (($#)); do
     case "$1" in
@@ -202,11 +202,12 @@ _node_add() {
     dependency_require_feature probe || die '节点端口探测需要 iproute2/ss；请运行 sb deps install probe。'
   fi
   if [[ "$proxy_listen_supplied" == 1 ]]; then
-    case "$type" in socks|socks5|http|mixed) ;; *) usage_die '--listen 目前仅用于 socks/http/mixed 代理入口。';; esac
+    case "$type" in socks|socks5|http|mixed|vless) ;; *) usage_die '--listen 目前仅用于 VLESS 与 socks/http/mixed 代理入口。';; esac
   fi
   local protocol base transport secret node_secret='' node candidate user_secret_path default_address created_at reality_secret='' snell_obfs_mode snell_obfs_host
   if [[ "$type" == vless ]]; then
     [[ -z "$path" ]] || vless_options+=(--path "$path")
+    [[ "$proxy_listen_supplied" != 1 ]] || vless_options+=(--listen "$proxy_listen")
     vless_preview=$(jq -n --arg domain "$domain" --arg security "$security" --arg flow "$flow" \
       --arg hs "$handshake_server" --argjson hp "$handshake_port" --argjson inbound "$xray_inbound_json" --argjson outbound "$xray_outbound_json" \
       '{protocol:"vless",domain:$domain,security:$security,flow:$flow,handshake_server:$hs,handshake_port:$hp,xray:{inbound:$inbound,outbound:$outbound}}') || return 1
@@ -214,6 +215,7 @@ _node_add() {
     security=$(jq -r '.security' <<<"$vless_preview"); flow=$(jq -r '.flow // ""' <<<"$vless_preview")
     vless_network=$(vless_node_network "$vless_preview") || return 1
     xray_inbound_json=$(jq -c '.xray.inbound // {}' <<<"$vless_preview"); xray_outbound_json=$(jq -c '.xray.outbound // {}' <<<"$vless_preview")
+    vless_listen=$(jq -r '.listen // "::"' <<<"$vless_preview")
   elif (( ${#vless_options[@]} > 0 )); then
     usage_die 'VLESS 传输和加密参数不能用于其他协议。'
   fi
@@ -391,7 +393,7 @@ _node_add() {
       node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg cc "$congestion_control" --arg now "$created_at" --argjson enabled "$enabled" '{id:$id,name:$name,protocol:"tuic",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,congestion_control:$cc,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
       ;;
     vless)
-      node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg security "$security" --arg flow "$flow" --arg hs "$handshake_server" --argjson hp "$handshake_port" --arg now "$created_at" --argjson enabled "$enabled" '{id:$id,name:$name,protocol:"vless",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,security:$security,flow:(if $flow=="" then null else $flow end),handshake_server:(if $hs=="" then null else $hs end),handshake_port:$hp,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
+      node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg security "$security" --arg flow "$flow" --arg hs "$handshake_server" --argjson hp "$handshake_port" --arg now "$created_at" --argjson enabled "$enabled" --arg listen "$vless_listen" '{id:$id,name:$name,protocol:"vless",enabled:$enabled,listen:$listen,port:$port,domain:$domain,server_address:$address,security:$security,flow:(if $flow=="" then null else $flow end),handshake_server:(if $hs=="" then null else $hs end),handshake_port:$hp,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
       ;;
     naive)
       node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg network "$network" --arg cc "$congestion_control" --arg now "$created_at" --argjson enabled "$enabled" '{id:$id,name:$name,protocol:"naive",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,network:$network,quic_congestion_control:$cc,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')

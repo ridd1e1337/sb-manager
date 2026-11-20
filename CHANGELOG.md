@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.80
+
+- Fix the VLESS and ShadowTLS wizards aborting with
+  `SBM_RECOMMENDED_REALITY_SNI: unbound variable` after choosing Reality; the
+  default (`www.apple.com`) is defined again in `lib/common.sh`.
+- Fix VLESS creation from the panel failing with `--listen 目前仅用于
+  socks/http/mixed`: `sb node add vless --listen IP` is now accepted, validated
+  as an IP and written to the Xray inbound.
+
 ## 0.1.0-alpha.79
 
 - sing-box no longer runs any VLESS node: `settings.vless_engine` accepts only
