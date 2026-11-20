@@ -1,8 +1,8 @@
 # sb-manager
 
-`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。所有协议（含 VLESS）只由 sing-box 运行；需要 Xray-core 专属能力（XHTTP、mKCP、VLESS 加密、用户级流量配额等）时请使用姊妹项目 xray-manager，两者可以装在同一台服务器上。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
+`sb-manager` 是只使用 sing-box 内核的一键安装与多协议节点管理脚本（VLESS 也由 sing-box 运行），支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.99`
+当前版本：`0.1.0-alpha.100`
 
 ## 第一步：安装
 
@@ -88,11 +88,6 @@ sb node add vless --id g1 --address edge.example.com --port 8443 --security real
   --sing-box-outbound-json '{"transport":{"type":"grpc","service_name":"g1"}}'
 ```
 
-从 alpha.72～82 升级时，原先由 Xray 运行的 VLESS 节点自动交回 sing-box：TCP +
-TLS/Reality 节点的 UUID、Reality 密钥和分享链接不变；使用 XHTTP、mKCP、VLESS 加密、
-回落等 Xray 专属配置的节点会被停用并保留数据（`sb node show` 可见迁移说明），可在
-xray-manager 中重建。旧版托管的 sb-xray 服务会被停止并移除。
-
 ### 用户
 
 ```bash
@@ -107,8 +102,7 @@ sb node clone edge edge2                  # 复制节点设置，重新生成凭
 
 到期时间适用于所有多用户协议：到期后用户被暂停但保留凭据，续期后自动恢复，到期前 3 天提醒一次。
 检查随流量周期任务运行（systemd 5 分钟、OpenRC 15 分钟），也可执行 `sb user tick`。面板
-`3 → 节点 → 12` 可管理用户。用户级流量配额与在线 IP 上限需要按用户的流量统计，官方 sing-box 不提供，
-属于 xray-manager；sb-manager 提供节点级配额与限速（`sb traffic set`）。
+`3 → 节点 → 12` 可管理用户。官方 sing-box 不提供按用户的流量统计，因此流量配额与限速按节点设置（`sb traffic set`）。
 
 ### 订阅
 

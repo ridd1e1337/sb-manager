@@ -139,7 +139,7 @@ reality_site_candidate() {
   local id=$1 domain=$2 server=$3 binary=$4 config=$5 backend_port=$6 candidate=$7 node secret existing
   existing=$(state_get_node "$id") || return 1
   if [[ -n "$existing" ]]; then
-    if ! jq -e 'all([.singbox.inbound,.singbox.outbound][]; (. // {}|length)==0) and .migration==null' <<<"$existing" >/dev/null; then
+    if ! jq -e 'all([.singbox.inbound,.singbox.outbound][]; (. // {}|length)==0)' <<<"$existing" >/dev/null; then
       log_error '所选节点含自定义入站或出站参数，请使用普通 VLESS 节点或新建入口。'; return 1
     fi
     node=$existing

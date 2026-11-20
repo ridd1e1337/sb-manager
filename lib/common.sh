@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.99}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.100}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -31,8 +31,6 @@ SBM_LOCK="${SBM_LOCK:-${SBM_RUN}/manager.lock}"
 SBM_SING_BOX_BIN="${SBM_SING_BOX_BIN:-${SBM_BIN_DIR}/sing-box}"
 SBM_CLOUDFLARED_BIN="${SBM_CLOUDFLARED_BIN:-${SBM_BIN_DIR}/cloudflared}"
 SBM_SERVICE="${SBM_SERVICE:-sb-sing-box.service}"
-# Xray runtime installed by sb-manager alpha.72-82; only removed on upgrade.
-SBM_LEGACY_XRAY_SERVICE="${SBM_LEGACY_XRAY_SERVICE:-sb-xray.service}"
 SBM_OPENLIST_BIN="${SBM_OPENLIST_BIN:-${SBM_BIN_DIR}/openlist}"
 SBM_OPENLIST_SERVICE="${SBM_OPENLIST_SERVICE:-sb-openlist.service}"
 SBM_OPENLIST_DATA="${SBM_OPENLIST_DATA:-/var/lib/sb-openlist}"
@@ -114,7 +112,7 @@ with_lock() {
   flock -x 9
   # Operations that died mid-way can leave scratch files; with the lock held
   # nothing is writing them, and the age guard spares unlocked readers.
-  find "$SBM_RUN" -maxdepth 1 -mmin +10 \( -name 'state.candidate.*' -o -name 'user-limits-before.*' -o -name 'xray-test.*' -o -name '*.tmp.*' \) \
+  find "$SBM_RUN" -maxdepth 1 -mmin +10 \( -name 'state.candidate.*' -o -name 'user-limits-before.*' -o -name '*.tmp.*' \) \
     -exec rm -rf {} + 2>/dev/null || true
   find "$SBM_ETC" "$SBM_SECRETS" -maxdepth 1 -mmin +10 -name '.*.??????' -type f -exec rm -f {} + 2>/dev/null || true
   local rc=0

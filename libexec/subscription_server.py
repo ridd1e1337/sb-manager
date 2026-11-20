@@ -46,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         formats = parse_qs(request_url.query, keep_blank_values=True).get("format", [None])
-        if len(formats) != 1 or formats[0] not in {None, "sing-box", "substore", "base64", "xray", "mihomo", "compatibility"}:
+        if len(formats) != 1 or formats[0] not in {None, "sing-box", "substore", "base64", "mihomo", "compatibility"}:
             self.send_error(400, "Unsupported subscription format")
             return
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -59,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
             live = meta.get("live") is True
             expires = meta["expires_at_epoch"]
             mode = meta["mode"]
-            if mode not in {"mixed", "tun", "xray", "mihomo"}:
+            if mode not in {"mixed", "tun", "mihomo"}:
                 raise ValueError("invalid subscription mode")
             if expires is None and not live:
                 raise ValueError("only live subscriptions may have no expiry")
@@ -67,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(410, "Subscription expired")
                 return
             output_format = formats[0] or detect_format(self.headers.get("User-Agent", "")) \
-                or (mode if mode in {"xray", "mihomo"} else "sing-box")
+                or (mode if mode == "mihomo" else "sing-box")
             encode_base64 = output_format == "base64"
             if encode_base64:
                 output_format = "substore"

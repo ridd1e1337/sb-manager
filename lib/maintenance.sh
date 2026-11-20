@@ -85,7 +85,7 @@ _maintenance_run() {
   if maintenance_safe_cache_root; then
     while IFS= read -r -d '' path; do
       name=${path##*/}
-      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|xray.*|openlist.*|acme.*|cloudflared.*|backup.*|restore.*) rm -rf -- "$path" || return 1;; esac
+      case "$name" in caddy-build.*|caddy-download.*|sing-box.*|openlist.*|acme.*|cloudflared.*|backup.*|restore.*) rm -rf -- "$path" || return 1;; esac
     done < <(find "$SBM_CACHE" -mindepth 1 -maxdepth 1 -mmin +1380 -print0)
   fi
   if [[ -d "$SBM_DOWNLOAD_TMP" && ! -L "$SBM_DOWNLOAD_TMP" ]]; then

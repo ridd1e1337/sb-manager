@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-# Key/cert generators and checks (same as xray-manager's `xm tools`), backed
+# Key/cert generators and checks, backed
 # by the installed sing-box so formats always match the running core.
 
 tools_singbox() {

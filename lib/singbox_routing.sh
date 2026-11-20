@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-# sing-box outbounds, groups and routing (same model as xray-manager's Xray
-# routing). State keeps only the structure (.routing); outbound objects may
+# sing-box outbounds, groups and routing. State keeps only the structure (.routing); outbound objects may
 # carry passwords and WireGuard keys, so they live in a 0600 secrets file.
 #
-# Rule syntax matches xray-manager: domain:/full:/keyword:/regexp:/geosite:
+# Rule syntax: domain:/full:/keyword:/regexp:/geosite:
 # and CIDR or geoip:. geosite:/geoip: become sing-box remote rule-sets that
 # sing-box downloads and caches itself (no large files kept by the manager).
 

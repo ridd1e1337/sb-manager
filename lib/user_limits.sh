@@ -3,7 +3,7 @@
 
 # Per-user expiry for every multi-user protocol. Official sing-box builds do
 # not expose per-user traffic counters, so traffic quotas and online-IP limits
-# are an xray-manager feature; sb-manager offers node-level quotas instead
+# are not available; sb-manager offers node-level quotas instead
 # (sb traffic set).
 #
 # A suspended user keeps its credentials. `.enabled` is set to false so every
@@ -103,7 +103,7 @@ _user_limit_set() {
         expires=$at; shift 2;;
       --no-expiry|--clear) expires=null; shift;;
       --quota|--reset-day|--ip-limit)
-        die "$1 需要用户级流量统计，sing-box 官方版本不提供；请使用节点级流量控制（sb traffic set）或 xray-manager。";;
+        die "$1 需要用户级流量统计，sing-box 官方版本不提供；请使用节点级流量控制（sb traffic set）。";;
       *) die "未知用户限额参数：$1";;
     esac
   done
@@ -151,7 +151,7 @@ user_stats() {
     while IFS=$'\t' read -r node user status expiry; do
       printf '%-14s %-12s %-12s %s\n' "$node" "$user" "$status" "$expiry"
     done
-  printf '\n用户级流量配额与在线 IP 需要 Xray 统计，请使用 xray-manager；节点级配额见 sb traffic status。\n'
+  printf '\n官方 sing-box 不提供用户级流量统计；节点级配额与限速见 sb traffic status。\n'
 }
 
 # Portable user record (3x-ui client export): profile, expiry and the

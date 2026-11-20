@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.100
+
+- sb-manager uses sing-box only. Removed every remaining Xray code path: the
+  legacy Xray service/binary cleanup, the Xray-only VLESS migration marker
+  (`migration`), the `sb-xray` unit handling in setup and uninstall, the
+  Xray profile format of the subscription server, and Xray references in
+  help, messages and docs. Normalization drops fields of other cores
+  (`settings.vless_engine`, `settings.xray_update_policy`,
+  `settings.xray_api_port`, `xray_routing`, `nodes[].xray`) and removes VLESS
+  nodes without TLS/REALITY, which sing-box cannot run, together with their
+  credentials (a warning lists them).
+
 ## 0.1.0-alpha.99
 
 - Performance: state migration, validation and the credential check are

@@ -194,11 +194,11 @@ state_migrate() {
 }
 
 state_normalize_v2_file() {
-  local file=$1 tmp
+  local file=$1 tmp dropped
   tmp=$(mktemp "$(dirname "$file")/.state-normalize.XXXXXX")
-  # sb-manager alpha.72-82 ran VLESS in Xray. sing-box serves VLESS again:
-  # TCP + TLS/Reality profiles migrate unchanged (same UUID and Reality keys);
-  # Xray-only profiles are disabled with their data kept for xray-manager.
+  # VLESS without TLS/REALITY cannot run on sing-box (older states kept such
+  # nodes disabled); they are removed together with their credentials.
+  dropped=$(jq -r '.nodes[]? | select(.protocol=="vless" and ((.security // "")|IN("tls","reality")|not)) | .id' "$file" 2>/dev/null || true)
   jq --argjson manager_update_minute "$((RANDOM % 180))" --arg now "$(now_iso)" '
     .settings.default_server_address_source //= (if .settings.default_server_address=="" then "auto" else "manual" end)
     | if .settings.manager_auto_update==null then .settings.manager_auto_update=true else . end
@@ -210,6 +210,7 @@ state_normalize_v2_file() {
     | .settings.dns_optimistic //= false
     | .settings.dns_optimistic_timeout //= "3d"
     | .settings.dns_timeout //= "10s"
+    # Fields of other cores are not part of the sing-box state.
     | .settings |= del(.xray_update_policy, .vless_engine, .xray_api_port)
     | del(.xray_routing)
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
@@ -241,6 +242,7 @@ state_normalize_v2_file() {
     | .health.resources.fail2ban_banned_warn //= 10
     | .health.resources.service_restart_warn //= 3
     | .node_templates //= []
+    | .nodes |= map(select((.protocol=="vless" and ((.security // "")|IN("tls","reality")|not))|not))
     | .nodes |= map(
         .metadata //= {remark:"",region:"",purpose:"",line:"",tags:[]}
         | .metadata.remark //= ""
@@ -251,23 +253,7 @@ state_normalize_v2_file() {
         | .singbox //= {inbound:{},outbound:{}}
         | .singbox.inbound //= {}
         | .singbox.outbound //= {}
-        | if .protocol=="vless" and .xray!=null then
-            (.xray.inbound // {}) as $i | (.xray.outbound // {}) as $o |
-            ((.security|IN("tls","reality"))
-             and (($i|del(.streamSettings,.settings)|length)==0)
-             and (($i.settings // {}|del(.decryption)|length)==0) and (($i.settings.decryption // "none")=="none")
-             and (($i.streamSettings // {}|del(.network,.security)|length)==0)
-             and (($i.streamSettings.network // "raw")|IN("raw","tcp"))
-             and (($o|del(.streamSettings,.settings)|length)==0)
-             and (($o.settings.vnext[0].users[0].encryption // "none")=="none")
-             and (($o.streamSettings // {}|del(.network,.security,.tlsSettings,.realitySettings)|length)==0)
-             and (($o.streamSettings.network // "raw")|IN("raw","tcp"))
-             and (($o.streamSettings.tlsSettings // {}|del(.serverName,.fingerprint)|length)==0)
-             and (($o.streamSettings.realitySettings // {}|del(.serverName,.fingerprint)|length)==0)) as $plain |
-            if $plain then del(.xray)
-            else .enabled=false | .migration={reason:"xray-only",at:$now,note:"该 VLESS 配置需要 Xray，已停用；可迁移到 xray-manager。"} end
-          else . end
-        | if .migration==null then del(.migration) else . end
+        | del(.xray, .migration)
         | .users |= map(
             if .limits==null then .
             else (if (.limits.suspended // null)|IN("quota","ip") then .enabled=(.limits.resume_enabled // true) | .limits.suspended=null | .limits.suspended_until=null | .limits.resume_enabled=false else . end)
@@ -303,6 +289,15 @@ state_normalize_v2_file() {
   ' "$file" >"$tmp" || { rm -f "$tmp"; return 1; }
   chmod 0600 "$tmp"
   if cmp -s "$tmp" "$file"; then rm -f "$tmp"; else mv -f "$tmp" "$file"; fi
+  if [[ -n "$dropped" ]]; then
+    log_warn "已移除 sing-box 无法运行的 VLESS 节点（无 TLS/REALITY）：$(tr '\n' ' ' <<<"$dropped")"
+    if [[ "$file" == "$SBM_STATE" ]]; then
+      local id; while IFS= read -r id; do
+        [[ "$id" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] || continue
+        rm -rf -- "$SBM_SECRETS/users/$id"; rm -f -- "$SBM_SECRETS/nodes/$id.json"
+      done <<<"$dropped"
+    fi
+  fi
 }
 
 state_normalize_v2() { state_normalize_v2_file "$SBM_STATE"; }
@@ -402,8 +397,7 @@ state_validate_schema() {
       and (.created_at | timestamp)
       and ((.singbox // {}) | type == "object")
       and (((.singbox // {}).inbound // {}) | node_extension)
-      and (((.singbox // {}).outbound // {}) | node_extension)
-      and ((.xray // {}) | type == "object");
+      and (((.singbox // {}).outbound // {}) | node_extension);
     def node_metadata:
       type == "object"
       and (.remark | string and length <= 512 and (explode | all(.[]; . >= 32 and . != 127)))
@@ -448,8 +442,7 @@ state_validate_schema() {
         and (.congestion_control | IN("cubic", "new_reno", "bbr"))
       elif .protocol == "vless" then
         (.domain | string) and (.server_address | string)
-        and ((.security | IN("tls", "reality")) or (.enabled == false and .migration != null))
-        and (.migration == null or .enabled == false)
+        and (.security | IN("tls", "reality"))
         and (if .security=="none" then true else (.domain|nonempty) end)
         and ((.flow | type) == "string" or (.flow | type) == "null")
         and (if .security=="reality" then (.handshake_server | nonempty) and (.handshake_port | port) else true end)
@@ -685,34 +678,9 @@ singbox_service_reconcile() {
 runtime_services_reconcile() {
   local singbox_changed=${1:-1}
   [[ "$SBM_SKIP_INIT" != 1 ]] || return 0
-  # alpha.72-82 ran VLESS in a managed Xray service. Release its listeners
-  # before sing-box takes the VLESS ports back.
-  legacy_xray_cleanup || return 1
   singbox_service_reconcile "$singbox_changed"
 }
 
-# Remove the Xray runtime left by sb-manager alpha.72-82. The managed unit is
-# recognised by its description; a user-installed Xray is never touched.
-legacy_xray_cleanup() {
-  # Xray-era (alpha.72-82) leftovers that nothing reads any more: the VLESS
-  # profile cache, the Xray config-check log and the per-user usage ledger.
-  [[ ! -d "$SBM_RUN/vless-cache" ]] || rm -rf -- "$SBM_RUN/vless-cache"
-  rm -f -- "$SBM_RUN/xray-config-check.log" "$SBM_VAR/user-usage.json"
-  local unit='' link="$SBM_BIN_DIR/xray"
-  unit=$(service_file_path "$SBM_LEGACY_XRAY_SERVICE" 2>/dev/null || true)
-  if [[ -n "$unit" && -f "$unit" ]] && grep -Eq 'sb-manager .*Xray' "$unit"; then
-    log_info '移除旧版 sb-manager 托管的 Xray 服务，VLESS 改由 sing-box 运行。'
-    service_disable "$SBM_LEGACY_XRAY_SERVICE" || true
-    service_stop "$SBM_LEGACY_XRAY_SERVICE" || return 1
-    if service_active "$SBM_LEGACY_XRAY_SERVICE"; then log_error '旧 Xray 服务未能停止，VLESS 端口仍被占用。'; return 1; fi
-    rm -f "$unit" "$SBM_GENERATED_DIR/xray-config.json"
-    service_reload_manager || true
-  fi
-  # The managed binary is a symlink into the manager's core directory.
-  if [[ -L "$link" && $(readlink -f "$link" 2>/dev/null) == "$SBM_CORE_DIR/xray/"* ]]; then
-    rm -f "$link" && rm -rf -- "$SBM_CORE_DIR/xray" || true
-  fi
-}
 state_secret_path() { printf '%s/nodes/%s.json\n' "$SBM_SECRETS" "$1"; }
 state_get_secret() {
   local id=$1 path

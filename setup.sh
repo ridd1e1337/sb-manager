@@ -38,7 +38,7 @@ setup_rollback_on_error() {
       find "$TARGET_LIB" -mindepth 1 -maxdepth 1 ! -name cores -exec rm -rf {} + || restore_rc=1
       cp -a "$SETUP_ROLLBACK_DIR/program"/. "$TARGET_LIB"/ || restore_rc=1
     fi
-    rm -f "$SETUP_SYSTEMD_DIR/sb-sing-box.service" "$SETUP_SYSTEMD_DIR/sb-xray.service" "$SETUP_SYSTEMD_DIR/sb-openlist.service" "$SETUP_SYSTEMD_DIR/sb-cloudflared.service" "$SETUP_SYSTEMD_DIR/sb-nginx-stream.service" \
+    rm -f "$SETUP_SYSTEMD_DIR/sb-sing-box.service" "$SETUP_SYSTEMD_DIR/sb-openlist.service" "$SETUP_SYSTEMD_DIR/sb-cloudflared.service" "$SETUP_SYSTEMD_DIR/sb-nginx-stream.service" \
       "$SETUP_SYSTEMD_DIR/sb-core-update.service" "$SETUP_SYSTEMD_DIR/sb-core-update.timer" \
       "$SETUP_SYSTEMD_DIR/sb-manager-update.service" "$SETUP_SYSTEMD_DIR/sb-manager-update.timer" \
       "$SETUP_SYSTEMD_DIR/sb-acme-renew.service" "$SETUP_SYSTEMD_DIR/sb-acme-renew.timer" \
@@ -58,7 +58,7 @@ setup_rollback_on_error() {
       command -v systemctl >/dev/null 2>&1 && systemctl disable --now sb-manager-update.timer >/dev/null 2>&1 || true
       rm -f "$SETUP_SYSTEMD_DIR/timers.target.wants/sb-manager-update.timer"
     fi
-    rm -f "$SETUP_OPENRC_DIR/sb-sing-box" "$SETUP_OPENRC_DIR/sb-xray" "$SETUP_OPENRC_DIR/sb-openlist" "$SETUP_OPENRC_DIR/sb-cloudflared" "$SETUP_OPENRC_DIR/sb-nginx-stream" "$SETUP_OPENRC_DIR/sb-subscription" "$SETUP_OPENRC_DIR/sb-traffic"
+    rm -f "$SETUP_OPENRC_DIR/sb-sing-box" "$SETUP_OPENRC_DIR/sb-openlist" "$SETUP_OPENRC_DIR/sb-cloudflared" "$SETUP_OPENRC_DIR/sb-nginx-stream" "$SETUP_OPENRC_DIR/sb-subscription" "$SETUP_OPENRC_DIR/sb-traffic"
     [[ ! -d "$SETUP_ROLLBACK_DIR/openrc" ]] || cp -a "$SETUP_ROLLBACK_DIR/openrc"/. "$SETUP_OPENRC_DIR"/ || restore_rc=1
     rm -f "$SETUP_PERIODIC_DIR/15min/sb-health-check"
     if [[ -f "$SETUP_ROLLBACK_DIR/periodic/sb-health-check" ]]; then
@@ -628,9 +628,6 @@ fi
 
 printf '[6/7] 生成配置与 %s 服务…\n' "$BACKEND"
 if [[ "$NO_START" == 1 ]]; then SBM_SKIP_INIT=1 state_init; else state_init; fi
-while IFS= read -r migrated; do
-  [[ -n "$migrated" ]] && log_warn "VLESS 节点 $migrated 使用 Xray 专属配置，sing-box 无法运行，已停用并保留数据；可在 xray-manager 中重建。"
-done < <(jq -r '.nodes[]? | select(.migration.reason=="xray-only") | .id' "$SBM_STATE" 2>/dev/null)
 render_current_config
 # Stop a stale restart loop before replacing the service definition. The
 # final reconcile below restores the correct state based on enabled nodes.

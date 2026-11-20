@@ -135,7 +135,6 @@ node_show() {
     [[ -z "$route" ]] || printf 'TCP/SNI 复用（%s）：%s\n' "$(mux_backend_label)" "$(jq -c . <<<"$route")"
   fi
   printf '用户：%s 个，启用 %s 个\n' "$(jq '.users|length' <<<"$node")" "$(jq '[.users[]|select(.enabled)]|length' <<<"$node")"
-  if jq -e '.migration!=null' <<<"$node" >/dev/null; then printf '%s迁移说明：%s%s\n' "$C_YELLOW" "$(jq -r '.migration.note' <<<"$node")" "$C_RESET"; fi
 }
 
 node_json_argument() {
@@ -166,8 +165,8 @@ _node_add() {
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
       --security) security=${2:?}; shift 2;;
       --flow) (($# >= 2)) || usage_die '缺少 flow 值；可显式传空字符串。'; flow=$2; shift 2;;
-      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
-        usage_die "$1 是 Xray 专属参数；sb-manager 由 sing-box 运行 VLESS，请用 --sing-box-inbound-json/--sing-box-outbound-json 或改用 xray-manager。";;
+      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol)
+        usage_die "$1 不是 sing-box 节点参数；VLESS 传输与 TLS 细节请用 --sing-box-inbound-json/--sing-box-outbound-json。";;
       --handshake-server) handshake_server=${2:?}; shift 2;; --handshake-port) handshake_port=${2:?}; shift 2;;
       --congestion-control) congestion_control=${2:?}; shift 2;;
       --strict-mode) strict_mode=${2:?}; shift 2;; --wildcard-sni) wildcard_sni=${2:?}; shift 2;; --quic) network=udp; shift;;
@@ -414,9 +413,6 @@ _node_set_enabled() {
     dependency_require_feature probe || die '节点端口探测需要 iproute2/ss；请运行 sb deps install probe。'
   fi
   if [[ "$value" == true ]] && jq -e --arg id "$id" --argjson now "$(date +%s)" '.nodes[]|select(.id==$id)|.expiry.at!=null and .expiry.at<=$now' "$SBM_STATE" >/dev/null; then die '节点已到期，请先续期或清除到期策略。'; fi
-  if [[ "$value" == true ]] && jq -e --arg id "$id" '.nodes[]|select(.id==$id)|.migration!=null' "$SBM_STATE" >/dev/null; then
-    die "节点 $id 的 VLESS 配置需要 Xray（XHTTP、mKCP、VLESS 加密等），sing-box 无法运行；请在 xray-manager 中重建，或删除后新建 TCP + TLS/Reality 节点。"
-  fi
   candidate=$(state_candidate)
   jq --arg id "$id" --argjson value "$value" '(.nodes[] | select(.id==$id)) |= (.enabled=$value | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end)' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "${value}-$(printf '%s' "$id")"; then rm -f "$candidate"; return 1; fi
@@ -432,7 +428,7 @@ _node_batch_set_enabled() {
   count=$(jq --arg tag "$tag" --arg region "$region" '[.nodes[] | select(($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region))] | length' "$SBM_STATE")
   (( count > 0 )) || die '没有匹配的节点。'
   if [[ "$value" == true ]] && jq -e --arg tag "$tag" --arg region "$region" --argjson now "$(date +%s)" 'any(.nodes[]; ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) and .expiry.at!=null and .expiry.at<=$now)' "$SBM_STATE" >/dev/null; then die '匹配节点包含已到期节点，请先续期。'; fi
-  jq --arg tag "$tag" --arg region "$region" --argjson value "$value" '.nodes |= map(if ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) then .enabled=(if $value and .migration!=null then false else $value end) | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end else . end)' "$SBM_STATE" >"$candidate"
+  jq --arg tag "$tag" --arg region "$region" --argjson value "$value" '.nodes |= map(if ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) then .enabled=$value | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end else . end)' "$SBM_STATE" >"$candidate"
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return 0; fi
   if ! apply_candidate_state "$candidate" "node-batch-$action"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
@@ -576,8 +572,8 @@ node_set() {
   if [[ $(jq -r '.protocol // ""' <<<"$node") == vless ]]; then
     local arg
     for arg in "$@"; do
-      case "$arg" in --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
-        usage_die "$arg 是 Xray 专属参数；sb-manager 由 sing-box 运行 VLESS，请用 --sing-box-inbound-json/--sing-box-outbound-json 或改用 xray-manager。";; esac
+      case "$arg" in --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol)
+        usage_die "$arg 不是 sing-box 节点参数；VLESS 传输与 TLS 细节请用 --sing-box-inbound-json/--sing-box-outbound-json。";; esac
     done
   fi
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then with_lock _node_set "$id" "$@"; else with_state_transaction node-edit _node_set "$id" "$@"; fi
@@ -640,7 +636,7 @@ node_user_add() { with_state_transaction user-add _node_user_add "$@"; }
 
 # Batch add (3x-ui "add bulk"): PREFIX-1 … PREFIX-N in one transaction, with
 # an optional expiry for every new user. Per-user quotas and IP limits need
-# Xray's per-user statistics (xray-manager); sing-box offers expiry only.
+# per-user traffic counters, which official sing-box does not provide.
 _node_user_batch_add() {
   local node_id=$1 prefix=$2 count=$3 start=${4:-1} node protocol secret candidate users='[]' i user_id limits='null'
   shift 4
@@ -653,7 +649,7 @@ _node_user_batch_add() {
     case "$1" in
       --days) [[ "${2:?}" =~ ^[1-9][0-9]{0,3}$ ]] || die '天数必须为 1-3650。'
         limits=$(jq -cn --argjson e "$(( $(date +%s) + $2 * 86400 ))" '{expires_at:$e,suspended:null,resume_enabled:false}'); shift 2;;
-      --quota|--ip-limit|--reset-day) die "$1 需要用户级流量统计，sing-box 官方版本不提供；请使用到期时间或 xray-manager。";;
+      --quota|--ip-limit|--reset-day) die "$1 需要用户级流量统计，sing-box 官方版本不提供；请使用到期时间或节点级流量控制（sb traffic set）。";;
       *) die "未知参数：$1";;
     esac
   done

@@ -278,7 +278,7 @@ export_client_config() {
 
 
 # mihomo export for every protocol: convert the effective sing-box client
-# outbound (shared converter with xray-manager).
+# outbound.
 node_mihomo_client_outbound() {
   local id=$1 user_id=${2:-} node outbound result
   node=$(state_get_node "$id") || return 1

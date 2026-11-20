@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.99",
+  "manager_version": "0.1.0-alpha.100",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -94,9 +94,9 @@ Simplified example:
 `users[].limits` is optional and holds a per-user expiry: `expires_at` (epoch
 seconds), `suspended` (`null` or `expired`) and `resume_enabled`. While suspended
 the user has `enabled: false`; renewal restores the stored state. A node whose
-users are all suspended stays enabled but is not rendered. Per-user traffic
-quotas and online-IP limits need Xray statistics and belong to xray-manager;
-migration from alpha.74–82 clears those fields. `notifications.bot` is
+users are all suspended stays enabled but is not rendered. Official sing-box
+has no per-user traffic counters, so quotas and online-IP limits are not part
+of the user schema (node-level quotas live in `traffic`). `notifications.bot` is
 `{enabled, admins:[telegram user ids]}` and requires the Telegram provider.
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
@@ -121,13 +121,10 @@ task and independent update transactions. No Caddy enrollment is implicit.
 `core_update_policy` and `cloudflared_update_policy` remain independent.
 Last-attempt state and logs live under `var/updates/`, not in topology state.
 
-Every node, including VLESS, is rendered by sing-box. Since alpha.83 the
-Xray-era fields `settings.vless_engine`, `settings.xray_update_policy`,
-`settings.xray_api_port` and `xray_routing` are removed during normalization.
-A VLESS node whose `.xray` object only describes RAW + TLS/Reality loses that
-object and keeps running; otherwise it is disabled and gets
-`migration: {reason: "xray-only", at, note}` and cannot be enabled. The state
-schema version remains 2.
+Every node, including VLESS, is rendered by sing-box. VLESS requires
+`security` `tls` or `reality`. Normalization drops fields that belong to other
+cores and removes VLESS nodes without TLS/REALITY (with their credentials),
+since sing-box cannot run them. The state schema version remains 2.
 
 Since alpha.64, optional `caddy_apt: {"enabled": true, "config": "/etc/caddy/Caddyfile"}`
 enrolls a standard official stable APT package in the same updater. It is
@@ -246,9 +243,6 @@ objects, and checked by the installed core. The manager keeps `type`, `tag`,
 addresses, ports, users, and credentials authoritative. Compound protocol
 exports can use an optional `by_tag` object to target a generated member by its
 tag; otherwise an array extension applies to the primary member.
-
-`nodes[].xray` may remain only on migrated, disabled VLESS nodes as preserved
-data for xray-manager; it is never rendered.
 
 Mutations hold the manager lock through candidate validation, rendering,
 installation, and service reconciliation. A failed operation restores the

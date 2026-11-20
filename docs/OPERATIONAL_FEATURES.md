@@ -246,27 +246,13 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 切换程序；版本查询无法判断同一主版本下的插件构建差异。sing-box 和 cloudflared
 的更新策略保持独立。
 
-## VLESS 交回 sing-box（alpha.83）
+## VLESS 由 sing-box 运行
 
-项目拆分为 sb-manager（只用 sing-box）与 xray-manager（只用 Xray）。alpha.72～82
-期间 VLESS 由托管 Xray 运行；alpha.83 起 sb-manager 不再安装或运行 Xray：
-
-- VLESS 由 sing-box 渲染，支持 TCP + TLS/Reality、Vision flow，其他传输通过
-  `--sing-box-inbound-json/--sing-box-outbound-json` 设置；Reality 密钥由
-  `sing-box generate reality-keypair` 生成。`--transport`、`--fallback-dest`、
-  `--vless-encryption`、`--xray-*-json` 等 Xray 专属参数会被拒绝。
-- 状态迁移删除 `settings.vless_engine/xray_update_policy/xray_api_port` 和
-  `xray_routing`。VLESS 节点的 `.xray` 若只描述 RAW + TLS/Reality（无 VLESS 加密、
-  回落、嗅探、sockopt 等），直接删除并由 sing-box 继续运行，UUID、Reality 密钥和
-  分享链接不变；否则节点停用并写入 `migration`（reason `xray-only`），配置与凭据
-  保留，`sb node enable` 会拒绝启用。
-- 用户级流量配额、在线 IP 上限、用户流量统计、Xray 出站/WARP/负载均衡/分流、
-  `sb xray *` 命令与 mihomo/Xray 客户端导出移至 xray-manager。用户到期继续可用；
-  状态迁移清除配额与 IP 字段，并恢复因配额或 IP 暂停的用户。
-- 服务协调先停止并移除旧版托管的 `sb-xray` 服务（以单元描述识别，不触碰用户自装
-  Xray）、生成的 `xray-config.json` 和核心目录中的 Xray 程序，再启动 sing-box。
-- Reality 网站共用 443 改由 sing-box 的 Reality 入站承载，握手目标仍是本机 TLS
-  网站；接入失败时先恢复上一份 sing-box 配置释放 443，再恢复网站监听。
+所有协议（含 VLESS）只由 sing-box 运行。VLESS 支持 TCP + TLS/Reality 与 Vision flow，其他传输通过
+`--sing-box-inbound-json/--sing-box-outbound-json` 设置；Reality 密钥由 `sing-box generate reality-keypair`
+生成。没有 TLS/REALITY 的 VLESS 节点 sing-box 无法安全运行，读取旧状态时会被移除并给出提示。
+Reality 网站共用 443 由 sing-box 的 Reality 入站承载，握手目标是本机 TLS 网站；接入失败时先恢复上一份
+sing-box 配置释放 443，再恢复网站监听。
 
 ## Telegram 命令机器人（alpha.76）
 
