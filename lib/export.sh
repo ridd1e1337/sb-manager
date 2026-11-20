@@ -1,7 +1,37 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
+# State outside the node list that a link may depend on (public entry, tunnel,
+# default addresses). Loops export it once so each link reuses it.
+share_cache_context() {
+  [[ -z "${SBM_SHARE_CONTEXT:-}" ]] || { printf '%s\n' "$SBM_SHARE_CONTEXT"; return 0; }
+  jq -c 'del(.nodes, .created_at, .updated_at, .health, .notifications, .manager_version)' "$SBM_STATE"
+}
+
+# Cached front of _node_share_uri: successful links are stored content-addressed.
 node_share_uri() {
+  local id=$1 user_id=${2:-} cache node context key file uri
+  if [[ -z "$user_id" ]] || ! cache=$(share_cache_dir 2>/dev/null) || [[ ! -r "$SBM_SECRETS/users/$id/$user_id.json" ]]; then
+    _node_share_uri "$@"; return $?
+  fi
+  node=$(state_get_node "$id") && context=$(share_cache_context) || { _node_share_uri "$@"; return $?; }
+  read -r key _ < <({ printf '%s\0' "uri $SBM_VERSION" "$context" "$node" "$user_id"
+    cat "$SBM_SECRETS/users/$id/$user_id.json" "$(state_secret_path "$id")" 2>/dev/null || true; } | sha256sum)
+  file="$cache/$key.link"
+  if [[ -s "$file" ]]; then printf '%s\n' "$(<"$file")"; return 0; fi
+  # A build that printed a warning is never cached, so the warning is shown every time.
+  local err="$cache/.err.$$.$RANDOM" rc=0
+  uri=$(_node_share_uri "$@" 2>"$err") || rc=$?
+  if [[ -s "$err" ]]; then cat "$err" >&2
+  elif (( rc == 0 )) && [[ -n "$uri" ]]; then
+    (umask 077; printf '%s\n' "$uri" >"$file.$$" && mv -f "$file.$$" "$file") 2>/dev/null || true
+  fi
+  rm -f -- "$err"
+  (( rc == 0 )) || return "$rc"
+  printf '%s\n' "$uri"
+}
+
+_node_share_uri() {
   local id=$1 user_id=${2:-} node user secret node_secret='{}' protocol
   node=$(state_get_node "$id"); [[ -n "$node" ]] || die "节点不存在：$id"
   if declare -F nginx_stream_public_node >/dev/null 2>&1; then node=$(nginx_stream_public_node "$node"); fi
@@ -72,17 +102,42 @@ node_substore_line() {
   protocol_snell_surge_share "$node" "$secret" "$node_secret"
 }
 
+# Link cache: a link depends only on the node, its credentials and the public
+# entry settings, so unchanged links cost one hash instead of ~30 jq runs.
+share_cache_dir() {
+  if declare -F render_cache_dir >/dev/null 2>&1; then render_cache_dir
+  elif declare -F vless_cache_dir >/dev/null 2>&1; then vless_cache_dir
+  else return 1; fi
+}
+
 export_substore_links() {
-  local output=${1:-$SBM_EXPORTS/substore.txt} node id user_id line tmp
+  local output=${1:-$SBM_EXPORTS/substore.txt} node id user_id line tmp cache context key file
   mkdir -p "$(dirname "$output")"
   tmp=$(mktemp "$(dirname "$output")/.substore.XXXXXX")
-  while IFS= read -r node; do
-    id=$(jq -r '.id' <<<"$node")
-    while IFS= read -r user_id; do
-      if line=$(node_substore_line "$id" "$user_id") && [[ -n "$line" ]]; then printf '%s\n' "$line" >>"$tmp" || return 1
-      else log_warn "Sub-Store 链接已排除无法用分享链接表达的节点：$id/$user_id；请使用 sing-box 客户端配置。"; fi
-    done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
-  done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")
+  cache=$(share_cache_dir 2>/dev/null) || cache=''
+  context=$(share_cache_context) || { rm -f "$tmp"; return 1; }
+  local -x SBM_SHARE_CONTEXT=$context
+  while IFS=$'\x1f' read -r id user_id node; do
+    [[ -n "$id" ]] || continue
+    file=''
+    if [[ -n "$cache" ]]; then
+      read -r key _ < <({ printf '%s\0' "link2 $SBM_VERSION" "$context" "$node" "$user_id"
+        cat "$SBM_SECRETS/users/$id/$user_id.json" "$(state_secret_path "$id")" 2>/dev/null || true; } | sha256sum)
+      file="$cache/$key.link"
+    fi
+    if [[ -n "$file" && -f "$file" ]]; then line=$(<"$file")
+    else
+      if [[ -z "$file" ]]; then line=$(node_substore_line "$id" "$user_id") || line=''
+      else
+        line=$(node_substore_line "$id" "$user_id" 2>"$file.err") || line=''
+        if [[ -s "$file.err" ]]; then cat "$file.err" >&2
+        else (umask 077; printf '%s\n' "$line" >"$file.$$" && mv -f "$file.$$" "$file") 2>/dev/null || true; fi
+        rm -f -- "$file.err"
+      fi
+    fi
+    if [[ -n "$line" ]]; then printf '%s\n' "$line" >>"$tmp" || return 1
+    else log_warn "Sub-Store 链接已排除无法用分享链接表达的节点：$id/$user_id；请使用 sing-box 客户端配置。"; fi
+  done < <(jq -r '.nodes[]? | select(.enabled==true) | . as $n | .users[] | select(.enabled==true) | [$n.id, .id, ($n|tojson)] | join("\u001f")' "$SBM_STATE")
   chmod 0600 "$tmp"
   mv "$tmp" "$output"
 }
@@ -164,6 +219,7 @@ node_share_all() (
   local surge_file="$SBM_EXPORTS/snell-surge.conf" unsupported=''
   trap 'rm -f -- "$tmp" "$surge_tmp" "$display_tmp"' EXIT
   mkdir -p "$SBM_EXPORTS" || return 1
+  local -x SBM_SHARE_CONTEXT; SBM_SHARE_CONTEXT=$(share_cache_context) || return 1
   tmp=$(mktemp "$SBM_EXPORTS/.links.XXXXXX") || return 1
   surge_tmp=$(mktemp "$SBM_EXPORTS/.snell-surge.XXXXXX") || return 1
   display_tmp=$(mktemp "$SBM_EXPORTS/.share-display.XXXXXX") || return 1
@@ -288,7 +344,7 @@ node_mihomo_client_outbound() {
   outbound=$(node_client_outbound "$id" "$user_id") || return 1
   if [[ $(jq -r 'type' <<<"$outbound") == array ]]; then log_warn "mihomo 导出暂不转换复合协议节点：$id。"; return 1; fi
   if ! result=$(jq -c --arg name "$(jq -r '.name' <<<"$node") [$id/$user_id]" -f "$SBM_LIB/libexec/singbox_to_mihomo.jq" <<<"$outbound" 2>&1); then
-    log_warn "$(sed -n 's/.*"sb_reason":"\([^"]*\)".*/\1/p' <<<"$result" | head -1)"; return 1
+    log_warn "$(sed -n 's/.*"sb_reason":"\([^"]*\)".*/\1/p' <<<"$result" | sed -n 1p)"; return 1
   fi
   printf '%s\n' "$result"
 }

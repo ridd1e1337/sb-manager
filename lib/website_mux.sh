@@ -193,7 +193,7 @@ _website_mux_setup() {
       fi
     fi
   else
-    if "$binary" -V 2>&1 | grep -q -- '--with-stream=dynamic'; then
+    if "$binary" -V 2>&1 | pipe_has -- '--with-stream=dynamic'; then
       if ! module=$(nginx_stream_module_path); then
         case "$(dependency_distro)" in
           debian) dependency_install_packages libnginx-mod-stream || return 1;;

@@ -70,6 +70,6 @@ node_clone() {
   local src=${1:?用法：sb node clone SRC_ID NEW_ID [--port N] [--name NAME] [--domain DOMAIN]} id=${2:?缺少新节点 ID} node port
   shift 2
   node=$(state_get_node "$src"); [[ -n "$node" ]] || die "节点不存在：$src"
-  port=$(node_choose_port "$(node_transport_kinds "$node" | head -1)") || return 1
+  port=$(node_choose_port "$(node_transport_kinds "$node" | sed -n 1p)") || return 1
   node_add_from_defaults "$(node_clone_defaults "$node")" "$id" --port "$port" --name "$(jq -r '.name' <<<"$node") copy" "$@"
 }

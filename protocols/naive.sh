@@ -28,7 +28,7 @@ protocol_naive_share() {
 
 protocol_naive_client_outbound() {
   local node=$1 secret=$2 network quic
-  "$SBM_SING_BOX_BIN" version 2>/dev/null | grep -Eq '(^|[,[:space:]])with_naive_outbound([,[:space:]]|$)' || {
+  "$SBM_SING_BOX_BIN" version 2>/dev/null | pipe_has -E '(^|[,[:space:]])with_naive_outbound([,[:space:]]|$)' || {
     log_error '当前核心缺少 with_naive_outbound，无法导出可验证的 Naive 客户端配置。'; return 1;
   }
   [[ -f "$(dirname "$(readlink -f "$SBM_SING_BOX_BIN")")/libcronet.so" ]] || {

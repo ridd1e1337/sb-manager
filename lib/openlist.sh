@@ -82,7 +82,7 @@ openlist_download_latest() (
   fi
   mkdir -p "$SBM_DOWNLOAD_TMP" || return 1
   core_check_free_space "$SBM_DOWNLOAD_TMP" "$((archive_bytes + 8388608))" || return 1
-  if df -PT "$SBM_DOWNLOAD_TMP" | awk 'NR==2 {print $2}' | grep -qx tmpfs; then
+  if df -PT "$SBM_DOWNLOAD_TMP" | awk 'NR==2 {print $2}' | pipe_has -x tmpfs; then
     available_memory=$(awk '/^MemAvailable:/ {printf "%.0f", $2*1024}' /proc/meminfo)
     [[ "$available_memory" =~ ^[0-9]+$ ]] && (( available_memory > archive_bytes + 67108864 )) || {
       log_error '内存不足以安全暂存 OpenList 官方压缩包；请设置 SBM_DOWNLOAD_TMP 为容量充足的磁盘目录。'; return 1;

@@ -348,7 +348,7 @@ _singbox_probe_config() {
         http_clients:[{tag:"probe-http"}], experimental:{cache_file:{enabled:true,path:$cache}}} else {} end)'
 }
 
-_singbox_wait_port() { local port=$1; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do ss -H -ltn 2>/dev/null | grep -q ":$port " && return 0; sleep 0.2; done; return 1; }
+_singbox_wait_port() { local port=$1; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do ss -H -ltn 2>/dev/null | pipe_has ":$port " && return 0; sleep 0.2; done; return 1; }
 
 # Which exit would the live rules pick for DOMAIN|IP[:PORT]? Every outbound is
 # replaced by a SOCKS stub pointing at a closed loopback port, so nothing
@@ -372,7 +372,7 @@ singbox_route_test() (
   _singbox_wait_port "$lport" || { log_error "测试实例未能启动：$(grep -m1 -iE 'fatal|error' "$dir/log" | sed 's/\x1b\[[0-9;]*m//g' | cut -c1-200)"; return 1; }
   curl -s -o /dev/null --max-time 4 -x "socks5h://127.0.0.1:$lport" "http://$(format_hostport "$host" "$port")/" || true
   sleep 0.3
-  line=$(sed 's/\x1b\[[0-9;]*m//g' "$dir/log" | grep -E 'router: match\[' | grep -v '=> resolve' | head -1 || true)
+  line=$(sed 's/\x1b\[[0-9;]*m//g' "$dir/log" | grep -E 'router: match\[' | grep -v '=> resolve' | sed -n 1p || true)
   if [[ "$line" == *'=> reject'* ]]; then chosen=block
   elif [[ "$line" =~ route\(([^\)]+)\) ]]; then chosen=${BASH_REMATCH[1]}
   else chosen=$(jq -r '.final' <<<"$routing"); line=''; fi

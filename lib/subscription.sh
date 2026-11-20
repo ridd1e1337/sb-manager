@@ -198,7 +198,7 @@ EOF_UNIT
 
 subscription_reconcile() {
   local start=${1:-1} backend
-  if ! find "$SBM_SUBSCRIPTIONS" -maxdepth 1 -type f -name '*.meta.json' -print -quit 2>/dev/null | grep -q .; then
+  if ! find "$SBM_SUBSCRIPTIONS" -maxdepth 1 -type f -name '*.meta.json' -print -quit 2>/dev/null | pipe_has .; then
     if [[ "$SBM_SKIP_INIT" != 1 ]] && service_exists "$SBM_SUBSCRIPTION_SERVICE"; then
       backend=$(effective_init_system)
       service_disable "$SBM_SUBSCRIPTION_SERVICE" || true

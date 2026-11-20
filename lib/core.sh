@@ -171,7 +171,7 @@ artifact_record() {
   manifest="$SBM_VAR/install-manifest.json"
   mkdir -p "$SBM_VAR"
   if [[ -n "$binary" && -x "$binary" ]]; then
-    details=$("$binary" version 2>/dev/null | head -n 20 || true)
+    details=$("$binary" version 2>/dev/null | sed -n 1,20p || true)
     binary_digest="sha256:$(sha256sum "$binary" | awk '{print $1}')"
   fi
   tmp=$(mktemp "$SBM_VAR/.install-manifest.XXXXXX")
@@ -197,7 +197,7 @@ artifact_record() {
 core_check_free_space() {
   local path=${1:-$SBM_CORE_DIR} required=${2:-${SBM_CORE_MIN_FREE_BYTES:-260000000}} available
   [[ "$required" =~ ^[0-9]+$ ]] || required=260000000
-  available=$(df -Pk "$path" 2>/dev/null | awk 'NR==2 {printf "%.0f\n", $4 * 1024; exit}') || return 1
+  available=$(df -Pk "$path" 2>/dev/null | awk 'NR==2 {printf "%.0f\n", $4 * 1024}') || return 1
   [[ "$available" =~ ^[0-9]+$ ]] || { log_error "无法确认磁盘剩余空间：$path"; return 1; }
   if (( available < required )); then
     log_error "磁盘剩余空间不足：$(numfmt --to=iec "$available" 2>/dev/null || printf '%s bytes' "$available")，至少需要约 $(numfmt --to=iec "$required" 2>/dev/null || printf '%s bytes' "$required") 才能安全下载/解压核心。"
@@ -258,7 +258,7 @@ core_download_version() (
   [[ -n "$asset_url" ]] || die "官方 Release 中未找到：$asset_name"
   target="$SBM_CORE_DIR/sing-box/$version/sing-box"
   if [[ -x "$target" ]]; then
-    "$target" version 2>/dev/null | grep -Fq "$version" || die "已缓存的 sing-box $version 无法通过版本校验。"
+    "$target" version 2>/dev/null | pipe_has -F "$version" || die "已缓存的 sing-box $version 无法通过版本校验。"
     ensure_program_permissions
     prepare_singbox_binary_for_backend "$target"
     artifact_record sing-box "$version" "$asset_url" "${digest:-previously-verified}" "$target"
@@ -408,7 +408,7 @@ core_capabilities() {
   [[ -x "$SBM_SING_BOX_BIN" ]] || die "sing-box 核心不存在：$SBM_SING_BOX_BIN"
   output=$("$SBM_SING_BOX_BIN" version 2>/dev/null) || die '无法读取 sing-box 核心版本信息。'
   version=$(extract_semver "$output") || die '无法解析 sing-box 核心版本。'
-  tags=$(sed -n 's/^Tags:[[:space:]]*//p' <<<"$output" | head -n 1)
+  tags=$(sed -n 's/^Tags:[[:space:]]*//p' <<<"$output" | sed -n 1p)
   tag_list=$(tr ',' '\n' <<<"$tags" | sed '/^$/d' | jq -R -s 'split("\n") | map(select(length>0))')
   if [[ "$json" == 1 ]]; then
     jq -n --arg version "$version" --argjson tags "$tag_list" \
@@ -509,7 +509,7 @@ _core_rollback() {
     fi
   fi
   if [[ -z ${candidate:-} ]]; then
-    candidate=$(find "$SBM_CORE_DIR/sing-box" -mindepth 2 -maxdepth 2 -type f -name sing-box -perm -u+x -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk -v cur="$current" '$2!=cur {print $2; exit}')
+    candidate=$(find "$SBM_CORE_DIR/sing-box" -mindepth 2 -maxdepth 2 -type f -name sing-box -perm -u+x -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk -v cur="$current" '$2!=cur && !seen {print $2; seen=1}')
   fi
   [[ -n "$candidate" ]] || { log_error '默认仅保留当前核心；如需旧版，请运行 sb core update VERSION 指定官方版本。'; return 1; }
   version=$(basename "$(dirname "$candidate")")
@@ -548,7 +548,7 @@ cloudflared_download_latest() {
   [[ -n "$url" ]] || die "未找到 cloudflared 资产：$asset_name"
   target="$SBM_CORE_DIR/cloudflared/$version/cloudflared"
   if [[ -x "$target" ]]; then
-    "$target" version 2>/dev/null | grep -Fq "$version" || die "已缓存的 cloudflared $version 无法通过版本校验。"
+    "$target" version 2>/dev/null | pipe_has -F "$version" || die "已缓存的 cloudflared $version 无法通过版本校验。"
     ensure_program_permissions
     artifact_record cloudflared "$version" "$url" "${digest:-previously-verified}" "$target"
     printf '%s\n' "$target"

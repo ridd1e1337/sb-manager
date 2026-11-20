@@ -127,7 +127,7 @@ service_enabled() {
   case "$(init_system)" in
     systemd) systemctl is-enabled --quiet "$unit" 2>/dev/null ;;
     openrc)
-      rc-update show "$SBM_OPENRC_RUNLEVEL" 2>/dev/null | awk '{print $1}' | grep -Fxq "$native"
+      rc-update show "$SBM_OPENRC_RUNLEVEL" 2>/dev/null | awk '{print $1}' | pipe_has -Fx "$native"
       ;;
     *) return 1 ;;
   esac

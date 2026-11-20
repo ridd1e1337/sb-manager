@@ -248,7 +248,7 @@ firewall_setup_ufw() {
     ufw allow "${port}/${kind}" >/dev/null
     count=$((count + 1))
   done <<<"$protocol_ports"
-  if ! ufw status 2>/dev/null | grep -qi '^status: active'; then
+  if ! ufw status 2>/dev/null | pipe_has -i '^status: active'; then
     ufw --force enable >/dev/null
     log_ok 'UFW 已启用。'
   else
@@ -316,7 +316,7 @@ firewall_clear_iptables_input_deny() {
       log_ok "已移除 ${tool} INPUT 全局 ${spec[*]}"
       changed=1
     done
-    policy=$("$tool" -S INPUT 2>/dev/null | awk '$1=="-P" && $2=="INPUT" {print $3; exit}')
+    policy=$("$tool" -S INPUT 2>/dev/null | awk '$1=="-P" && $2=="INPUT" && !seen {print $3; seen=1}')
     if [[ "$policy" == DROP || "$policy" == REJECT ]]; then
       "$tool" -P INPUT ACCEPT
       log_ok "已将 ${tool} INPUT 默认策略改为 ACCEPT（原策略：$policy）"

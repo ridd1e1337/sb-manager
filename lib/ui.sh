@@ -203,7 +203,7 @@ ui_select_interface() {
   local items preferred=${2:-}
   items=$(ui_interfaces_json) || return 1
   if [[ -z "$preferred" ]] && command_exists ip; then
-    preferred=$(ip route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev") {print $(i+1); exit}}') || true
+    preferred=$(ip route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev" && !seen) {print $(i+1); seen=1}}') || true
   fi
   ui_select_json "$1" '出口网卡' "$items" "$preferred"
 }

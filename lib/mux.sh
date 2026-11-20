@@ -52,7 +52,7 @@ mux_frontend_available() {
   fi
   host_port_in_use tcp "$port" || return 0
   if command_exists ss; then
-    owner=$(ss -H -ltnp 2>/dev/null | awk -v p=":$port" '$0 ~ p {print $0; exit}' | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)
+    owner=$(ss -H -ltnp 2>/dev/null | awk -v p=":$port" '$0 ~ p && !seen {print $0; seen=1}' | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)
   fi
   if [[ "$owner" == *sing-box* || "$owner" == *ld-musl* || "$owner" == *ld-linux* ]]; then
     # The candidate transaction will move selected manager nodes behind the

@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.108}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.109}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -100,6 +100,11 @@ usage_die() {
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 require_command() { command_exists "$1" || die "缺少命令：$1"; }
+# grep -q at the end of a pipe stops reading at the first match; a producer
+# that is still writing then dies of SIGPIPE and pipefail turns the match into
+# a failure (or aborts under set -e). This reads the whole input instead.
+pipe_has() { grep "$@" >/dev/null; }
+
 require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || die "此操作需要 root 权限，请使用 sudo。"; }
 ensure_runtime_dirs() {
   mkdir -p "$SBM_RUN" "$SBM_CACHE" "$SBM_BACKUPS" "$SBM_EXPORTS"
@@ -390,7 +395,7 @@ host_probe_init() {
     { fail2ban-client status sshd >"$f2b_file" 2>/dev/null || printf '__inactive__' >"$f2b_file"; } & f2b_pid=$!
   fi
   if command_exists ufw; then
-    if ufw status 2>/dev/null | grep -qi '^status: active'; then SBM_PROBE_UFW=active; else SBM_PROBE_UFW=inactive; fi
+    if ufw status 2>/dev/null | pipe_has -i '^status: active'; then SBM_PROBE_UFW=active; else SBM_PROBE_UFW=inactive; fi
   else SBM_PROBE_UFW=not_installed; fi
   if [[ -n "$f2b_pid" ]]; then wait "$f2b_pid" 2>/dev/null || true; SBM_PROBE_F2B=$(<"$f2b_file"); rm -f -- "$f2b_file"
   elif command_exists fail2ban-client; then SBM_PROBE_F2B=$(fail2ban-client status sshd 2>/dev/null) || SBM_PROBE_F2B=__inactive__

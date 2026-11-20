@@ -21,7 +21,7 @@ singbox_outsub_fetch() (
     --max-filesize 10485760 -A 'sb-manager' "$url" -o "$dir/body" || { log_error '订阅下载失败。'; return 1; }
   body=$(tr -d '\r' <"$dir/body")
   if ! grep -q '://' <<<"$body"; then body=$(tr -d '\n ' <<<"$body" | base64 -d 2>/dev/null | tr -d '\r') || { log_error '订阅内容既不是链接列表也不是 base64。'; return 1; }; fi
-  links=$(grep -E '^[a-z0-9]+://' <<<"$body" | head -n "$SBM_SINGBOX_OUTSUB_MAX")
+  links=$(grep -E '^[a-z0-9]+://' <<<"$body" | sed -n "1,${SBM_SINGBOX_OUTSUB_MAX}p")
   [[ -n "$links" ]] || { log_error '订阅中没有可识别的分享链接。'; return 1; }
   # jq -R runs the converter once per line in a single process; duplicates are dropped.
   printf '%s\n' "$links" | jq -R -c --arg tag x -f "$SBM_LIB/libexec/share_to_singbox.jq" |

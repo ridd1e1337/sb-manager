@@ -55,9 +55,9 @@ host_port_in_use() {
   local kind=$1 port=$2
   command_exists ss || return 1
   if [[ "$kind" == tcp ]]; then
-    ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|\]|:)$port$|:$port$"
+    ss -H -ltn 2>/dev/null | awk '{print $4}' | pipe_has -E "(^|\]|:)$port$|:$port$"
   else
-    ss -H -lun 2>/dev/null | awk '{print $5 " " $4}' | grep -Eq "(^|\]|:)$port$|:$port$"
+    ss -H -lun 2>/dev/null | awk '{print $5 " " $4}' | pipe_has -E "(^|\]|:)$port$|:$port$"
   fi
 }
 

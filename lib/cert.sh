@@ -85,7 +85,7 @@ acme_install() {
   )
   rm -rf "$tmpdir"
   [[ -x "$SBM_ACME_BIN" ]] || die "acme.sh 安装失败。"
-  "$SBM_ACME_BIN" --version 2>&1 | grep -Fq "$SBM_ACME_VERSION" || die "acme.sh 安装版本与固定版本 $SBM_ACME_VERSION 不一致。"
+  "$SBM_ACME_BIN" --version 2>&1 | pipe_has -F "$SBM_ACME_VERSION" || die "acme.sh 安装版本与固定版本 $SBM_ACME_VERSION 不一致。"
   acme_migrate_legacy_home
   artifact_record acme.sh "$SBM_ACME_VERSION" "$url" "sha256:$SBM_ACME_SHA256" "$SBM_ACME_BIN"
   log_ok "acme.sh $SBM_ACME_VERSION 已通过固定摘要安装。"
@@ -159,7 +159,7 @@ cert_hook() {
     log_error "$domain 证书链校验失败。"
     return 1
   }
-  if openssl x509 -help 2>&1 | grep -q -- '-checkhost'; then
+  if openssl x509 -help 2>&1 | pipe_has -- '-checkhost'; then
     openssl x509 -in "$dir/fullchain.pem" -noout -checkhost "$domain" >/dev/null 2>&1 || { log_error "$domain 不在证书 SAN/CN 中。"; return 1; }
   fi
   cert_pub=$(openssl x509 -in "$dir/fullchain.pem" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')
