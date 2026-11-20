@@ -89,7 +89,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not bundle.get("substore"):
                         status = 422
                         content_type = "application/json; charset=utf-8"
-                        data = json.dumps({"error": "No compatible share links; use native Xray JSON.",
+                        data = json.dumps({"error": "No compatible share links for this subscription.",
                                            "compatibility": [item for item in report if item.get("format") == "uri"]}, ensure_ascii=False).encode("utf-8")
                     else:
                         data = bundle["substore"].encode("utf-8")

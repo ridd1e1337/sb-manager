@@ -174,10 +174,6 @@ cert_hook() {
     service_wait_active "$SBM_SERVICE" 20 || return 1
   fi
   if declare -F openlist_cert_reload >/dev/null 2>&1; then openlist_cert_reload "$domain" || return 1; fi
-  if [[ "$SBM_SKIP_INIT" != 1 ]] && service_active "$SBM_XRAY_SERVICE" \
-    && jq -e --arg domain "$domain" '.settings.vless_engine=="xray" and any(.nodes[]?; .enabled and .protocol=="vless" and .security=="tls" and .domain==$domain)' "$SBM_STATE" >/dev/null; then
-    xray_service_reconcile || return 1
-  fi
 }
 
 _cert_record_state() {

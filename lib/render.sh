@@ -6,7 +6,7 @@ node_transport_kinds() {
   protocol=$(jq -r '.protocol' <<<"$node")
   case "$protocol" in
     vmess-ws-cf|anytls|trojan|shadowtls|snell|http|socks|mixed) printf 'tcp\n' ;;
-    vless) vless_node_listener_kinds "$node" ;;
+    vless) printf 'tcp\n' ;;
     hysteria2|tuic) printf 'udp\n' ;;
     naive) jq -r '.network // "tcp"' <<<"$node" ;;
     shadowsocks)
@@ -136,8 +136,7 @@ validate_state_semantics() {
         [[ -z ${occupied[$key]+x} ]] || die "端口冲突：$id 与 ${occupied[$key]} 同时占用 ${port}/${kind^^}。"
         occupied[$key]=$id
       done < <(node_transport_kinds "$node")
-      if [[ "$protocol" == anytls || "$protocol" == hysteria2 || "$protocol" == trojan || "$protocol" == tuic || "$protocol" == naive || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == tls) ]] \
-        && ! { [[ "$protocol" == vless ]] && jq -e '(.xray.inbound.streamSettings.tlsSettings.certificates // [])|length>0' <<<"$node" >/dev/null; }; then
+      if [[ "$protocol" == anytls || "$protocol" == hysteria2 || "$protocol" == trojan || "$protocol" == tuic || "$protocol" == naive || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == tls) ]]; then
         domain=$(jq -r '.domain // ""' <<<"$node")
         validate_domain "$domain" || die "节点 $id 的 TLS 域名无效：$domain"
         cert_dir="$SBM_CERTS/$domain"
@@ -148,11 +147,6 @@ validate_state_semantics() {
       done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
       if [[ "$protocol" == hysteria2 || "$protocol" == snell || "$protocol" == shadowtls || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
         [[ -r "$(state_secret_path "$id")" ]] || die "节点 $id 缺少协议级密钥文件。"
-      fi
-      if [[ "$protocol" == vless ]]; then
-        local vless_secret='{}'
-        [[ ! -r "$(state_secret_path "$id")" ]] || vless_secret=$(state_get_secret "$id") || return 1
-        vless_profile_validate "$node" "$vless_secret" "$state" || return 1
       fi
       if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
         [[ $(jq -r '.credential_revision // 0' <<<"$node") == 1 ]] || die "节点 $id 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"
@@ -186,7 +180,7 @@ render_inbound_for_node() {
     hysteria2) rendered=$(protocol_hy2_render "$node" "$credentials" "$node_secret") ;;
     trojan) rendered=$(protocol_trojan_render "$node" "$credentials") ;;
     tuic) rendered=$(protocol_tuic_render "$node" "$credentials") ;;
-    vless) log_error 'VLESS 只由 Xray 运行，sing-box 不渲染 VLESS 入站。'; return 1 ;;
+    vless) rendered=$(protocol_vless_render "$node" "$credentials" "$node_secret") ;;
     socks|http|mixed) rendered=$(protocol_proxy_render "$node" "$credentials") ;;
     naive) rendered=$(protocol_naive_render "$node" "$credentials") ;;
     shadowtls) rendered=$(protocol_shadowtls_render "$node" "$credentials" "$node_secret") ;;
@@ -288,42 +282,31 @@ core_validate_config_with() {
 core_validate_config() { core_validate_config_with "$SBM_SING_BOX_BIN" "$1"; }
 
 runtime_render_candidates() {
-  local state=$1 singbox_config=$2 xray_config=$3
-  render_config_from_state "$state" "$singbox_config" && core_validate_config "$singbox_config" || return 1
-  if xray_runtime_required "$state" && [[ ! -x "$SBM_XRAY_BIN" ]]; then
-    _xray_install >&2 || return 1
-  fi
-  xray_render_config "$state" "$xray_config" || return 1
-  if xray_runtime_required "$state"; then xray_validate_config "$SBM_XRAY_BIN" "$xray_config" || return 1; fi
+  local state=$1 singbox_config=$2
+  render_config_from_state "$state" "$singbox_config" && core_validate_config "$singbox_config"
 }
 
 apply_candidate_state() (
-  local candidate=$1 reason=${2:-change} tmp_config tmp_xray
+  local candidate=$1 reason=${2:-change} tmp_config
   website_mux_sync_routes "$candidate" || return 1
   tmp_config=$(mktemp "$SBM_RUN/config.candidate.XXXXXX") || return 1
-  tmp_xray=$(mktemp "$SBM_RUN/xray.candidate.XXXXXX") || { rm -f "$tmp_config"; return 1; }
-  trap 'rm -f -- "$tmp_config" "$tmp_xray"' EXIT
-  runtime_render_candidates "$candidate" "$tmp_config" "$tmp_xray" || return 1
-  state_install_candidate "$candidate" "$tmp_config" "$reason" "$tmp_xray" || return 1
+  trap 'rm -f -- "$tmp_config"' EXIT
+  runtime_render_candidates "$candidate" "$tmp_config" || return 1
+  state_install_candidate "$candidate" "$tmp_config" "$reason" || return 1
   log_ok '配置已应用。'
 )
 
 render_current_config() (
-  local tmp tmp_xray backup retain=0 restored=1
+  local tmp backup retain=0 restored=1
   tmp=$(mktemp "$SBM_RUN/config.current.XXXXXX") || return 1
-  tmp_xray=$(mktemp "$SBM_RUN/xray.current.XXXXXX") || { rm -f "$tmp"; return 1; }
-  backup=$(mktemp -d "$SBM_BACKUPS/config-current.XXXXXX") || { rm -f "$tmp" "$tmp_xray"; return 1; }
-  trap 'rm -f -- "$tmp" "$tmp_xray"; (( retain )) || rm -rf -- "$backup"' EXIT
+  backup=$(mktemp -d "$SBM_BACKUPS/config-current.XXXXXX") || { rm -f "$tmp"; return 1; }
+  trap 'rm -f -- "$tmp"; (( retain )) || rm -rf -- "$backup"' EXIT
   printf '%s\n' "$$" >"$backup/.operation-pid" || return 1
-  runtime_render_candidates "$SBM_STATE" "$tmp" "$tmp_xray" || return 1
+  runtime_render_candidates "$SBM_STATE" "$tmp" || return 1
   [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$backup/singbox" || return 1
-  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$backup/xray" || return 1
-  if ! { safe_install_file "$tmp" "$SBM_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_CONFIG" \
-    && safe_install_file "$tmp_xray" "$SBM_XRAY_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_XRAY_CONFIG"; }; then
+  if ! { safe_install_file "$tmp" "$SBM_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_CONFIG"; }; then
     if [[ -f "$backup/singbox" ]]; then cp -a "$backup/singbox" "$SBM_CONFIG" || restored=0
     else rm -f "$SBM_CONFIG" || restored=0; fi
-    if [[ -f "$backup/xray" ]]; then cp -a "$backup/xray" "$SBM_XRAY_CONFIG" || restored=0
-    else rm -f "$SBM_XRAY_CONFIG" || restored=0; fi
     if (( ! restored )); then
       retain=1; touch "$backup/.recovery-pending"
       log_error "配置恢复未完成，临时记录最多保留 23 小时：$backup"

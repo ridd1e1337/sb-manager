@@ -79,11 +79,8 @@ setup_rollback_on_error() {
     fi
     if [[ -f "$SETUP_ROLLBACK_DIR/runtime/state.json" ]]; then
       cp -a "$SETUP_ROLLBACK_DIR/runtime/state.json" "$SBM_STATE" || restore_rc=1
-      for path in config.json xray-config.json; do
-        if [[ "$path" == config.json ]]; then target=$SBM_CONFIG; else target=$SBM_XRAY_CONFIG; fi
-        if [[ -f "$SETUP_ROLLBACK_DIR/runtime/$path" ]]; then cp -a "$SETUP_ROLLBACK_DIR/runtime/$path" "$target" || restore_rc=1
-        else rm -f "$target" || restore_rc=1; fi
-      done
+      if [[ -f "$SETUP_ROLLBACK_DIR/runtime/config.json" ]]; then cp -a "$SETUP_ROLLBACK_DIR/runtime/config.json" "$SBM_CONFIG" || restore_rc=1
+      else rm -f "$SBM_CONFIG" || restore_rc=1; fi
     fi
     if declare -F runtime_services_reconcile >/dev/null 2>&1; then
       service_reload_manager && runtime_services_reconcile || restore_rc=1
@@ -519,16 +516,12 @@ source "$TARGET_LIB/protocols/proxy.sh"
 source "$TARGET_LIB/protocols/shadowtls.sh"
 source "$TARGET_LIB/protocols/snell.sh"
 source "$TARGET_LIB/lib/render.sh"
-source "$TARGET_LIB/lib/xray.sh"
-source "$TARGET_LIB/lib/vless_profile.sh"
-source "$TARGET_LIB/lib/vless_config.sh"
 source "$TARGET_LIB/lib/openlist.sh"
 source "$TARGET_LIB/lib/reality_site.sh"
 source "$TARGET_LIB/lib/export.sh"
 source "$TARGET_LIB/lib/node.sh"
 source "$TARGET_LIB/lib/traffic.sh"
 source "$TARGET_LIB/lib/user_limits.sh"
-source "$TARGET_LIB/lib/xray_routing.sh"
 source "$TARGET_LIB/lib/telegram_bot.sh"
 source "$TARGET_LIB/lib/traffic_groups.sh"
 source "$TARGET_LIB/lib/shaping.sh"
@@ -575,7 +568,6 @@ if [[ -n "$SETUP_ROLLBACK_DIR" ]]; then
   mkdir -p "$SETUP_ROLLBACK_DIR/runtime"
   [[ ! -f "$SBM_STATE" ]] || cp -a "$SBM_STATE" "$SETUP_ROLLBACK_DIR/runtime/state.json"
   [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$SETUP_ROLLBACK_DIR/runtime/config.json"
-  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$SETUP_ROLLBACK_DIR/runtime/xray-config.json"
 fi
 create_service_account
 state_init 0
@@ -633,6 +625,9 @@ fi
 
 printf '[6/7] 生成配置与 %s 服务…\n' "$BACKEND"
 if [[ "$NO_START" == 1 ]]; then SBM_SKIP_INIT=1 state_init; else state_init; fi
+while IFS= read -r migrated; do
+  [[ -n "$migrated" ]] && log_warn "VLESS 节点 $migrated 使用 Xray 专属配置，sing-box 无法运行，已停用并保留数据；可在 xray-manager 中重建。"
+done < <(jq -r '.nodes[]? | select(.migration.reason=="xray-only") | .id' "$SBM_STATE" 2>/dev/null)
 render_current_config
 # Stop a stale restart loop before replacing the service definition. The
 # final reconcile below restores the correct state based on enabled nodes.
@@ -709,7 +704,6 @@ if [[ "$NO_START" == 1 ]]; then maintenance_reconcile 0; else maintenance_reconc
 SETUP_MUTATED=0
 trap - ERR
 core_prune_cached_versions
-xray_prune_versions
 prune_setup_backups
 
 printf '\n安装完成。\n'

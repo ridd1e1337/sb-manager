@@ -35,7 +35,7 @@ EOF_JOURNAL
     chmod 0644 "$temporary" && mv -f "$temporary" "$SBM_JOURNAL_CONFIG" || return 1
     systemctl try-restart systemd-journald@sb-manager.service >/dev/null 2>&1 || true
   else rm -f "$temporary"; fi
-  for unit in "$SBM_SERVICE" "$SBM_XRAY_SERVICE" "$SBM_OPENLIST_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" \
+  for unit in "$SBM_SERVICE" "$SBM_OPENLIST_SERVICE" "$SBM_TUNNEL_SERVICE" "$SBM_NGINX_STREAM_SERVICE" \
     "$SBM_SUBSCRIPTION_SERVICE" "${SBM_SUBSTORE_SERVICE:-sb-substore.service}" "$SBM_TRAFFIC_SERVICE" \
     "$SBM_HEALTH_SERVICE" sb-core-update.service sb-manager-update.service sb-acme-renew.service \
     sb-quick-tunnel-refresh.service sb-traffic-sync.service sb-maintenance.service; do
@@ -177,7 +177,6 @@ _maintenance_run() {
   if declare -F snapshot_prune >/dev/null 2>&1; then snapshot_prune || return 1; fi
   if declare -F core_prune_cached_versions >/dev/null 2>&1; then core_prune_cached_versions || return 1; fi
   if declare -F cloudflared_prune_cached_versions >/dev/null 2>&1; then cloudflared_prune_cached_versions || return 1; fi
-  if declare -F xray_prune_versions >/dev/null 2>&1; then xray_prune_versions || return 1; fi
   now_iso >"$SBM_MAINTENANCE_DIR/last-run"
 }
 

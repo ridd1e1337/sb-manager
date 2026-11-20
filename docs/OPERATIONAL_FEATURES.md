@@ -246,80 +246,42 @@ Caddy，沿用原有 `sb-manager-update.timer` 或 OpenRC periodic 任务、每�
 切换程序；版本查询无法判断同一主版本下的插件构建差异。sing-box 和 cloudflared
 的更新策略保持独立。
 
-## Xray 与 sing-box 分工（alpha.72）
+## VLESS 交回 sing-box（alpha.83）
 
-从 alpha.79 起 `settings.vless_engine` 只能是 `xray` 或 `disabled`：全部 VLESS 由
-Xray 运行，sing-box 不渲染 VLESS 入站，也不生成 Reality 密钥。旧状态中的
-`sing-box` 或缺失值在状态迁移时改为 `xray`，随后的渲染按需安装官方 Xray，
-先重启 sing-box 释放端口再启动 Xray；节点凭据与 Reality 密钥（同为 X25519）
-保持不变。`sb mux` 的 sing-box 后端只做 TCP/SNI 转发，不解析 VLESS。
-`sb xray disable` 将引擎设为
-`disabled` 并暂停 VLESS，其余协议保持工作。共用 443 的 Reality 节点需先解除
-网站入口才能停用，以免网站随代理节点停机。
+项目拆分为 sb-manager（只用 sing-box）与 xray-manager（只用 Xray）。alpha.72～82
+期间 VLESS 由托管 Xray 运行；alpha.83 起 sb-manager 不再安装或运行 Xray：
 
-`sb xray install|update|status|config` 和面板 `8 → 13` 管理官方 Xray。
-支持官方两位年份版本号（如 v26.11.9），核对 Release SHA-256 或官方 .dgst，
-只提取 Xray 程序，不安装此配置用不到的 geoip/geosite 数据库。两份配置分别原生
-校验后才原子安装；按实际配置变化重启对应服务，失败恢复两份配置及服务定义。
-OpenRC 使用低权限服务账号及低端口 capability，systemd 使用 unit capability。
-VLESS TLS 证书续签会同步重新加载对应 Xray 服务。
+- VLESS 由 sing-box 渲染，支持 TCP + TLS/Reality、Vision flow，其他传输通过
+  `--sing-box-inbound-json/--sing-box-outbound-json` 设置；Reality 密钥由
+  `sing-box generate reality-keypair` 生成。`--transport`、`--fallback-dest`、
+  `--vless-encryption`、`--xray-*-json` 等 Xray 专属参数会被拒绝。
+- 状态迁移删除 `settings.vless_engine/xray_update_policy/xray_api_port` 和
+  `xray_routing`。VLESS 节点的 `.xray` 若只描述 RAW + TLS/Reality（无 VLESS 加密、
+  回落、嗅探、sockopt 等），直接删除并由 sing-box 继续运行，UUID、Reality 密钥和
+  分享链接不变；否则节点停用并写入 `migration`（reason `xray-only`），配置与凭据
+  保留，`sb node enable` 会拒绝启用。
+- 用户级流量配额、在线 IP 上限、用户流量统计、Xray 出站/WARP/负载均衡/分流、
+  `sb xray *` 命令与 mihomo/Xray 客户端导出移至 xray-manager。用户到期继续可用；
+  状态迁移清除配额与 IP 字段，并恢复因配额或 IP 暂停的用户。
+- 服务协调先停止并移除旧版托管的 `sb-xray` 服务（以单元描述识别，不触碰用户自装
+  Xray）、生成的 `xray-config.json` 和核心目录中的 Xray 程序，再启动 sing-box。
+- Reality 网站共用 443 改由 sing-box 的 Reality 入站承载，握手目标仍是本机 TLS
+  网站；接入失败时先恢复上一份 sing-box 配置释放 443，再恢复网站监听。
 
-VLESS 向导或 `--xray-inbound-json JSON|@FILE` 可传入原生 streamSettings。
-Vision flow 写入每个 clients 项，Reality 使用最新 target 字段并支持本机目标。
-普通 VLESS 可自定义传输；共享网站的受管 Reality 节点固定为 Vision/Reality/raw，
-不接受会覆盖目标或客户端参数的扩展。已有节点扩展非空时，一键共存明确拒绝。
+## Telegram 命令机器人（alpha.76）
 
-## VLESS 原生 Xray 参数（alpha.73）
-
-VLESS 结构化参数只是原生 Xray 入站/出站对象的视图：`sb node set ID --transport
-raw|ws|grpc|httpupgrade|xhttp|kcp|hysteria --security none|tls|reality` 及
-`--path/--host/--service-name/--xhttp-mode/--tls-server-name/--fingerprint/--alpn/
---flow/--packet-encoding/--vless-encryption/--vless-decryption/--transport-json/
---tls-json` 一次生成候选并整体校验。客户端出站由服务端有效入站推导，Reality
-公钥、SNI、shortId、ALPN、路径与加密配对不一致时拒绝安装。导出到 URI、
-sing-box、mihomo 时，无法完整表达的字段会跳过该节点并提示原因；完整原生配置
-可用 Xray 客户端导出。公网 `security none` 必须启用 VLESS Encryption。
-
-## VLESS 回落、嗅探、证书固定与用户限额（alpha.74）
-
-`--fallback-dest`/`--fallbacks` 写入原生 `settings.fallbacks`，仅允许 RAW + TLS；
-未显式设置 ALPN 时自动使用 `http/1.1`（含 h2 回落时为 `h2,http/1.1`）。
-`--sniffing on|route-only|off`、`--sniff-dest` 写入入站 sniffing；
-`--tcp-fast-open`、`--accept-proxy-protocol`、`--sockopt-json` 写入服务端 sockopt，
-客户端导出不会携带服务端 sockopt。Xray 已移除 allowInsecure，`--allow-insecure true`
-与包含它的客户端 JSON 被拒绝，改用 `--pinned-cert-sha256`（面板输入 auto 读取本机
-证书）和 `--verify-name`；URI 导出为 `pcs`/`vcn`，sing-box 与 mihomo 无等价字段时
-跳过节点。Reality 客户端使用上游当前字段 `password`，旧 `publicKey` 仍可导入。
-
-Xray 配置固定启用仅回环的 Stats API 与 `statsUserUplink/Downlink/Online`。
-流量周期任务读取并清零计数器、累加到用户账本，再按到期、配额、在线 IP 暂停或
-恢复用户；Xray 重启前先收集计数器。暂停与恢复都经过完整候选校验和回滚，启用
-通知时发送事件。手动启用或停用用户会清除自动暂停标记。
-
-## Xray 出站路由、流量与 Telegram 机器人（alpha.76）
-
-Xray 配置固定包含 `direct`（freedom，默认拒绝私有目标）与 `block`（blackhole），
-其后是自定义出站；`via` 渲染为 `streamSettings.sockopt.dialerProxy`。leastPing/
-leastLoad 负载均衡自动生成 `burstObservatory`（generate_204，1 分钟）。默认出口
-渲染为最后一条 `network: tcp,udp` 规则。所有变更经完整 `xray run -test`。
-同一次 Stats API 读取同时记录 `inbound>>>`/`outbound>>>` 计数，`sb xray traffic`
-查看、`reset` 清零。
-
-在线 IP 统计会忽略 127.0.0.1/::1 来源（Xray 上游行为）；节点只监听本机时需要
-PROXY protocol（`--accept-proxy-protocol true`）或 `sockopt.trustedXForwardedFor`
-才能看到真实客户端 IP，设置 IP 上限时会给出提示。
-
-Telegram 机器人作为 root 服务长轮询 getUpdates，令牌经 curl 标准输入配置传递，不进
-命令行参数；只处理配置的 chat 中 `admins` 用户发送的命令，参数正则校验后以数组
-调用 `sb`，输出截断至 3800 字符。切换到其他通知渠道时机器人自动停用。
+机器人作为 root 服务长轮询 getUpdates，令牌经 curl 标准输入配置传递，不进命令行参数；
+只处理配置的 chat 中 `admins` 用户发送的固定命令（`/status /nodes /users /enable
+/disable /renew /sub`），参数正则校验后以数组调用 `sb`，输出截断至 3800 字符。切换到
+其他通知渠道时机器人自动停用。
 
 ## 用户订阅（alpha.75）
 
 `--user NODE_ID:USER_ID` 订阅总是动态的，元数据记录 `node_id`/`user_id`，内容写入
-`<digest>.user.json`，只包含该用户。服务端从中读取 `userinfo` 并返回
-`Subscription-Userinfo: upload=…; download=…; total=…; expire=…`（0 表示不限）。
-用户停用、到期或流量用尽时各格式返回 422 及原因，但仍携带用量头。状态事务和
-用户限额周期任务都会刷新用户订阅。
+`<digest>.user.json`，只包含该用户的 sing-box（mixed/tun）与 Sub-Store 格式。服务端
+从中读取 `userinfo` 并返回 `Subscription-Userinfo`（sb-manager 只提供到期时间，用量为 0）。
+用户停用或到期时各格式返回 422 及原因。包内记录输入指纹，无关的状态变更不会重建；
+状态事务和周期任务都会刷新用户订阅。
 
 ## OpenList 与 Reality 共用 443（alpha.72）
 
@@ -331,7 +293,7 @@ sb reality status
 sb reality detach
 ```
 
-前两条是二选一的新 VPS 初始化入口，会安装网站、OpenList、Xray、UFW 和 Fail2ban。
+前两条是二选一的新 VPS 初始化入口，会安装网站、OpenList、UFW 和 Fail2ban。
 面板入口为 `15 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
 或使用 `sb vps reality` 才显式配置基础防护。新主机只放行 22/TCP、80/TCP、443/TCP、
 443/UDP，同时保留当前 SSH 端口和已有规则，不会清空现有主机规则。
@@ -340,7 +302,7 @@ sb reality detach
 Nginx 使用已有证书，缺少时复用 Cloudflare 凭据准备 DNS 并签发证书。Caddy 使用
 官方标准程序，有 Cloudflare 凭据时先准备 DNS，没有时要求域名已解析；通过 HTTP-01
 和端口 80 申请、续签证书，不依赖被 Reality 接管的 TLS-ALPN。迁移使用候选配置和
-失败恢复：先把网站 TLS 移到随机高位本机端口并确认 TLS 1.3，再由 Xray 接管 TCP/443。
+失败恢复：先把网站 TLS 移到随机高位本机端口并确认 TLS 1.3，再由 sing-box 的 Reality 入站接管 TCP/443。
 认证的 VLESS 请求进入代理；普通 HTTPS 保持端到端 TLS，转给本机 Nginx/Caddy，
 随后反代 `127.0.0.1:5244` 的 OpenList。网站后端端口不需要在 UFW 开放。
 
@@ -356,7 +318,7 @@ OpenList 数据。当前网站恢复所需的少量配置保存在 `/var/lib/sb-
 属于活动入口配置；它在解除入口时删除。日常节点操作不能隐式停掉这个网站入口。
 普通 OpenList 移除和卸载也先处理 Reality 入口。手动备份不能隐式迁移网站端口。
 
-OpenList 官方 v4.2.10 amd64 解压程序约 162.3 MiB，Xray v26.11.9 约 33.8 MiB。
+OpenList 官方 v4.2.10 amd64 解压程序约 162.3 MiB。
 脚本在安装前估算剩余空间，下载后再按实际展开大小留至少 32 MiB 余量；不足即停止。
 程序只保留当前版本，操作中的旧程序用于失败恢复，完成后清理。压缩包优先暂存在
 `/tmp` 并检查 tmpfs 的可用空间/内存。OpenList 默认 Go 内存软目标 128 MiB，可通过
@@ -392,8 +354,7 @@ conf.d 与 Alpine 的 http.d。两种网站程序都先保存配置、校验候�
 中的 OpenList 数据和日志。完整 `sb backup` 仍只备份管理器数据；OpenList 的数据库
 及上传文件需单独备份其数据目录。共享 Reality 入口使用上节的专用命令。
 
-面板 `8 → 13` 也已接入 Xray 管理；VLESS 向导支持输入原生 JSON 或 `@FILE`。
-Xray 配置在候选文件校验成功后原子替换，失败保留现有配置。
+VLESS 向导支持输入 sing-box 扩展 JSON 或 `@FILE`。
 
 ## 缓存与日志的一天保留策略
 

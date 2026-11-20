@@ -32,12 +32,11 @@ subscription_user_bundle_current() {
 # the fingerprint, so refreshes skip rebuilding those subscriptions.
 subscription_user_fingerprint() {
   local node_id=$1 user_id=$2 usage='{}' secrets=''
-  [[ ! -s "${SBM_USER_USAGE:-}" ]] || usage=$(jq -c --arg k "$node_id:$user_id" '.users[$k] // {}' "$SBM_USER_USAGE") || return 1
   [[ ! -r "$(state_user_secret_path "$node_id" "$user_id")" ]] || secrets+=$(cat "$(state_user_secret_path "$node_id" "$user_id")")
   [[ ! -r "$(state_secret_path "$node_id")" ]] || secrets+=$(cat "$(state_secret_path "$node_id")")
   {
     jq -c --arg n "$node_id" '[(.nodes[]?|select(.id==$n)),.settings,.nginx_stream,.reality_site,.openlist]' "$SBM_STATE"
-    printf '%s\0%s\0%s\0%s' "$usage" "$secrets" "$SBM_VERSION" "$(stat -Lc '%s:%Y' "$SBM_XRAY_BIN" 2>/dev/null || true)"
+    printf "%s\0%s\0%s" "$usage" "$secrets" "$SBM_VERSION"
   } | sha256sum | awk '{print $1}'
 }
 
@@ -50,32 +49,25 @@ subscription_build_bundle() (
   trap 'rm -rf -- "$stage"' EXIT
   if [[ -n "$user_id" ]]; then
     active=$(jq -r --arg n "$node_id" --arg u "$user_id" '[.nodes[]?|select(.id==$n and .enabled)|.users[]|select(.id==$u and .enabled)]|length>0' "$SBM_STATE") || return 1
-    [[ ! -s "${SBM_USER_USAGE:-}" ]] || usage=$(jq -c --arg k "$node_id:$user_id" '.users[$k] // {}' "$SBM_USER_USAGE") || return 1
-    userinfo=$(jq -c --arg n "$node_id" --arg u "$user_id" --argjson usage "$usage" '
+      userinfo=$(jq -c --arg n "$node_id" --arg u "$user_id" --argjson usage "$usage" '
       first(.nodes[]?|select(.id==$n)|.users[]|select(.id==$u)) as $user |
       {upload:($usage.upload_bytes // 0),download:($usage.download_bytes // 0),
        total:($user.limits.quota_bytes // 0),expire:($user.limits.expires_at // 0),
        suspended:($user.limits.suspended // null)}' "$SBM_STATE") || return 1
   fi
   if [[ "$active" != true ]]; then
-    : >"$stage/links"; printf '[]\n' >"$stage/compatibility.json"
-    for format in mixed tun xray mihomo; do printf 'null\n' >"$stage/$format.json"; done
+    : >"$stage/links"
+    for format in mixed tun; do printf 'null\n' >"$stage/$format.json"; done
   elif [[ -n "$user_id" ]]; then
-    # The formats are independent read-only exports; build them concurrently
-    # and fail the bundle only if the compatibility report itself fails.
+    # The formats are independent read-only exports; build them concurrently.
     local -a jobs=()
     { node_substore_line "$node_id" "$user_id" >"$stage/links" 2>/dev/null || : >"$stage/links"; } & jobs+=($!)
-    { export_vless_compatibility_json "$node_id" "$user_id" >"$stage/compatibility.json" || rm -f "$stage/compatibility.json"; } & jobs+=($!)
     for format in mixed tun; do
       { export_client_config "$stage/$format.json" "$format" hijack '' "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/$format.json"; } & jobs+=($!)
     done
-    { export_xray_client_config "$stage/xray.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/xray.json"; } & jobs+=($!)
-    { export_mihomo_client_config "$stage/mihomo.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/mihomo.json"; } & jobs+=($!)
     wait "${jobs[@]}" || true
-    [[ -s "$stage/compatibility.json" ]] || return 1
   else
     export_substore_links "$stage/links" || return 1
-    export_vless_compatibility_json >"$stage/compatibility.json" || return 1
     # Each profile has its own compatibility boundary. Failure of one client
     # format must not roll back a valid server node or corrupt other formats.
     for format in mixed tun; do
@@ -83,19 +75,17 @@ subscription_build_bundle() (
         printf 'null\n' >"$stage/$format.json" || return 1
       fi
     done
-    if ! export_xray_client_config "$stage/xray.json" >/dev/null; then printf 'null\n' >"$stage/xray.json" || return 1; fi
-    if ! export_mihomo_client_config "$stage/mihomo.json" >/dev/null; then printf 'null\n' >"$stage/mihomo.json" || return 1; fi
   fi
   local fingerprint=''
   [[ -z "$user_id" ]] || fingerprint=$(subscription_user_fingerprint "$node_id" "$user_id") || return 1
   jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" --argjson userinfo "$userinfo" --argjson active "$active" --arg fingerprint "$fingerprint" \
     --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" \
-    --slurpfile xray "$stage/xray.json" --slurpfile mihomo "$stage/mihomo.json" --slurpfile compatibility "$stage/compatibility.json" '
-      {schema_version:1,updated_at:$updated,substore:$links,compatibility:$compatibility[0],
-       profiles:{mixed:$mixed[0],tun:$tun[0],xray:$xray[0],mihomo:$mihomo[0]}} |
+    '
+      {schema_version:1,updated_at:$updated,substore:$links,compatibility:[],
+       profiles:{mixed:$mixed[0],tun:$tun[0]}} |
       (if $userinfo==null then . else .userinfo=$userinfo end) |
       (if $fingerprint=="" then . else .fingerprint=$fingerprint end) |
-      .errors=(.profiles|to_entries|map(select(.value==null)|{key:.key,value:(if $active then "没有兼容节点，或此格式的客户端配置无法生成；请查看 compatibility。" else "该用户已停用、到期或流量用尽。" end)})|from_entries)
+      .errors=(.profiles|to_entries|map(select(.value==null)|{key:.key,value:(if $active then "没有兼容节点，或此格式的客户端配置无法生成。" else "该用户已停用、到期或流量用尽。" end)})|from_entries)
     ' >"$stage/bundle.json" || return 1
   chmod 0640 "$stage/bundle.json" && set_group_if_exists "$SBM_SERVICE_USER" "$stage/bundle.json" || return 1
   mv -f "$stage/bundle.json" "$output"
@@ -133,10 +123,10 @@ subscription_refresh_live() {
       else rm -f "${meta%.meta.json}.user.json"; fi
       continue
     fi
-    case "$mode" in mixed|tun|xray|mihomo) needed=true;; *) log_error '动态订阅模式无效。'; return 1;; esac
+    case "$mode" in mixed|tun) needed=true;; *) log_error '动态订阅模式无效。'; return 1;; esac
   done
   if [[ -n "$extra_mode" ]]; then
-    case "$extra_mode" in mixed|tun|xray|mihomo) needed=true;; *) return 1;; esac
+    case "$extra_mode" in mixed|tun) needed=true;; *) return 1;; esac
   fi
   [[ "$needed" == true ]] || return 0
   subscription_build_bundle "$SBM_SUBSCRIPTIONS/live.json"
@@ -221,7 +211,7 @@ subscription_reconcile() {
 
 _subscription_create() {
   local duration=${1:-7d} mode=${2:-mixed} live=${3:-false} base=${4:-} node_id=${5:-} user_id=${6:-} seconds now expires token digest profile substore_profile meta bundle
-  [[ "$mode" == mixed || "$mode" == tun || "$mode" == xray || "$mode" == mihomo ]] || usage_die '客户端模式必须是 mixed、tun、xray 或 mihomo。'
+  [[ "$mode" == mixed || "$mode" == tun ]] || usage_die '客户端模式必须是 mixed 或 tun。'
   [[ "$live" == true || "$live" == false ]] || return 1
   now=$(date +%s)
   if [[ "$duration" == never && "$live" == true ]]; then expires=null
@@ -248,7 +238,7 @@ _subscription_create() {
   fi
   printf '订阅 ID：%s\n有效期至 epoch：%s\n本机 URL：http://127.0.0.1:%s/sub/%s\nSub-Store URL：http://127.0.0.1:%s/sub/%s?format=substore\n' \
     "${digest:0:12}" "$expires" "$SBM_SUBSCRIPTION_PORT" "$token" "$SBM_SUBSCRIPTION_PORT" "$token"
-  printf '格式参数：?format=xray / ?format=mihomo / ?format=sing-box / ?format=substore / ?format=compatibility\n'
+  printf '格式参数：?format=sing-box / ?format=substore\n'
   [[ "$live" != true ]] || printf '更新方式：动态（节点变更后自动更新，URL 不变）\n'
   [[ -z "$base" ]] || printf '远程 Sub-Store URL：%s/sub/%s?format=substore\n' "${base%/}" "$token"
   log_warn '订阅令牌只显示一次。不要直接向公网开放该端口；请使用 SSH 转发或受认证的 TLS 代理。'
@@ -267,7 +257,7 @@ subscription_create_cli() {
         [[ $# -ge 2 && "$2" == *:* ]] || usage_die '--user 格式为 NODE_ID:USER_ID'
         node_id=${2%%:*}; user_id=${2#*:}; shift 2;;
       --base-url) [[ $# -ge 2 ]] || usage_die '--base-url 缺少地址'; base=$2; shift 2;;
-      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun|xray|mihomo] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]';;
+      --*) usage_die '用法：sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]';;
       *)
         case "$positional" in 0) duration=$1;; 1) mode=$1;; *) usage_die '订阅参数过多。';; esac
         positional=$((positional+1)); shift;;

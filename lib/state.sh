@@ -26,9 +26,7 @@ state_default_json() {
         core_update_policy: "notify",
         manager_auto_update: true,
         manager_update_minute: $manager_update_minute,
-        cloudflared_update_policy: "notify",
-        xray_update_policy: "notify",
-        vless_engine: "xray"
+        cloudflared_update_policy: "notify"
       },
       tunnel: {
         mode: "none",
@@ -185,9 +183,10 @@ state_migrate() {
 state_normalize_v2_file() {
   local file=$1 tmp
   tmp=$(mktemp "$(dirname "$file")/.state-normalize.XXXXXX")
-  # sing-box never runs VLESS. Legacy "sing-box" or missing engines migrate to
-  # Xray; the next render installs official Xray and keeps node credentials.
-  jq --argjson manager_update_minute "$((RANDOM % 180))" '
+  # sb-manager alpha.72-82 ran VLESS in Xray. sing-box serves VLESS again:
+  # TCP + TLS/Reality profiles migrate unchanged (same UUID and Reality keys);
+  # Xray-only profiles are disabled with their data kept for xray-manager.
+  jq --argjson manager_update_minute "$((RANDOM % 180))" --arg now "$(now_iso)" '
     .settings.default_server_address_source //= (if .settings.default_server_address=="" then "auto" else "manual" end)
     | if .settings.manager_auto_update==null then .settings.manager_auto_update=true else . end
     | .settings.manager_update_minute //= $manager_update_minute
@@ -198,8 +197,8 @@ state_normalize_v2_file() {
     | .settings.dns_optimistic //= false
     | .settings.dns_optimistic_timeout //= "3d"
     | .settings.dns_timeout //= "10s"
-    | .settings.xray_update_policy //= "notify"
-    | .settings.vless_engine=(if .settings.vless_engine=="disabled" then "disabled" else "xray" end)
+    | .settings |= del(.xray_update_policy, .vless_engine, .xray_api_port)
+    | del(.xray_routing)
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
     | .realm //= {enabled:false,listen:"::",port:9443,public_url:"",tls_domain:"",user_name:"default",max_realms:0}
     | .realm.enabled //= false
@@ -239,9 +238,28 @@ state_normalize_v2_file() {
         | .singbox //= {inbound:{},outbound:{}}
         | .singbox.inbound //= {}
         | .singbox.outbound //= {}
-        | .xray //= {inbound:{},outbound:{}}
-        | .xray.inbound //= {}
-        | .xray.outbound //= {}
+        | if .protocol=="vless" and .xray!=null then
+            (.xray.inbound // {}) as $i | (.xray.outbound // {}) as $o |
+            ((.security|IN("tls","reality"))
+             and (($i|del(.streamSettings,.settings)|length)==0)
+             and (($i.settings // {}|del(.decryption)|length)==0) and (($i.settings.decryption // "none")=="none")
+             and (($i.streamSettings // {}|del(.network,.security)|length)==0)
+             and (($i.streamSettings.network // "raw")|IN("raw","tcp"))
+             and (($o|del(.streamSettings,.settings)|length)==0)
+             and (($o.settings.vnext[0].users[0].encryption // "none")=="none")
+             and (($o.streamSettings // {}|del(.network,.security,.tlsSettings,.realitySettings)|length)==0)
+             and (($o.streamSettings.network // "raw")|IN("raw","tcp"))
+             and (($o.streamSettings.tlsSettings // {}|del(.serverName,.fingerprint)|length)==0)
+             and (($o.streamSettings.realitySettings // {}|del(.serverName,.fingerprint)|length)==0)) as $plain |
+            if $plain then del(.xray)
+            else .enabled=false | .migration={reason:"xray-only",at:$now,note:"该 VLESS 配置需要 Xray，已停用；可迁移到 xray-manager。"} end
+          else . end
+        | if .migration==null then del(.migration) else . end
+        | .users |= map(
+            if .limits==null then .
+            else (if (.limits.suspended // null)|IN("quota","ip") then .enabled=(.limits.resume_enabled // true) | .limits.suspended=null | .limits.suspended_until=null | .limits.resume_enabled=false else . end)
+              | .limits.quota_bytes=null | .limits.reset_day=null | .limits.ip_limit=null
+              | if .limits.expires_at==null and .limits.suspended==null then del(.limits) else . end end)
         | .traffic //= {}
         | .traffic.configured //= false
         | .traffic.enabled //= false
@@ -344,7 +362,6 @@ state_validate() {
   if declare -F traffic_groups_validate >/dev/null 2>&1; then traffic_groups_validate "$f" || die '共享配额状态无效。'; fi
   if declare -F node_expiry_validate_state >/dev/null 2>&1; then node_expiry_validate_state "$f" || die '到期策略状态无效。'; fi
   if declare -F user_limits_validate_state >/dev/null 2>&1; then user_limits_validate_state "$f" || die '用户限额状态无效。'; fi
-  if declare -F xray_routing_validate_state >/dev/null 2>&1; then xray_routing_validate_state "$f" || die 'Xray 路由状态无效。'; fi
   if declare -F telegram_bot_validate_state >/dev/null 2>&1; then telegram_bot_validate_state "$f" || die 'Telegram 机器人状态无效。'; fi
   jq -e '
     def string: type == "string";
@@ -380,8 +397,7 @@ state_validate() {
       and ((.singbox // {}) | type == "object")
       and (((.singbox // {}).inbound // {}) | node_extension)
       and (((.singbox // {}).outbound // {}) | node_extension)
-      and (((.xray // {}).inbound // {}) | node_extension)
-      and (((.xray // {}).outbound // {}) | node_extension);
+      and ((.xray // {}) | type == "object");
     def node_metadata:
       type == "object"
       and (.remark | string and length <= 512 and (explode | all(.[]; . >= 32 and . != 127)))
@@ -426,9 +442,9 @@ state_validate() {
         and (.congestion_control | IN("cubic", "new_reno", "bbr"))
       elif .protocol == "vless" then
         (.domain | string) and (.server_address | string)
-        and (.security | IN("none", "tls", "reality"))
+        and ((.security | IN("tls", "reality")) or (.enabled == false and .migration != null))
+        and (.migration == null or .enabled == false)
         and (if .security=="none" then true else (.domain|nonempty) end)
-        and ((.xray.packet_encoding // "xudp") | IN("xudp","packetaddr","none"))
         and ((.flow | type) == "string" or (.flow | type) == "null")
         and (if .security=="reality" then (.handshake_server | nonempty) and (.handshake_port | port) else true end)
       elif .protocol == "naive" then
@@ -474,9 +490,7 @@ state_validate() {
       and (.core_update_policy | IN("manual", "notify", "patch", "stable"))
       and (.manager_auto_update | type == "boolean")
       and (.manager_update_minute | type == "number" and floor==. and .>=0 and .<180)
-      and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable"))
-      and (.xray_update_policy | IN("manual", "notify", "patch", "stable"))
-      and (.vless_engine | IN("xray", "disabled")))
+      and (.cloudflared_update_policy | IN("manual", "notify", "patch", "stable")))
     and (.tunnel | type == "object"
       and (.mode | IN("none", "fixed", "quick", "managed"))
       and ((.node_id | type) == "string" or (.node_id | type) == "null")
@@ -598,28 +612,16 @@ state_enabled_count() {
   jq '[.nodes[]? | select(.enabled==true)] | length' "$state"
 }
 state_singbox_nodes() {
-  jq -c '.nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true) and .protocol!="vless")' "${1:-$SBM_STATE}"
+  jq -c '.nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true))' "${1:-$SBM_STATE}"
 }
 
-state_xray_nodes() {
-  jq -c 'select(.settings.vless_engine=="xray") | .nodes[]? | select(.enabled==true and .protocol=="vless" and any(.users[]?; .enabled==true))' "${1:-$SBM_STATE}"
-}
+# Every node runs in sing-box; kept for status/health/doctor callers.
+state_node_engine() { printf 'sing-box\n'; }
 
-state_node_engine() {
-  local node=$1 state=${2:-$SBM_STATE}
-  if [[ $(jq -r '.protocol' <<<"$node") == vless ]]; then jq -r '.settings.vless_engine // "xray"' "$state"
-  else printf 'sing-box\n'; fi
-}
-
-# This historical helper describes sing-box service demand, not both cores.
 state_runtime_required() {
-  jq -e 'any(.nodes[]?; .enabled==true and .protocol!="vless")
+  jq -e 'any(.nodes[]?; .enabled==true)
       or .api.enabled==true or .realm.enabled==true
       or (.nginx_stream.enabled==true and (.nginx_stream.backend // "sing-box")=="sing-box")' "${1:-$SBM_STATE}" >/dev/null
-}
-
-xray_runtime_required() {
-  jq -e '.settings.vless_engine=="xray" and any(.nodes[]?; .enabled==true and .protocol=="vless")' "${1:-$SBM_STATE}" >/dev/null
 }
 
 singbox_service_reconcile() {
@@ -640,17 +642,30 @@ singbox_service_reconcile() {
 }
 
 runtime_services_reconcile() {
-  local singbox_changed=${1:-1} xray_changed=${2:-1}
+  local singbox_changed=${1:-1}
   [[ "$SBM_SKIP_INIT" != 1 ]] || return 0
-  # Release VLESS listeners in the old engine before starting the new owner.
-  if [[ "$xray_changed" == 1 ]] && service_active "$SBM_XRAY_SERVICE"; then
-    service_stop "$SBM_XRAY_SERVICE" || return 1
-    if service_active "$SBM_XRAY_SERVICE"; then log_error 'Xray 未能停止，保留恢复记录。'; return 1; fi
+  # alpha.72-82 ran VLESS in a managed Xray service. Release its listeners
+  # before sing-box takes the VLESS ports back.
+  legacy_xray_cleanup || return 1
+  singbox_service_reconcile "$singbox_changed"
+}
+
+# Remove the Xray runtime left by sb-manager alpha.72-82. The managed unit is
+# recognised by its description; a user-installed Xray is never touched.
+legacy_xray_cleanup() {
+  local unit='' link="$SBM_BIN_DIR/xray"
+  unit=$(service_file_path "$SBM_LEGACY_XRAY_SERVICE" 2>/dev/null || true)
+  if [[ -n "$unit" && -f "$unit" ]] && grep -Eq 'sb-manager .*Xray' "$unit"; then
+    log_info '移除旧版 sb-manager 托管的 Xray 服务，VLESS 改由 sing-box 运行。'
+    service_disable "$SBM_LEGACY_XRAY_SERVICE" || true
+    service_stop "$SBM_LEGACY_XRAY_SERVICE" || return 1
+    if service_active "$SBM_LEGACY_XRAY_SERVICE"; then log_error '旧 Xray 服务未能停止，VLESS 端口仍被占用。'; return 1; fi
+    rm -f "$unit" "$SBM_GENERATED_DIR/xray-config.json"
+    service_reload_manager || true
   fi
-  if [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") == xray ]]; then
-    singbox_service_reconcile "$singbox_changed" && xray_service_reconcile "$xray_changed"
-  else
-    xray_service_reconcile "$xray_changed" && singbox_service_reconcile "$singbox_changed"
+  # The managed binary is a symlink into the manager's core directory.
+  if [[ -L "$link" && $(readlink -f "$link" 2>/dev/null) == "$SBM_CORE_DIR/xray/"* ]]; then
+    rm -f "$link" && rm -rf -- "$SBM_CORE_DIR/xray" || true
   fi
 }
 state_secret_path() { printf '%s/nodes/%s.json\n' "$SBM_SECRETS" "$1"; }
@@ -708,7 +723,7 @@ state_update_timestamp() {
 }
 
 snapshot_create() (
-  local reason=${1:-manual} stamp dir xray_unit complete=0
+  local reason=${1:-manual} stamp dir complete=0
   stamp=$(now_stamp) || return 1
   mkdir -p "$SBM_BACKUPS/snapshots" || return 1
   dir=$(mktemp -d "$SBM_BACKUPS/snapshots/${stamp}-${reason//[^a-zA-Z0-9._-]/_}.XXXXXX") || return 1
@@ -720,9 +735,6 @@ snapshot_create() (
   fi
   [[ ! -f "$SBM_STATE" ]] || cp -a "$SBM_STATE" "$dir/state.json" || return 1
   [[ ! -f "$SBM_CONFIG" ]] || cp -a "$SBM_CONFIG" "$dir/config.json" || return 1
-  [[ ! -f "$SBM_XRAY_CONFIG" ]] || cp -a "$SBM_XRAY_CONFIG" "$dir/xray-config.json" || return 1
-  xray_unit=$(service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
-  [[ -z "$xray_unit" || ! -f "$xray_unit" ]] || cp -a "$xray_unit" "$dir/xray-service" || return 1
   touch "$dir/dual-core-snapshot" || return 1
   printf '%s\n' "$$" >"$dir/.operation-pid" || return 1
   [[ ! -d "$SBM_SECRETS" ]] || cp -a "$SBM_SECRETS" "$dir/secrets" || return 1
@@ -783,11 +795,9 @@ snapshot_restore_payload() {
 }
 
 snapshot_restore() {
-  local snapshot=$1 singbox_changed=1 xray_changed=1
+  local snapshot=$1 singbox_changed=1
   [[ -d "$snapshot" ]] || return 1
   [[ ! -f "$snapshot/config.json" || ! -f "$SBM_CONFIG" ]] || ! cmp -s "$snapshot/config.json" "$SBM_CONFIG" || singbox_changed=0
-  [[ ! -f "$snapshot/xray-config.json" || ! -f "$SBM_XRAY_CONFIG" ]] || ! cmp -s "$snapshot/xray-config.json" "$SBM_XRAY_CONFIG" || xray_changed=0
-  [[ ! -f "$snapshot/force-xray-restart" ]] || xray_changed=1
   if [[ ! -f "$snapshot/caddy-package/package.json" && -f "$snapshot/state.json" && -f "$SBM_STATE" ]] \
     && [[ $(jq -Sc '.caddy // null' "$snapshot/state.json") != "$(jq -Sc '.caddy // null' "$SBM_STATE")" ]]; then
     log_error '快照对应的 Caddy 程序版本与当前不同，请先使用 sb caddy rollback 对齐版本。'; return 1
@@ -798,20 +808,6 @@ snapshot_restore() {
   [[ ! -f "$snapshot/state.json" ]] || cp -a "$snapshot/state.json" "$SBM_STATE" || return 1
   if [[ -f "$snapshot/config.json" ]]; then cp -a "$snapshot/config.json" "$SBM_CONFIG" || return 1
   elif [[ -f "$snapshot/dual-core-snapshot" ]]; then rm -f "$SBM_CONFIG" || return 1; fi
-  if [[ -f "$snapshot/dual-core-snapshot" ]]; then
-    if [[ -f "$snapshot/xray-config.json" ]]; then
-      safe_install_file "$snapshot/xray-config.json" "$SBM_XRAY_CONFIG" 0640 && set_group_if_exists "$SBM_SERVICE_USER" "$SBM_XRAY_CONFIG" || return 1
-    else rm -f "$SBM_XRAY_CONFIG" || return 1; fi
-    local xray_unit
-    xray_unit=$(service_file_path "$SBM_XRAY_SERVICE" 2>/dev/null || true)
-    if [[ -n "$xray_unit" ]]; then
-      if [[ -f "$snapshot/xray-service" ]]; then cp -a "$snapshot/xray-service" "$xray_unit" || return 1
-      elif service_exists "$SBM_XRAY_SERVICE"; then
-        service_disable "$SBM_XRAY_SERVICE" && service_stop "$SBM_XRAY_SERVICE" && rm -f "$xray_unit" || return 1
-      fi
-    fi
-    service_reload_manager || return 1
-  fi
   snapshot_restore_payload "$snapshot" || return 1
   if declare -F caddy_package_restore >/dev/null 2>&1; then
     caddy_package_restore "$snapshot" || { log_error 'Caddy 包管理恢复未完成，保留快照供恢复。'; return 1; }
@@ -824,7 +820,7 @@ snapshot_restore() {
     state_migrate || return 1
     state_validate "$SBM_STATE"
   fi
-  if [[ "$SBM_SKIP_INIT" != "1" ]]; then runtime_services_reconcile "$singbox_changed" "$xray_changed" || return 1; fi
+  if [[ "$SBM_SKIP_INIT" != "1" ]]; then runtime_services_reconcile "$singbox_changed" || return 1; fi
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then
     traffic_reconcile_unlocked 0 || return 1
   fi
@@ -889,19 +885,19 @@ snapshot_prune() {
 }
 
 state_install_candidate() {
-  local candidate=$1 config=$2 reason=${3:-change} xray_config=${4:-} backup own_snapshot=0 rc=0
+  local candidate=$1 config=$2 reason=${3:-change} backup own_snapshot=0 rc=0
   state_validate "$candidate" && state_update_timestamp "$candidate" || return 1
   backup=${SBM_OPERATION_SNAPSHOT:-}
   if [[ -z "$backup" || ! -d "$backup" ]]; then
     backup=$(snapshot_create "$reason") || return 1
     own_snapshot=1
   fi
-  if _state_install_candidate_files "$candidate" "$config" "$xray_config" "$backup"; then
+  if _state_install_candidate_files "$candidate" "$config" "$backup"; then
     if (( own_snapshot )); then rm -rf -- "$backup" || return 1; fi
     snapshot_prune
     return 0
   else rc=$?; fi
-  log_error '运行时变更未完成，正在恢复本次状态与两个核心配置。'
+  log_error '运行时变更未完成，正在恢复本次状态与核心配置。'
   if snapshot_restore "$backup"; then
     if (( own_snapshot )); then rm -rf -- "$backup"; fi
   else
@@ -912,11 +908,10 @@ state_install_candidate() {
 }
 
 _state_install_candidate_files() {
-  local candidate=$1 config=$2 xray_config=$3 backup=$4
-  local state_tmp config_tmp xray_tmp singbox_changed=1 xray_changed=1
-  state_tmp="${SBM_STATE}.new.$$"; config_tmp="${SBM_CONFIG}.new.$$"; xray_tmp="${SBM_XRAY_CONFIG}.new.$$"
+  local candidate=$1 config=$2 backup=$3
+  local state_tmp config_tmp singbox_changed=1
+  state_tmp="${SBM_STATE}.new.$$"; config_tmp="${SBM_CONFIG}.new.$$"
   [[ ! -f "$SBM_CONFIG" ]] || ! cmp -s "$config" "$SBM_CONFIG" || singbox_changed=0
-  [[ -z "$xray_config" || ! -f "$SBM_XRAY_CONFIG" ]] || ! cmp -s "$xray_config" "$SBM_XRAY_CONFIG" || xray_changed=0
   if declare -F website_mux_prepare >/dev/null 2>&1; then website_mux_prepare "$candidate" "$backup" || return 1; fi
   if declare -F nginx_stream_prepare_transition >/dev/null 2>&1; then nginx_stream_prepare_transition "$candidate" || return 1; fi
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_checkpoint_unlocked >/dev/null 2>&1; then
@@ -924,18 +919,12 @@ _state_install_candidate_files() {
   fi
   if ! { must_install -m 0600 "$candidate" "$state_tmp" && must_install -m 0640 "$config" "$config_tmp" \
     && set_group_if_exists "$SBM_SERVICE_USER" "$config_tmp"; }; then
-    rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
-  fi
-  if [[ -n "$xray_config" ]]; then
-    if ! { must_install -m 0640 "$xray_config" "$xray_tmp" && set_group_if_exists "$SBM_SERVICE_USER" "$xray_tmp"; }; then
-      rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
-    fi
+    rm -f "$state_tmp" "$config_tmp"; return 1
   fi
   if ! { must_mv -f "$state_tmp" "$SBM_STATE" && must_mv -f "$config_tmp" "$SBM_CONFIG"; }; then
-    rm -f "$state_tmp" "$config_tmp" "$xray_tmp"; return 1
+    rm -f "$state_tmp" "$config_tmp"; return 1
   fi
-  if [[ -n "$xray_config" ]]; then must_mv -f "$xray_tmp" "$SBM_XRAY_CONFIG" || { rm -f "$xray_tmp"; return 1; }; fi
-  runtime_services_reconcile "$singbox_changed" "$xray_changed" || return 1
+  runtime_services_reconcile "$singbox_changed" || return 1
   if [[ "$SBM_SKIP_INIT" != "1" ]] && declare -F traffic_reconcile_unlocked >/dev/null 2>&1; then
     traffic_reconcile_unlocked 0 || return 1
   fi

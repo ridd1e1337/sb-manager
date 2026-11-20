@@ -91,9 +91,6 @@ health_collect_json() {
       if state_runtime_required && ! service_active "$SBM_SERVICE"; then
         health_issue error singbox_inactive sing-box '存在启用节点或 API，但 sing-box 服务未运行。'
       fi
-      if xray_runtime_required && ! service_active "$SBM_XRAY_SERVICE"; then
-        health_issue error xray_inactive xray '存在启用的 VLESS 节点，但 Xray 服务未运行。'
-      fi
       while IFS= read -r node; do
         [[ $(state_node_engine "$node") != disabled ]] || continue
         id=$(jq -r '.id' <<<"$node")

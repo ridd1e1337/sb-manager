@@ -32,9 +32,6 @@ source "$SBM_LIB/protocols/proxy.sh"
 source "$SBM_LIB/protocols/shadowtls.sh"
 source "$SBM_LIB/protocols/snell.sh"
 source "$SBM_LIB/lib/render.sh"
-source "$SBM_LIB/lib/xray.sh"
-source "$SBM_LIB/lib/vless_profile.sh"
-source "$SBM_LIB/lib/vless_config.sh"
 source "$SBM_LIB/lib/openlist.sh"
 source "$SBM_LIB/lib/reality_site.sh"
 source "$SBM_LIB/lib/core.sh"
@@ -45,7 +42,6 @@ source "$SBM_LIB/lib/traffic_groups.sh"
 source "$SBM_LIB/lib/shaping.sh"
 source "$SBM_LIB/lib/expiry.sh"
 source "$SBM_LIB/lib/user_limits.sh"
-source "$SBM_LIB/lib/xray_routing.sh"
 source "$SBM_LIB/lib/telegram_bot.sh"
 source "$SBM_LIB/lib/firewall.sh"
 source "$SBM_LIB/lib/vps.sh"
@@ -99,27 +95,17 @@ sb_help_full() {
                  [--congestion-control cubic|new_reno|bbr] [--strict-mode true|false]
                  [--wildcard-sni off|authed|all] [--snell-version 5|6] [--snell-mode MODE]
                  [--sing-box-inbound-json JSON|@FILE] [--sing-box-outbound-json JSON|@FILE]
-                 [--xray-inbound-json JSON|@FILE] [--xray-outbound-json JSON|@FILE]
-                 VLESS: [--transport raw|ws|grpc|httpupgrade|xhttp|kcp|hysteria] [--security none|tls|reality]
-                 [--host H] [--service-name N] [--xhttp-mode MODE] [--tls-server-name SNI] [--fingerprint FP]
-                 [--alpn a,b] [--pinned-cert-sha256 HEX[,HEX]] [--verify-name NAME[,NAME]]
-                 [--vless-encryption E --vless-decryption D] [--packet-encoding xudp|packetaddr|none]
-                 [--fallback-dest PORT|HOST:PORT|none] [--fallbacks JSON|@FILE|none]
-                 [--sniffing on|route-only|off] [--sniff-dest http,tls,quic,fakedns]
-                 [--tcp-fast-open true|false] [--accept-proxy-protocol true|false] [--sockopt-json JSON|@FILE]
-                 [--transport-json JSON|@FILE] [--tls-json JSON|@FILE]
                  [--realm-id ID] [--realm-ip-version 0|4|6] [--realm-port-mapping|--no-realm-port-mapping]
   sb user list <NODE_ID>
   sb user add <NODE_ID> <USER_ID> [NAME]
   sb user enable|disable|delete|rotate <NODE_ID> <USER_ID>
-  sb user limit <NODE_ID> <USER_ID> [--quota SIZE|unlimited] [--reset-day 1-28|none]
-                 [--days N|--expire-at UTC|--no-expiry] [--ip-limit N|unlimited] [--clear]
-  sb user stats [NODE_ID] [--json] | reset-usage <NODE_ID> <USER_ID> | tick
+  sb user limit <NODE_ID> <USER_ID> [--days N|--expire-at UTC|--no-expiry]
+  sb user stats [NODE_ID] [--json] | tick
   sb share <ID> [--user USER_ID] [--qr]
   sb share all
   sb export outbounds
   sb export config [文件] [--mode mixed|tun] [--tun-dns-mode disabled|native|hijack] [--tun-dns-address IP]
-  sb subscription create [7d|never] [mixed|tun|xray|mihomo] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]
+  sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]
   sb subscription list|status|revoke <ID_OR_TOKEN>
   sb api enable [PORT] [--dashboard]|disable|status [--json]|show-token|cli <COMMAND> [ARGS]
   sb realm enable PORT PUBLIC_URL [--listen ADDRESS] [--tls-domain DOMAIN] [--max-realms N]
@@ -175,14 +161,6 @@ sb_help_full() {
   sb probe NODE_ID                探测节点 DNS、监听和 TLS/UDP 可达性
 
   sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
-  sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT
-  sb xray traffic [--json|reset]  Xray 入站/出站累计流量
-  sb xray routing [--json]         查看 Xray 出站、负载均衡与路由
-  sb xray outbound add TAG --json JSON|@FILE [--via TAG] | remove TAG
-  sb xray warp [--tag warp] --register | --private-key KEY --address-v4 IP [--address-v6 IP] [--reserved a,b,c]
-  sb xray balancer set TAG --selectors a,b [--strategy random|roundRobin|leastPing|leastLoad] [--fallback TAG] | remove TAG
-  sb xray route add [--node ID] [--user NODE:USER] [--domain domain:x] [--ip CIDR] [--network tcp|udp] [--port P] --to TAG|balancer:TAG
-  sb xray route remove INDEX | default direct|TAG|balancer:TAG
   sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN
   sb reality status|setup DOMAIN [nginx|caddy] [--node ID] [--init-vps]|detach
   sb vps reality DOMAIN [nginx|caddy] [--node ID]  一键部署 OpenList、Reality 与基础防护
@@ -213,12 +191,13 @@ sb_help_full() {
   SOCKS5/HTTP/mixed: --listen 127.0.0.1|::1|0.0.0.0|::（默认本机，自动生成认证）
   sing-box 扩展：--sing-box-inbound-json JSON|@FILE --sing-box-outbound-json JSON|@FILE
                  可传入当前核心支持的任意扩展字段；type、tag、地址、端口、用户和凭据由管理器保护。
-  Xray VLESS：--xray-inbound-json JSON|@FILE 可自定义 streamSettings、TLS、Reality、WS、gRPC、HTTPUpgrade、XHTTP 等字段。
+  VLESS: --security tls|reality [--flow xtls-rprx-vision|""] [--handshake-server HOST --handshake-port N]
+         传输（WebSocket/gRPC/HTTPUpgrade）等字段用 sing-box 扩展同时设置入站与客户端出站。
   通用:  --disabled --remark TEXT --region REGION --purpose PURPOSE --line LINE --tags a,b
 EOF_HELP
 }
 
-SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core xray openlist reality update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
+SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core openlist reality update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
 
 sb_help_overview() {
   cat <<EOF_OVERVIEW
@@ -241,7 +220,7 @@ sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
 流量与监控：  traffic  notify  health  probe
 网络调优：    tcp  bbr  hy2  network
 服务器与网站：vps  firewall  mux  caddy  openlist  reality  maintenance  settings
-核心与维护：  core  xray  cloudflared  deps  acme  api  realm  config
+核心与维护：  core  cloudflared  deps  acme  api  realm  config
 备份与卸载：  backup  restore  restart  uninstall
 
 通用选项：--json  --yes|-y  --dry-run  --quiet|-q  --no-color  --version
@@ -461,7 +440,6 @@ main() {
           local stats_node='' stats_json=0
           while (($#)); do case "$1" in --json) stats_json=1; shift;; *) [[ -z "$stats_node" ]] || usage_die '用法：sb user stats [NODE_ID] [--json]'; stats_node=$1; shift;; esac; done
           user_stats "$stats_node" "$stats_json" ;;
-        reset-usage) (($# == 2)) || die '用法：sb user reset-usage NODE_ID USER_ID'; user_usage_reset "$1" "$2" ;;
         tick) (($# == 0)) || die '用法：sb user tick'; user_limits_tick ;;
         *) usage_die "未知 user 操作：$action" ;;
       esac
@@ -526,7 +504,7 @@ main() {
         list) subscription_list "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
         status) subscription_status "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
         revoke) [[ $# == 3 ]] || usage_die '用法：sb subscription revoke ID_OR_TOKEN'; subscription_revoke "$3" ;;
-        *) usage_die '用法：sb subscription create [7d|never] [mixed|tun|xray|mihomo] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL] | list | status | revoke ID_OR_TOKEN' ;;
+        *) usage_die '用法：sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL] | list | status | revoke ID_OR_TOKEN' ;;
       esac
       ;;
     api)
@@ -667,35 +645,6 @@ main() {
         channel) core_set_channel "${3:?缺少渠道}" ;;
         auto) core_auto_update ;;
         *) usage_die "未知 core 操作：$action" ;;
-      esac
-      ;;
-    xray)
-      local action=${2:-status}
-      case "$action" in
-        status) (($# <= 3)) || usage_die '用法：sb xray status'; xray_status ;;
-        install) (($# == 2)) || usage_die '用法：sb xray install'; xray_install ;;
-        update) (($# == 2)) || usage_die '用法：sb xray update'; xray_update ;;
-        config)
-          (($# <= 3)) || usage_die '用法：sb xray config [文件]'
-          [[ -x "$SBM_XRAY_BIN" ]] || die 'Xray 尚未安装，请先运行 sb xray install。'
-          local xray_output=${3:-$SBM_XRAY_CONFIG}
-          with_lock xray_render_validate "$xray_output"
-          log_ok "Xray 配置已生成：$xray_output"
-          ;;
-        enable) (($# == 2)) || usage_die '用法：sb xray enable'; xray_enable ;;
-        disable) (($# == 2)) || usage_die '用法：sb xray disable'; xray_disable ;;
-        policy) (($# == 3)) || usage_die '用法：sb xray policy <manual|notify|patch|stable>'; xray_set_policy "$3" ;;
-        api-port) (($# == 3)) || usage_die '用法：sb xray api-port PORT'; xray_set_api_port "$3" ;;
-        routing) xray_routing_cli show "${3:-}" ;;
-        outbound|balancer|route) shift 1; xray_routing_cli "$@" ;;
-        warp) shift 2; xray_warp_cli "$@" ;;
-        traffic)
-          case "${3:-}" in
-            ''|--json) xray_traffic "$([[ ${3:-} == --json ]] && echo 1 || echo 0)" ;;
-            reset) xray_traffic_reset ;;
-            *) usage_die '用法：sb xray traffic [--json|reset]' ;;
-          esac ;;
-        *) usage_die '用法：sb xray status|install|update|config|enable|disable|policy <manual|notify|patch|stable>|api-port PORT|traffic [--json|reset]' ;;
       esac
       ;;
     openlist)

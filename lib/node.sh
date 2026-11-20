@@ -91,16 +91,6 @@ node_runtime_port_in_use() {
   port=$(jq -r '.port' <<<"$node") || return 1
   case "$engine" in
     sing-box) singbox_port_in_use "$kind" "$port" ;;
-    xray)
-      [[ "$kind" == tcp ]] && command_exists ss || return 1
-      ss -H -ltnp 2>/dev/null | awk -v p="$port" '
-        $0 ~ /"xray"/ {
-          address = ($1 == "tcp") ? $5 : $4
-          if (address ~ (":" p "$")) found=1
-        }
-        END {exit !found}
-      ' ;;
-    disabled) return 1 ;;
     *) return 1 ;;
   esac
 }
@@ -150,6 +140,7 @@ node_show() {
     [[ -z "$route" ]] || printf 'TCP/SNI 复用（%s）：%s\n' "$(mux_backend_label)" "$(jq -c . <<<"$route")"
   fi
   printf '用户：%s 个，启用 %s 个\n' "$(jq '.users|length' <<<"$node")" "$(jq '[.users[]|select(.enabled)]|length' <<<"$node")"
+  if jq -e '.migration!=null' <<<"$node" >/dev/null; then printf '%s迁移说明：%s%s\n' "$C_YELLOW" "$(jq -r '.migration.note' <<<"$node")" "$C_RESET"; fi
 }
 
 node_json_argument() {
@@ -169,9 +160,8 @@ node_validate_json_object() {
 
 _node_add() {
   local type=$1; shift
-  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}' xray_inbound_json='{}' xray_outbound_json='{}'
-  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_preview='' vless_network='' vless_listen='::'
-  local -a vless_options=()
+  local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}'
+  local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_listen='::'
   while (($#)); do
     case "$1" in
       --listen) proxy_listen=${2:?}; proxy_listen_supplied=1; shift 2;;
@@ -181,9 +171,8 @@ _node_add() {
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
       --security) security=${2:?}; shift 2;;
       --flow) (($# >= 2)) || usage_die '缺少 flow 值；可显式传空字符串。'; flow=$2; shift 2;;
-      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol)
-        (($# >= 2)) || usage_die "缺少参数值：$1"
-        vless_options+=("$1" "$2"); shift 2;;
+      --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
+        usage_die "$1 是 Xray 专属参数；sb-manager 由 sing-box 运行 VLESS，请用 --sing-box-inbound-json/--sing-box-outbound-json 或改用 xray-manager。";;
       --handshake-server) handshake_server=${2:?}; shift 2;; --handshake-port) handshake_port=${2:?}; shift 2;;
       --congestion-control) congestion_control=${2:?}; shift 2;;
       --strict-mode) strict_mode=${2:?}; shift 2;; --wildcard-sni) wildcard_sni=${2:?}; shift 2;; --quic) network=udp; shift;;
@@ -191,8 +180,6 @@ _node_add() {
       --realm-id) realm_id=${2:?}; shift 2;; --realm-ip-version) realm_ip_version=${2:?}; shift 2;; --realm-port-mapping) realm_port_mapping=true; shift;;
       --sing-box-inbound-json|--inbound-json) inbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$inbound_json"; shift 2;;
       --sing-box-outbound-json|--outbound-json) outbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$outbound_json"; shift 2;;
-      --xray-inbound-json) xray_inbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'Xray inbound JSON' "$xray_inbound_json"; shift 2;;
-      --xray-outbound-json) xray_outbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'Xray outbound JSON' "$xray_outbound_json"; shift 2;;
       --remark) [[ $# -ge 2 ]] || die '缺少备注'; remark=$2; shift 2;; --region) [[ $# -ge 2 ]] || die '缺少地区'; region=$2; shift 2;; --purpose) [[ $# -ge 2 ]] || die '缺少用途'; purpose=$2; shift 2;; --line) [[ $# -ge 2 ]] || die '缺少线路'; line=$2; shift 2;; --tags) [[ $# -ge 2 ]] || die '缺少标签'; tags=$2; shift 2;;
       *) die "未知参数：$1";;
     esac
@@ -205,20 +192,9 @@ _node_add() {
     case "$type" in socks|socks5|http|mixed|vless) ;; *) usage_die '--listen 目前仅用于 VLESS 与 socks/http/mixed 代理入口。';; esac
   fi
   local protocol base transport secret node_secret='' node candidate user_secret_path default_address created_at reality_secret='' snell_obfs_mode snell_obfs_host
-  if [[ "$type" == vless ]]; then
-    [[ "$inbound_json" == '{}' ]] || usage_die 'VLESS 服务端只由 Xray 运行，请改用 --xray-inbound-json；--sing-box-outbound-json 仍可定制 sing-box 客户端导出。'
-    [[ -z "$path" ]] || vless_options+=(--path "$path")
-    [[ "$proxy_listen_supplied" != 1 ]] || vless_options+=(--listen "$proxy_listen")
-    vless_preview=$(jq -n --arg domain "$domain" --arg security "$security" --arg flow "$flow" \
-      --arg hs "$handshake_server" --argjson hp "$handshake_port" --argjson inbound "$xray_inbound_json" --argjson outbound "$xray_outbound_json" \
-      '{protocol:"vless",domain:$domain,security:$security,flow:$flow,handshake_server:$hs,handshake_port:$hp,xray:{inbound:$inbound,outbound:$outbound}}') || return 1
-    vless_preview=$(vless_config_apply "$vless_preview" "${vless_options[@]}") || return 1
-    security=$(jq -r '.security' <<<"$vless_preview"); flow=$(jq -r '.flow // ""' <<<"$vless_preview")
-    vless_network=$(vless_node_network "$vless_preview") || return 1
-    xray_inbound_json=$(jq -c '.xray.inbound // {}' <<<"$vless_preview"); xray_outbound_json=$(jq -c '.xray.outbound // {}' <<<"$vless_preview")
-    vless_listen=$(jq -r '.listen // "::"' <<<"$vless_preview")
-  elif (( ${#vless_options[@]} > 0 )); then
-    usage_die 'VLESS 传输和加密参数不能用于其他协议。'
+  if [[ "$type" == vless && "$proxy_listen_supplied" == 1 ]]; then
+    validate_ipv4 "$proxy_listen" || validate_ipv6 "$proxy_listen" || usage_die 'VLESS 监听地址必须是 IP。'
+    vless_listen=$proxy_listen
   fi
   default_address=$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")
   case "$type" in
@@ -285,23 +261,18 @@ _node_add() {
       protocol=tuic; base=tuic; transport=udp; port=${port:-443}; domain=${domain:?TUIC 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-TUIC}; address=${address:-${default_address:-$domain}}; case "$congestion_control" in cubic|new_reno|bbr) ;; *) die 'TUIC 拥塞控制必须是 cubic、new_reno 或 bbr。';; esac; secret=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}')
       ;;
     vless)
-      protocol=vless; base=vless
-      transport=$(vless_node_listener_kinds "$vless_preview") || return 1
-      port=${port:-443}
-      case "$security" in none|tls|reality) ;; *) die 'VLESS security 必须是 none、tls 或 reality。';; esac
-      if [[ "$security" == reality && -z "$domain" ]]; then
-        domain=$(jq -r '.xray.inbound.streamSettings.realitySettings.serverNames[0] // "www.apple.com"' <<<"$vless_preview")
-      fi
-      [[ "$security" == none ]] || { validate_domain "$domain" || die 'VLESS TLS/Reality 需要有效域名。'; }
+      protocol=vless; base=vless; transport=tcp; port=${port:-443}
+      [[ "$security" == tls || "$security" == reality ]] || die 'VLESS security 必须是 tls 或 reality（sing-box 不运行无加密 VLESS）。'
+      if [[ "$security" == reality && -z "$domain" ]]; then domain=$SBM_RECOMMENDED_REALITY_SNI; fi
+      validate_domain "$domain" || die 'VLESS TLS/Reality 需要有效域名。'
       name=${name:-VLESS}; address=${address:-${default_address:-$domain}}
+      [[ "$flow" != auto ]] || flow=xtls-rprx-vision
       case "$flow" in ''|xtls-rprx-vision) ;; *) die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。';; esac
       if [[ "$security" == reality ]]; then
-        if [[ -z "$handshake_server" ]] && jq -e '.xray.inbound.streamSettings.realitySettings.target // .xray.inbound.streamSettings.realitySettings.dest' <<<"$vless_preview" >/dev/null; then handshake_server=$domain; fi
-        [[ -n "$handshake_server" ]] || die 'Reality 必须指定握手目标或原生 target。'
+        [[ -n "$handshake_server" ]] || die 'Reality 必须指定 --handshake-server。'
         validate_domain "$handshake_server" || validate_ipv4 "$handshake_server" || validate_ipv6 "$handshake_server" || die 'Reality 握手目标必须是域名或 IP。'
         validate_port "$handshake_port" || die '无效 Reality 握手端口。'
       fi
-      if [[ $(jq -r '.settings.vless_engine // "xray"' "$SBM_STATE") == xray && ! -x "$SBM_XRAY_BIN" ]]; then _xray_install >&2 || return 1; fi
       secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') || return 1
       [[ "$security" != reality ]] || reality_secret=$(protocol_vless_generate_reality_secret) || return 1
       ;;
@@ -414,10 +385,6 @@ _node_add() {
     | .metadata={remark:$remark,region:$region,purpose:$purpose,line:$line,tags:($tags | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)}
   ' <<<"$node")
   node=$(jq --argjson inbound "$inbound_json" --argjson outbound "$outbound_json" ".singbox={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
-  node=$(jq --argjson inbound "$xray_inbound_json" --argjson outbound "$xray_outbound_json" ".xray={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
-  if [[ "$protocol" == vless ]]; then
-    node=$(jq --argjson xray "$(jq -c '.xray' <<<"$vless_preview")" '.xray=$xray' <<<"$node") || return 1
-  fi
   if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
     node=$(jq '.credential_revision=1 | if .protocol=="snell" then .credential_mode="single" else . end' <<<"$node")
   fi
@@ -427,7 +394,7 @@ _node_add() {
   if [[ "$enabled" == true ]]; then
     case "$protocol" in
       anytls|hysteria2|trojan|tuic|naive) _cert_prepare_node_domain "$domain" || return 1;;
-      vless) if [[ "$security" == tls ]] && ! jq -e '(.xray.inbound.streamSettings.tlsSettings.certificates // [])|length>0' <<<"$node" >/dev/null; then _cert_prepare_node_domain "$domain" || return 1; fi;;
+      vless) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
     esac
   fi
   user_secret_path=$(state_user_secret_path "$id" default)
@@ -452,6 +419,9 @@ _node_set_enabled() {
     dependency_require_feature probe || die '节点端口探测需要 iproute2/ss；请运行 sb deps install probe。'
   fi
   if [[ "$value" == true ]] && jq -e --arg id "$id" --argjson now "$(date +%s)" '.nodes[]|select(.id==$id)|.expiry.at!=null and .expiry.at<=$now' "$SBM_STATE" >/dev/null; then die '节点已到期，请先续期或清除到期策略。'; fi
+  if [[ "$value" == true ]] && jq -e --arg id "$id" '.nodes[]|select(.id==$id)|.migration!=null' "$SBM_STATE" >/dev/null; then
+    die "节点 $id 的 VLESS 配置需要 Xray（XHTTP、mKCP、VLESS 加密等），sing-box 无法运行；请在 xray-manager 中重建，或删除后新建 TCP + TLS/Reality 节点。"
+  fi
   candidate=$(state_candidate)
   jq --arg id "$id" --argjson value "$value" '(.nodes[] | select(.id==$id)) |= (.enabled=$value | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end)' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "${value}-$(printf '%s' "$id")"; then rm -f "$candidate"; return 1; fi
@@ -467,7 +437,7 @@ _node_batch_set_enabled() {
   count=$(jq --arg tag "$tag" --arg region "$region" '[.nodes[] | select(($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region))] | length' "$SBM_STATE")
   (( count > 0 )) || die '没有匹配的节点。'
   if [[ "$value" == true ]] && jq -e --arg tag "$tag" --arg region "$region" --argjson now "$(date +%s)" 'any(.nodes[]; ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) and .expiry.at!=null and .expiry.at<=$now)' "$SBM_STATE" >/dev/null; then die '匹配节点包含已到期节点，请先续期。'; fi
-  jq --arg tag "$tag" --arg region "$region" --argjson value "$value" '.nodes |= map(if ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) then .enabled=$value | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end else . end)' "$SBM_STATE" >"$candidate"
+  jq --arg tag "$tag" --arg region "$region" --argjson value "$value" '.nodes |= map(if ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) then .enabled=(if $value and .migration!=null then false else $value end) | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end else . end)' "$SBM_STATE" >"$candidate"
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return 0; fi
   if ! apply_candidate_state "$candidate" "node-batch-$action"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
@@ -545,8 +515,6 @@ _node_set() {
       --clear-realm) value=''; shift;;
       --sing-box-inbound-json|--inbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$value"; shift 2;;
       --sing-box-outbound-json|--outbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$value"; shift 2;;
-      --xray-inbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'Xray inbound JSON' "$value"; shift 2;;
-      --xray-outbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'Xray outbound JSON' "$value"; shift 2;;
       *) value=${2-}; shift 2;;
     esac
     case "$key" in
@@ -578,11 +546,8 @@ _node_set() {
       --realm-port-mapping|--no-realm-port-mapping) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.realm_port_mapping)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --clear-realm) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" '(.nodes[]|select(.id==$id)) |= (.realm_enabled=false | .realm_id="")' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --sing-box-inbound-json|--inbound-json)
-        [[ $(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.protocol' "$candidate") != vless ]] || { rm -f "$candidate"; die 'VLESS 服务端只由 Xray 运行，请改用 --xray-inbound-json。'; }
         tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --sing-box-outbound-json|--outbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.outbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
-      --xray-inbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.xray.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
-      --xray-outbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.xray.outbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --remark|--region|--purpose|--line)
         local field=${key#--}
         [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *$'\t'* ]] || die "节点元数据不能包含控制字符。"
@@ -610,8 +575,8 @@ node_set() {
   if [[ $(jq -r '.protocol // ""' <<<"$node") == vless ]]; then
     local arg
     for arg in "$@"; do
-      case "$arg" in --transport|--security|--flow|--path|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
-        node_vless_configure "$id" "$@"; return $?;; esac
+      case "$arg" in --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol|--xray-inbound-json|--xray-outbound-json)
+        usage_die "$arg 是 Xray 专属参数；sb-manager 由 sing-box 运行 VLESS，请用 --sing-box-inbound-json/--sing-box-outbound-json 或改用 xray-manager。";; esac
     done
   fi
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then with_lock _node_set "$id" "$@"; else with_state_transaction node-edit _node_set "$id" "$@"; fi
@@ -695,9 +660,6 @@ _node_user_delete() {
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "user-delete-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate" "$(state_user_secret_path "$node_id" "$user_id")"
-  if [[ -s "$SBM_USER_USAGE" ]] && declare -F user_usage_update_unlocked >/dev/null 2>&1; then
-    user_usage_update_unlocked 'del(.users[$key])' --arg key "$node_id:$user_id" || log_warn '用户流量账本清理失败。'
-  fi
   log_ok "已删除用户：$node_id/$user_id"
 }
 node_user_delete() { with_state_transaction user-delete _node_user_delete "$@"; }

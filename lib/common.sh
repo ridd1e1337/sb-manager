@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.82}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.83}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -29,13 +29,10 @@ SBM_REALM_SECRET="${SBM_REALM_SECRET:-${SBM_SECRETS}/realm.json}"
 SBM_CORE_DIR="${SBM_CORE_DIR:-${SBM_LIB}/cores}"
 SBM_LOCK="${SBM_LOCK:-${SBM_RUN}/manager.lock}"
 SBM_SING_BOX_BIN="${SBM_SING_BOX_BIN:-${SBM_BIN_DIR}/sing-box}"
-SBM_XRAY_BIN="${SBM_XRAY_BIN:-${SBM_BIN_DIR}/xray}"
 SBM_CLOUDFLARED_BIN="${SBM_CLOUDFLARED_BIN:-${SBM_BIN_DIR}/cloudflared}"
 SBM_SERVICE="${SBM_SERVICE:-sb-sing-box.service}"
-SBM_XRAY_SERVICE="${SBM_XRAY_SERVICE:-sb-xray.service}"
-SBM_XRAY_CONFIG="${SBM_XRAY_CONFIG:-${SBM_GENERATED_DIR}/xray-config.json}"
-SBM_XRAY_LOG="${SBM_XRAY_LOG:-$SBM_LOG_DIR/xray.log}"
-SBM_XRAY_ERROR_LOG="${SBM_XRAY_ERROR_LOG:-$SBM_LOG_DIR/xray.err.log}"
+# Xray runtime installed by sb-manager alpha.72-82; only removed on upgrade.
+SBM_LEGACY_XRAY_SERVICE="${SBM_LEGACY_XRAY_SERVICE:-sb-xray.service}"
 SBM_OPENLIST_BIN="${SBM_OPENLIST_BIN:-${SBM_BIN_DIR}/openlist}"
 SBM_OPENLIST_SERVICE="${SBM_OPENLIST_SERVICE:-sb-openlist.service}"
 SBM_OPENLIST_DATA="${SBM_OPENLIST_DATA:-/var/lib/sb-openlist}"
@@ -66,7 +63,6 @@ SBM_NGINX_STREAM_PID="${SBM_NGINX_STREAM_PID:-$SBM_NGINX_STREAM_RUNTIME_DIR/ngin
 SBM_NGINX_STREAM_BIN="${SBM_NGINX_STREAM_BIN:-/usr/sbin/nginx}"
 SBM_NGINX_STREAM_OPENRC_BIN="${SBM_NGINX_STREAM_OPENRC_BIN:-$SBM_VAR/nginx-stream/nginx}"
 SBM_TRAFFIC_USAGE="${SBM_TRAFFIC_USAGE:-$SBM_VAR/traffic-usage.json}"
-SBM_USER_USAGE="${SBM_USER_USAGE:-$SBM_VAR/user-usage.json}"
 # Reality handshake/SNI suggested by wizards; any TLS 1.3 + H2 site works.
 SBM_RECOMMENDED_REALITY_SNI="${SBM_RECOMMENDED_REALITY_SNI:-www.apple.com}"
 SBM_TRAFFIC_TABLE="${SBM_TRAFFIC_TABLE:-sb_manager_traffic}"
@@ -236,7 +232,7 @@ ensure_program_permissions() {
   done
   if [[ -d "$SBM_CORE_DIR" ]]; then
     find "$SBM_CORE_DIR" -type d -exec chmod 0755 {} +
-    find "$SBM_CORE_DIR" -type f \( -name sing-box -o -name xray -o -name cloudflared -o -name libcronet.so \) -exec chmod 0755 {} +
+    find "$SBM_CORE_DIR" -type f \( -name sing-box -o -name cloudflared -o -name libcronet.so \) -exec chmod 0755 {} +
   fi
 }
 validate_runtime_binary_path() {

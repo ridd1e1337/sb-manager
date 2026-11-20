@@ -11,22 +11,20 @@ reality_site_validate_state() {
       ($r.enabled==true and ($r.server|IN("nginx","caddy")) and
        ($r.domain|type=="string" and length>0) and $r.journal==$journal and
        ($r.backend_port|type=="number" and floor==. and .>=1024 and .<=65535) and
-       .settings.vless_engine=="xray" and (.nginx_stream.enabled!=true) and
+       (.nginx_stream.enabled!=true) and
        ([.nodes[] | select(.id==$r.node_id and .enabled==true and .protocol=="vless" and
          .security=="reality" and .flow=="xtls-rprx-vision" and .port==443 and
          .domain==$r.domain and .handshake_server=="127.0.0.1" and .handshake_port==$r.backend_port and
-         ((.xray.inbound // {})|length)==0 and ((.xray.outbound // {})|length)==0 and
          ((.singbox.inbound // {})|length)==0 and ((.singbox.outbound // {})|length)==0)]|length)==1 and
        all(.nodes[]; .port!=$r.backend_port)) end
   ' "$state" >/dev/null || {
-    log_error 'Reality 网站入口必须由启用的 Xray Vision 节点维持；请先 sb reality detach 再停用、删除或修改其入口。'; return 1;
+    log_error 'Reality 网站入口必须由启用的 VLESS Vision Reality 节点维持；请先 sb reality detach 再停用、删除或修改其入口。'; return 1;
   }
 }
 
 reality_site_space() {
   local server=$1 security=$2 required=50331648 available
   [[ -x "$SBM_OPENLIST_BIN" ]] || required=$((required + 188743680))
-  [[ -x "$SBM_XRAY_BIN" ]] || required=$((required + 41943040))
   if ! command_exists "$server"; then
     if [[ "$server" == caddy ]]; then required=$((required + 62914560)); else required=$((required + 10485760)); fi
   fi
@@ -66,7 +64,6 @@ reality_site_port_owner() {
     [[ -n "$row" ]] || continue
     if [[ "$row" == *"\"$server\""* ]]; then continue; fi
     if [[ -n "$node" ]] && jq -e '.enabled and .protocol=="vless" and .port==443' <<<"$node" >/dev/null; then
-      if [[ "$row" == *'"xray"'* ]] && service_active "$SBM_XRAY_SERVICE"; then continue; fi
       if [[ "$row" == *sing-box* || "$row" == *ld-musl* || "$row" == *ld-linux* ]] && service_active "$SBM_SERVICE"; then continue; fi
     fi
     log_error 'TCP/443 已由其他服务或节点使用，未迁移入口。'; return 1
@@ -142,19 +139,19 @@ reality_site_candidate() {
   local id=$1 domain=$2 server=$3 binary=$4 config=$5 backend_port=$6 candidate=$7 node secret existing
   existing=$(state_get_node "$id") || return 1
   if [[ -n "$existing" ]]; then
-    if ! jq -e 'all([.xray.inbound,.xray.outbound,.singbox.inbound,.singbox.outbound][]; (. // {}|length)==0)' <<<"$existing" >/dev/null; then
+    if ! jq -e 'all([.singbox.inbound,.singbox.outbound][]; (. // {}|length)==0) and .migration==null' <<<"$existing" >/dev/null; then
       log_error '所选节点含自定义入站或出站参数，请使用普通 VLESS 节点或新建入口。'; return 1
     fi
     node=$existing
   else
     node=$(jq -n --arg id "$id" --arg name "$domain" --arg at "$(now_iso)" '
       {id:$id,name:$name,protocol:"vless",created_at:$at,users:[{id:"default",name:$name,enabled:true,created_at:$at}],
-       singbox:{inbound:{},outbound:{}},xray:{inbound:{},outbound:{}}}') || return 1
+       singbox:{inbound:{},outbound:{}}}') || return 1
     secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') || return 1
     state_write_user_secret "$id" default "$secret" || return 1
   fi
   if [[ ! -s "$(state_secret_path "$id")" ]] || ! jq -e '.reality_private_key and .reality_public_key and .reality_short_id' "$(state_secret_path "$id")" >/dev/null; then
-    secret=$(protocol_vless_generate_reality_secret xray) || return 1
+    secret=$(protocol_vless_generate_reality_secret) || return 1
     state_write_secret "$id" "$secret" || return 1
   fi
   node=$(jq --arg domain "$domain" --argjson port "$backend_port" '
@@ -164,7 +161,7 @@ reality_site_candidate() {
   ' <<<"$node") || return 1
   jq --argjson node "$node" --arg domain "$domain" --arg server "$server" --arg binary "$binary" --arg config "$config" \
     --argjson port "$backend_port" --argjson openlist_port "$(openlist_port)" --arg journal "$SBM_REALITY_SITE_DIR/current" '
-    .settings.vless_engine="xray" | .settings.log_level="warn" | .nodes=(.nodes|map(select(.id!=$node.id)))+[$node]
+    .settings.log_level="warn" | .nodes=(.nodes|map(select(.id!=$node.id)))+[$node]
     | .reality_site={enabled:true,node_id:$node.id,domain:$domain,server:$server,binary:$binary,config:$config,backend_port:$port,journal:$journal}
     | .openlist.sites=((.openlist.sites // []|map(select(.domain!=$domain)))+[{domain:$domain,server:$server,binary:$binary,config:$config,port:$openlist_port}])
   ' "$SBM_STATE" >"$candidate" || return 1
@@ -195,7 +192,11 @@ _reality_site_setup() (
   # Recovery data exists only for this operation; the active website journal
   # below is needed to reverse the currently installed listener transformation.
   trap 'rc=$?; trap - EXIT; if [[ "$complete" != true ]]; then
-    if [[ "$runtime_changed" == true ]]; then service_stop "$SBM_XRAY_SERVICE"; fi
+    # Free TCP/443 for the website rollback: put back the previous sing-box
+    # config before restoring the original HTTPS listener.
+    if [[ "$runtime_changed" == true && -f "$snapshot/config.json" ]]; then
+      cp -a "$snapshot/config.json" "$SBM_CONFIG" && service_restart "$SBM_SERVICE" || recovered=false
+    fi
     if [[ "$reality_changed" == true && -s "$SBM_REALITY_SITE_DIR/current/files.json" ]]; then python3 "$SBM_LIB/libexec/reality_site.py" rollback "$SBM_REALITY_SITE_DIR/current" || recovered=false; fi
     if [[ "$standard_changed" == true && -s "$work/site/files.json" ]]; then python3 "$SBM_LIB/libexec/openlist_proxy.py" rollback "$work/site" || recovered=false; fi
     if [[ "$web_ready" == true ]]; then openlist_web_reload "$server" || recovered=false; fi
@@ -215,7 +216,6 @@ _reality_site_setup() (
   elif ! host_resolves "$domain"; then
     log_error 'Caddy 需要域名已解析至本机，或先配置 Cloudflare DNS 凭据。'; return 1
   fi
-  [[ -x "$SBM_XRAY_BIN" ]] || _xray_install || return 1
   if [[ ! -x "$SBM_OPENLIST_BIN" ]]; then _openlist_install || return 1
   else
     [[ -L "$SBM_OPENLIST_BIN" && $(readlink -f "$SBM_OPENLIST_BIN") == "$SBM_CORE_DIR/openlist/"* ]] || {
@@ -312,7 +312,7 @@ reality_site_detach() {
 
 reality_site_status() {
   jq -r 'if .reality_site==null then "Reality 网站：未接入" else .reality_site |
-    "网站：https://\(.domain)","节点：\(.node_id) / Xray VLESS Vision Reality", "TCP入口：443 → 网站 127.0.0.1:\(.backend_port)","网站程序：\(.server)" end' "$SBM_STATE"
+    "网站：https://\(.domain)","节点：\(.node_id) / sing-box VLESS Vision Reality", "TCP入口：443 → 网站 127.0.0.1:\(.backend_port)","网站程序：\(.server)" end' "$SBM_STATE"
 }
 
 reality_site_cli() {

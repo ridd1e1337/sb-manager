@@ -44,14 +44,10 @@ telegram_bot_help() {
 sb-manager 机器人命令：
 /status 服务器与服务状态
 /nodes 节点列表
-/users [节点] 用户流量、限额与在线 IP
-/traffic Xray 入站/出站流量
+/users [节点] 用户状态与到期时间
 /enable 节点 用户 · /disable 节点 用户
 /renew 节点 用户 天数
-/quota 节点 用户 100G|unlimited
-/iplimit 节点 用户 N|unlimited
-/resetusage 节点 用户
-/sub 节点 用户 [singbox|xray|mihomo] 生成该用户动态订阅
+/sub 节点 用户 [mixed|tun] 生成该用户动态订阅
 EOF
 }
 
@@ -68,26 +64,16 @@ telegram_bot_argv() {
     /nodes:1) printf '%s\0' node list;;
     /users:1) printf '%s\0' user stats;;
     /users:2) [[ ${w[1]} =~ $id ]] || return 1; printf '%s\0' user stats "${w[1]}";;
-    /traffic:1) printf '%s\0' xray traffic;;
     /enable:3|/disable:3)
       [[ ${w[1]} =~ $id && ${w[2]} =~ $id ]] || return 1
       printf '%s\0' user "${cmd#/}" "${w[1]}" "${w[2]}";;
     /renew:4)
       [[ ${w[1]} =~ $id && ${w[2]} =~ $id && ${w[3]} =~ ^[1-9][0-9]{0,3}$ ]] || return 1
       printf '%s\0' user limit "${w[1]}" "${w[2]}" --days "${w[3]}";;
-    /quota:4)
-      [[ ${w[1]} =~ $id && ${w[2]} =~ $id && ${w[3]} =~ ^([1-9][0-9]{0,15}[A-Za-z]{0,3}|unlimited)$ ]] || return 1
-      printf '%s\0' user limit "${w[1]}" "${w[2]}" --quota "${w[3]}";;
-    /iplimit:4)
-      [[ ${w[1]} =~ $id && ${w[2]} =~ $id && ${w[3]} =~ ^([1-9][0-9]{0,3}|unlimited)$ ]] || return 1
-      printf '%s\0' user limit "${w[1]}" "${w[2]}" --ip-limit "${w[3]}";;
-    /resetusage:3)
-      [[ ${w[1]} =~ $id && ${w[2]} =~ $id ]] || return 1
-      printf '%s\0' user reset-usage "${w[1]}" "${w[2]}";;
     /sub:3|/sub:4)
       [[ ${w[1]} =~ $id && ${w[2]} =~ $id ]] || return 1
-      local mode=${w[3]:-singbox}
-      case "$mode" in singbox) mode=mixed;; xray|mihomo) ;; *) return 1;; esac
+      local mode=${w[3]:-mixed}
+      case "$mode" in mixed|tun) ;; *) return 1;; esac
       printf '%s\0' subscription create never "$mode" --live --user "${w[1]}:${w[2]}";;
     *) return 1;;
   esac

@@ -1,8 +1,8 @@
 # sb-manager
 
-`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。新安装由最新官方 Xray-core 负责 VLESS，其他协议由 sing-box 负责，两核心可以同时运行。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
+`sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。所有协议（含 VLESS）只由 sing-box 运行；需要 Xray-core 专属能力（XHTTP、mKCP、VLESS 加密、用户级流量配额等）时请使用姊妹项目 xray-manager，两者可以装在同一台服务器上。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.82`
+当前版本：`0.1.0-alpha.83`
 
 ## 第一步：安装
 
@@ -77,71 +77,43 @@ sb node add trojan --id edge --domain edge.example.com --address edge.example.co
 
 参数也可以使用 `@/path/to/fields.json`。扩展会同时进入服务端 inbound 和 sing-box 客户端 outbound，实际字段由已安装核心校验；管理器继续接管协议类型、标签、地址、端口、用户和凭据。ShadowTLS 等复合协议可在 JSON 中使用 `by_tag` 按生成的 tag 指定扩展。修改已有节点使用相同参数：`sb node set NODE_ID --sing-box-inbound-json @FILE`。
 
-使用 Xray 时可追加 `--xray-inbound-json JSON|@FILE` 和
-`--xray-outbound-json JSON|@FILE`。VLESS 的 Xray 入站扩展可按 3x-ui 的方式
-自定义 `streamSettings`，包括 TCP、WebSocket、gRPC、HTTPUpgrade、XHTTP、TLS、
-Reality、fingerprint、ALPN、dest、serverNames 和 shortIds；管理器仍保护协议、
-标签、监听端口和凭据。示例：
+VLESS 由 sing-box 运行，支持 TCP + TLS/Reality 与 Vision flow。WebSocket、gRPC、
+HTTPUpgrade 等传输通过 sing-box 扩展同时写入服务端和客户端，分享链接按实际客户端
+配置生成：
 
 ```bash
-sb node add vless --id edge --name 'VLESS WS' --address edge.example.com \
-  --domain edge.example.com --port 443 --security tls \
-  --xray-inbound-json '{"streamSettings":{"network":"ws","wsSettings":{"path":"/xray"}}}'
+sb node add vless --id g1 --address edge.example.com --port 8443 --security reality \
+  --domain www.apple.com --handshake-server www.apple.com --handshake-port 443 --flow '' \
+  --sing-box-inbound-json '{"transport":{"type":"grpc","service_name":"g1"}}' \
+  --sing-box-outbound-json '{"transport":{"type":"grpc","service_name":"g1"}}'
 ```
 
-VLESS 常用参数可直接设置，无需手写 JSON：
+从 alpha.72～82 升级时，原先由 Xray 运行的 VLESS 节点自动交回 sing-box：TCP +
+TLS/Reality 节点的 UUID、Reality 密钥和分享链接不变；使用 XHTTP、mKCP、VLESS 加密、
+回落等 Xray 专属配置的节点会被停用并保留数据（`sb node show` 可见迁移说明），可在
+xray-manager 中重建。旧版托管的 sb-xray 服务会被停止并移除。
 
-```bash
-sb node set edge --transport xhttp --security tls --path /x --xhttp-mode auto
-sb node set edge --transport raw --security tls --fallback-dest 8080 --sniffing route-only
-sb node set edge --pinned-cert-sha256 <证书SHA256>   # 自签证书；Xray 已移除 allowInsecure
-```
-
-回落仅支持 RAW + TLS；Reality 使用目标网站。客户端配置由服务端有效配置推导，
-导出格式无法完整表达的字段会跳过该节点并说明原因。
-
-### 用户流量、到期与在线 IP
+### 用户到期
 
 ```bash
 sb user add edge alice
-sb user limit edge alice --quota 100G --reset-day 1 --days 30 --ip-limit 2
+sb user limit edge alice --days 30        # 或 --expire-at 2027-01-01T00:00:00Z / --no-expiry
 sb user stats [edge] [--json]
-sb user reset-usage edge alice
 ```
 
-到期时间适用于所有多用户协议。流量配额与在线 IP 上限依赖 Xray 仅监听
-`127.0.0.1:10085` 的 Stats API（`sb xray api-port PORT` 可修改），因此仅用于
-VLESS。超限用户被暂停但保留凭据：配额在下个重置日或调高后恢复，到期在续期后
-恢复，在线 IP 超限暂停 10 分钟后重试。检查随流量周期任务运行（systemd 5 分钟、
-OpenRC 15 分钟），也可执行 `sb user tick`。面板 `3 → 节点 → 12` 可管理用户。
+到期时间适用于所有多用户协议：到期后用户被暂停但保留凭据，续期后自动恢复。检查随
+流量周期任务运行（systemd 5 分钟、OpenRC 15 分钟），也可执行 `sb user tick`。面板
+`3 → 节点 → 12` 可管理用户。用户级流量配额与在线 IP 上限需要 Xray 统计，属于
+xray-manager；sb-manager 提供节点级配额与限速（`sb traffic set`）。
 
-`sb subscription create never mihomo --user edge:alice` 生成只含该用户的动态订阅，
-响应带 `Subscription-Userinfo`（上传、下载、配额、到期），用户暂停后订阅不再返回
-节点配置；用量随周期任务刷新。
-
-### Xray 出站、WARP、负载均衡与分流
-
-```bash
-sb xray warp --register                       # 注册 WARP（或 --private-key/--address-v4 导入）
-sb xray outbound add hk --json @hk-socks.json --via warp   # 原生出站，可链式经由其他出站
-sb xray balancer set pool --selectors warp,hk --strategy leastPing --fallback direct
-sb xray route add --user edge:alice --to hk
-sb xray route add --domain domain:openai.com --to balancer:pool
-sb xray route default balancer:pool
-sb xray routing                               # 查看
-sb xray traffic                               # 入站/出站累计流量
-```
-
-出站对象保存在 `secrets/xray-outbounds.json`（0600），状态文件只记录结构。WARP 使用
-Xray 原生 WireGuard 用户态模式（`noKernelTun`），不改动主机网卡和路由。未安装
-geosite/geoip 数据库，域名规则使用 `domain:`/`full:`/`keyword:`/`regexp:`，IP 规则使用 CIDR。
-面板 `8 → 13 → 8` 可管理。
+`sb subscription create never mixed --user edge:alice` 生成只含该用户的动态订阅，
+响应带 `Subscription-Userinfo`（含到期时间），用户暂停后订阅不再返回节点配置。
 
 ### Telegram 命令机器人
 
 先 `sb notify configure telegram ...`，再 `sb notify bot enable --admin 你的TG用户ID`。
-机器人只响应已配置 chat 中白名单用户的固定命令：`/status /nodes /users /traffic
-/enable /disable /renew /quota /iplimit /resetusage /sub`，参数逐项校验后调用 `sb`。
+机器人只响应已配置 chat 中白名单用户的固定命令：`/status /nodes /users
+/enable /disable /renew /sub`，参数逐项校验后调用 `sb`。
 
 ### Web 面板与多服务器
 
@@ -173,16 +145,8 @@ sb update
 sb caddy rollback
 ```
 
-`sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box、Xray 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
+`sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
-Xray-core 从 [XTLS/Xray-core 官方 Release](https://github.com/XTLS/Xray-core/releases) 安装并核对摘要。
-全部 VLESS 节点只由 Xray 运行，sing-box 不承载任何 VLESS 入站；其他协议由 sing-box
-运行。`sb xray disable` 仅暂停 VLESS，`sb xray enable` 恢复。旧版由 sing-box 运行的
-VLESS 节点在升级时自动迁移到 Xray（自动安装官方 Xray），UUID、Reality 密钥和分享链接不变。
-旧版已启用的 Xray 会依据服务状态保留分工。两个核心独立生成和校验配置，
-配置未变化的服务不会因另一核心的节点变化重启。
-
-面板 `8 → 13` 可管理 Xray；添加 VLESS 时可选择输入 Xray JSON 或 `@文件路径`。
 面板 `15 → 9` 提供 OpenList 网站安装、更新和 Caddy/Nginx 配置，也可执行：
 
 ```bash
@@ -201,14 +165,14 @@ Cloudflare 凭据准备 DNS 并申请证书。初始管理员信息保存在
 需要 OpenList 与 VLESS Vision Reality 共用 TCP/443，使用面板 `15 → 10`，或：
 
 ```bash
-# 新 VPS：同时安装网站、OpenList、Xray、UFW 和 Fail2ban
+# 新 VPS：同时安装网站、OpenList、UFW 和 Fail2ban
 sb vps reality files.example.com nginx
 # 使用官方标准 Caddy 时，最后一项换成 caddy
 # 已有基础环境，仅配置网站与节点：
 sb reality setup files.example.com caddy
 ```
 
-Xray 监听公网 TCP/443，普通 HTTPS 访问转给本机 TLS 网站，再由网站反代 OpenList。
+sing-box 的 VLESS Reality 入站监听公网 TCP/443，Reality 握手和普通 HTTPS 访问转给本机 TLS 网站，再由网站反代 OpenList。
 Nginx 和 Caddy 均支持，Caddy 无需 L4 插件和本地编译。Nginx 需要本项目现有证书或
 Cloudflare 凭据；Caddy 可通过 HTTP80 申请证书，有 Cloudflare 凭据时会准备 DNS。
 仅在显式 VPS 初始化入口配置 UFW：新主机放行 22/TCP、80/TCP、443/TCP、443/UDP，

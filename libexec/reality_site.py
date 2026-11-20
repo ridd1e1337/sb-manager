@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Move standard website TLS listeners behind a local Xray REALITY target."""
+"""Move standard website TLS listeners behind a local REALITY handshake target."""
 import glob
 import hashlib
 import json

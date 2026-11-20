@@ -128,9 +128,6 @@ doctor_repair_safe() {
       rc=1
     fi
   fi
-  if xray_runtime_required && ! service_active "$SBM_XRAY_SERVICE"; then
-    xray_service_reconcile || { log_error '恢复 Xray 服务失败。'; rc=1; }
-  fi
   if [[ -f "$SBM_CONFIG" ]]; then chmod 0640 "$SBM_CONFIG" 2>/dev/null || rc=1; fi
   for path in "$SBM_TRAFFIC_USAGE" "$SBM_NOTIFICATION_EVENTS" "$SBM_HEALTH_EVENTS" "$SBM_HEALTH_REPORT"; do
     [[ ! -e "$path" ]] || chmod 0600 "$path" 2>/dev/null || rc=1

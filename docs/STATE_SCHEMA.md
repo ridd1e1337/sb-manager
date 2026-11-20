@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.82",
+  "manager_version": "0.1.0-alpha.83",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -80,8 +80,7 @@ Simplified example:
       },
       "users": [
         {"id": "default", "name": "AnyTLS", "enabled": true,
-         "limits": {"quota_bytes": null, "reset_day": null, "expires_at": 1798761600,
-                    "ip_limit": null, "suspended": null, "suspended_until": null, "resume_enabled": false}}
+         "limits": {"expires_at": 1798761600, "suspended": null, "resume_enabled": false}}
       ],
       "singbox": {
         "inbound": {"tcp_fast_open": true},
@@ -92,20 +91,12 @@ Simplified example:
 }
 ```
 
-`users[].limits` is optional. `expires_at` (epoch seconds) works for every
-protocol; `quota_bytes`, `reset_day` (1-28, null = lifetime) and `ip_limit` are
-accepted only on VLESS nodes because the counters come from the Xray Stats API.
-`suspended` is `null`, `quota`, `expired` or `ip`; while suspended the user has
-`enabled: false` and `resume_enabled` stores the state to restore. A node whose
-users are all suspended stays enabled but is not rendered. Per-user counters live
-in `/var/lib/sb-manager/user-usage.json` (keys `<node-id>:<user-id>`, also used as
-the Xray client `email`). `settings.xray_api_port` (default 10085) is the
-loopback Stats API port and must not equal any node port.
-
-`xray_routing` holds `outbounds[{tag,protocol,via}]`, `balancers[{tag,selectors,
-strategy,fallback}]`, `rules[{node?,user?,domain?,ip?,network?,port?,outbound|balancer}]`
-and `default`. The outbound objects themselves are in `secrets/xray-outbounds.json`.
-Reserved tags: `direct`, `block`, `api`. `notifications.bot` is
+`users[].limits` is optional and holds a per-user expiry: `expires_at` (epoch
+seconds), `suspended` (`null` or `expired`) and `resume_enabled`. While suspended
+the user has `enabled: false`; renewal restores the stored state. A node whose
+users are all suspended stays enabled but is not rendered. Per-user traffic
+quotas and online-IP limits need Xray statistics and belong to xray-manager;
+migration from alpha.74–82 clears those fields. `notifications.bot` is
 `{enabled, admins:[telegram user ids]}` and requires the Telegram provider.
 
 Protocol credentials are excluded from the state file. User credentials live under `secrets/users/<node-id>/<user-id>.json`; protocol-level credentials live under `secrets/nodes/<node-id>.json`.
@@ -130,14 +121,13 @@ task and independent update transactions. No Caddy enrollment is implicit.
 `core_update_policy` and `cloudflared_update_policy` remain independent.
 Last-attempt state and logs live under `var/updates/`, not in topology state.
 
-`settings.xray_update_policy` is `manual`, `notify`, `patch`, or `stable` and
-defaults to `notify`. Xray-core is an optional service provider managed by
-`sb xray`; downloaded binaries and generated configuration remain outside
-topology state. `settings.vless_engine` is `xray` or `disabled`. Legacy `sing-box` or missing
-values normalize to `xray`; sing-box never renders VLESS. Xray renders only
-VLESS; sing-box renders the other enabled nodes. `disabled` pauses VLESS without
-moving it into another engine. Both candidate configs validate before installation,
-and unchanged services keep running. The state schema version remains 2.
+Every node, including VLESS, is rendered by sing-box. Since alpha.83 the
+Xray-era fields `settings.vless_engine`, `settings.xray_update_policy`,
+`settings.xray_api_port` and `xray_routing` are removed during normalization.
+A VLESS node whose `.xray` object only describes RAW + TLS/Reality loses that
+object and keeps running; otherwise it is disabled and gets
+`migration: {reason: "xray-only", at, note}` and cannot be enabled. The state
+schema version remains 2.
 
 Since alpha.64, optional `caddy_apt: {"enabled": true, "config": "/etc/caddy/Caddyfile"}`
 enrolls a standard official stable APT package in the same updater. It is
@@ -257,15 +247,8 @@ addresses, ports, users, and credentials authoritative. Compound protocol
 exports can use an optional `by_tag` object to target a generated member by its
 tag; otherwise an array extension applies to the primary member.
 
-`nodes[].xray.inbound` and `nodes[].xray.outbound` use the same protected JSON
-extension model for Xray-core. They are accepted with `--xray-inbound-json`
-and `--xray-outbound-json` (or `@FILE`). The Xray inbound extension is merged
-after the generated protocol object while keeping protocol, tag, listen port
-and credentials under manager control. This allows VLESS settings used by
-3x-ui, including custom `streamSettings` for TCP, WebSocket, gRPC,
-HTTPUpgrade or XHTTP, plus TLS/Reality fields, fingerprints, ALPN, destinations,
-server names and short IDs. Xray checks the resulting configuration before its
-optional service is started.
+`nodes[].xray` may remain only on migrated, disabled VLESS nodes as preserved
+data for xray-manager; it is never rendered.
 
 Mutations hold the manager lock through candidate validation, rendering,
 installation, and service reconciliation. A failed operation restores the
@@ -332,7 +315,7 @@ the manager's full backup. Initial admin output is stored as a protected secret.
 
 Optional `reality_site` contains `enabled:true`, `node_id`, `domain`, `server`,
 `binary`, `config`, `backend_port` and `journal`. The selected node must remain an
-enabled Xray VLESS/Reality/raw listener on TCP443 with Vision flow and a
+enabled VLESS/Reality TCP listener on TCP443 with Vision flow and a
 `127.0.0.1:backend_port` target. Inbound/outbound overrides are refused for this
 managed entry. The active website journal under `var/reality-site/current` stores
 the minimal files needed to undo the current listener transformation; it is not

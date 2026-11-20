@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.83
+
+- Split the project: sb-manager now runs every protocol, including VLESS, on
+  sing-box only; Xray-core features move to the sibling project xray-manager.
+  VLESS returns to sing-box (TCP + TLS/Reality, Vision flow, transports via
+  `--sing-box-*-json`; share links follow the effective client outbound).
+- Upgrading from alpha.72–82 migrates VLESS automatically: RAW + TLS/Reality
+  nodes keep their UUID, Reality keys and links; nodes using Xray-only
+  settings (XHTTP, mKCP, VLESS encryption, fallbacks, …) are disabled with
+  their data kept and a migration note, and cannot be re-enabled here. The
+  managed `sb-xray` service, its config and binary are stopped and removed
+  before sing-box takes the ports back.
+- Remove Xray-only features: `sb xray *`, Xray outbounds/WARP/balancers/routing,
+  per-user traffic quotas, online-IP limits and usage statistics, and Xray/
+  mihomo client exports. Per-user expiry, per-user subscriptions and the
+  Telegram bot remain (bot commands without quota/IP/traffic).
+- The shared-443 Reality website entry now runs on sing-box; a failed setup
+  restores the previous sing-box config before restoring the website listener.
+
 ## 0.1.0-alpha.82
 
 - Apply the shared log level and outbound IP strategy to Xray as well:
