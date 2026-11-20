@@ -233,6 +233,10 @@ manager_auto_run() (
     manager_auto_record "$day" "$started" failed "$rc" || exit 1
     log_error "自动更新未全部完成，详情：$SBM_VAR/updates/manager.log"
   fi
+  # Outbound subscriptions refresh daily; a failure keeps the previous set.
+  if jq -e '(.routing.subscriptions // [])|length>0' "$SBM_STATE" >/dev/null 2>&1; then
+    "$SBM_BIN_DIR/sb" outbound sub refresh >>"$SBM_VAR/updates/manager.log" 2>&1 || log_warn '出站订阅刷新失败，继续使用原节点。'
+  fi
   exit "$rc"
 )
 

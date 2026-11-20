@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。所有协议（含 VLESS）只由 sing-box 运行；需要 Xray-core 专属能力（XHTTP、mKCP、VLESS 加密、用户级流量配额等）时请使用姊妹项目 xray-manager，两者可以装在同一台服务器上。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.93`
+当前版本：`0.1.0-alpha.94`
 
 ## 第一步：安装
 
@@ -93,27 +93,52 @@ TLS/Reality 节点的 UUID、Reality 密钥和分享链接不变；使用 XHTTP�
 回落等 Xray 专属配置的节点会被停用并保留数据（`sb node show` 可见迁移说明），可在
 xray-manager 中重建。旧版托管的 sb-xray 服务会被停止并移除。
 
-### 用户到期
+### 用户
 
 ```bash
 sb user add edge alice
 sb user limit edge alice --days 30        # 或 --expire-at 2027-01-01T00:00:00Z / --no-expiry
-sb user stats [edge] [--json]
+sb user add edge --count 20 --prefix vip --days 30   # 批量添加
+sb user purge-depleted                    # 删除已到期用户
+sb user export edge alice f.json && sb user import edge2 f.json   # 迁移用户，凭据不变
+sb user tg edge alice 123456789           # 绑定 Telegram：/me /link 与到期提醒
+sb node clone edge edge2                  # 复制节点设置，重新生成凭据
 ```
 
-到期时间适用于所有多用户协议：到期后用户被暂停但保留凭据，续期后自动恢复。检查随
-流量周期任务运行（systemd 5 分钟、OpenRC 15 分钟），也可执行 `sb user tick`。面板
-`3 → 节点 → 12` 可管理用户。用户级流量配额与在线 IP 上限需要 Xray 统计，属于
-xray-manager；sb-manager 提供节点级配额与限速（`sb traffic set`）。
+到期时间适用于所有多用户协议：到期后用户被暂停但保留凭据，续期后自动恢复，到期前 3 天提醒一次。
+检查随流量周期任务运行（systemd 5 分钟、OpenRC 15 分钟），也可执行 `sb user tick`。面板
+`3 → 节点 → 12` 可管理用户。用户级流量配额与在线 IP 上限需要按用户的流量统计，官方 sing-box 不提供，
+属于 xray-manager；sb-manager 提供节点级配额与限速（`sb traffic set`）。
 
-`sb subscription create never mixed --user edge:alice`（或 `mihomo`）生成只含该用户的动态订阅，
-响应带 `Subscription-Userinfo`（含到期时间），用户暂停后订阅不再返回节点配置。
+### 订阅
+
+`sb subscription create never mixed --user edge:alice` 生成只含该用户的动态订阅，响应带
+`Subscription-Userinfo`。订阅地址不带 `?format` 时按客户端自动选择格式（Clash/mihomo、sing-box、
+v2rayN/Shadowrocket 的 base64 链接）；停用或到期的用户收到说明原因的占位节点。
+`sb subscription remark set '{name} | 剩 {days}天'` 设置节点名模板。
+
+### 出站与分流
+
+```bash
+sb warp --register                                 # WARP（sing-box WireGuard endpoint）
+sb outbound add hk --json '{"type":"socks","server":"1.2.3.4","server_port":1080}'
+sb outbound sub add air https://example.com/sub    # 导入机场订阅为出站 + urltest 分组 air
+sb route add --domain geosite:openai --to warp     # geosite/geoip 由 sing-box 下载 rule-set 并缓存
+sb route add --ip geoip:private --to block
+sb route add --domain geosite:netflix --to air
+sb route test www.netflix.com                      # 某个域名会走哪个出口
+sb outbound test                                   # 各出站连通性与延迟
+sb dns set 1.1.1.1,https://dns.google/dns-query
+sb tools reality-check www.apple.com               # 另有 uuid、reality-keypair、wg-keypair、ech 等
+```
+
+面板 `22. 出站、WARP 与分流` 提供同样的操作。
 
 ### Telegram 命令机器人
 
 先 `sb notify configure telegram ...`，再 `sb notify bot enable --admin 你的TG用户ID`。
-机器人只响应已配置 chat 中白名单用户的固定命令：`/status /nodes /users
-/enable /disable /renew /sub`，参数逐项校验后调用 `sb`。
+管理员命令：`/status /nodes /users /enable /disable /renew /sub /backup`（`/backup` 需
+`sb notify bot backup on`），参数逐项校验后调用 `sb`。绑定了 Telegram 的用户可私聊使用 `/me` 与 `/link`。
 
 ### Web 面板与多服务器
 

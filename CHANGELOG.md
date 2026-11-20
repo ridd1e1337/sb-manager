@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.94
+
+- Outbounds and routing (same model as xray-manager, implemented with
+  sing-box): `sb outbound add|remove|test`, `sb warp --register` (WireGuard
+  endpoint), `sb balancer set` (urltest/selector groups), `sb route
+  add|remove|default|strategy|test`, `sb dns set`, `sb routing`. Rules accept
+  domain:/full:/keyword:/regexp:/geosite: and CIDR/geoip:; geosite/geoip use
+  SagerNet remote rule-sets downloaded and cached by sing-box itself
+  (`/var/lib/sb-manager/sing-box/cache.db`). Panel menu 22.
+- `sb outbound sub add NAME URL`: import a remote subscription as outbounds
+  with an urltest group, refreshed daily; new `libexec/share_to_singbox.jq`
+  converts vless/vmess/trojan/ss/hysteria2/tuic/anytls/socks/http links and
+  rejects allowInsecure. Verified by round-tripping every sb-manager share link.
+- `sb tools`: sing-box key generators, REALITY target check (TLS 1.3 and
+  certificate coverage) and certificate hashes.
+- Fix: the API dashboard HTTP client used `detour: direct`, which sing-box
+  1.15 rejects.
+
 ## 0.1.0-alpha.93
 
 - Telegram bot (same as xray-manager): `sb user tg NODE USER TG_ID` lets a

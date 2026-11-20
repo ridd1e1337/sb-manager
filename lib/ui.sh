@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -517,6 +517,10 @@ ui_vless_add() {
         prompt_value domain 'Reality SNI' "$domain" || return 1
         prompt_value handshake_server 'Reality 握手目标域名或 IP' "$domain" || return 1
         prompt_value handshake_port 'Reality 握手端口' 443 || return 1
+        # Advisory only: warn when a custom target fails the REALITY check.
+        if [[ "$handshake_port" == 443 && "$handshake_server" != "$SBM_RECOMMENDED_REALITY_SNI" ]] && validate_domain "$handshake_server"; then
+          tools_reality_check "$handshake_server" || log_warn '该目标不满足 REALITY 推荐条件，客户端可能无法连接；建议换一个网站（如 www.apple.com）。'
+        fi
       fi
       args+=(--domain "$domain" --handshake-server "$handshake_server" --handshake-port "$handshake_port")
       ui_prompt_server_address address "$(ui_client_address_default '')" || return 1;;
@@ -1509,6 +1513,81 @@ ui_subscription_menu() {
   esac
 }
 
+ui_routing_menu() {
+  local choice tag value via strategy
+  local -a args=()
+  singbox_routing_show
+  printf '\n1. 添加原生出站（sing-box outbound JSON）\n2. 添加 WARP（自动注册）\n3. 导入已有 WARP/WireGuard 参数\n4. 删除出站\n'
+  printf '5. 设置出站分组（urltest 自动选最快 / selector）\n6. 删除分组\n7. 添加分流规则\n8. 删除分流规则\n9. 设置默认出口\n'
+  printf '10. 路由测试（某个域名/IP 会走哪个出口）\n11. 出站连通性测试\n12. 出站订阅（导入远程节点列表）\n13. DNS 服务器\n14. 路由域名策略\n15. 工具：生成密钥、REALITY 目标检查、证书哈希\n0. 返回\n'
+  ui_menu_choice choice '路由操作' 15 || return 0
+  case "$choice" in
+    1)
+      prompt_value tag '出站标签' '' || return 1
+      prompt_value value 'sing-box outbound JSON 或 @文件路径' '' || return 1
+      ui_prompt_optional via '链式：经由哪个出站（留空直连）' '' || return 1
+      singbox_routing_cli outbound add "$tag" --json "$value" ${via:+--via "$via"};;
+    2) singbox_warp_cli --register;;
+    3)
+      prompt_secret value 'WireGuard 私钥' || return 1
+      args=(--private-key "$value")
+      prompt_value value 'IPv4 地址（如 172.16.0.2）' '172.16.0.2' || return 1; args+=(--address-v4 "$value")
+      ui_prompt_optional value 'IPv6 地址' '' || return 1; [[ -z "$value" ]] || args+=(--address-v6 "$value")
+      ui_prompt_optional value 'reserved（如 1,2,3）' '' || return 1; [[ -z "$value" ]] || args+=(--reserved "$value")
+      singbox_warp_cli "${args[@]}";;
+    4) prompt_value tag '出站标签' '' || return 1; singbox_routing_cli outbound remove "$tag";;
+    5)
+      prompt_value tag '分组标签' pool || return 1
+      prompt_value value '成员出站（逗号分隔，可含 direct）' '' || return 1
+      prompt_value strategy '类型 urltest/selector' urltest || return 1
+      singbox_routing_cli balancer set "$tag" --outbounds "$value" --type "$strategy";;
+    6) prompt_value tag '分组标签' '' || return 1; singbox_routing_cli balancer remove "$tag";;
+    7)
+      printf '匹配条件可组合：节点、用户、域名（domain:/full:/keyword:/regexp:/geosite:）、IP（CIDR、geoip:cn、geoip:private）、端口。\n'
+      printf 'geosite:/geoip: 使用 SagerNet 远程 rule-set，由 sing-box 自动下载并缓存。\n'
+      ui_prompt_optional value '节点 ID' '' || return 1; [[ -z "$value" ]] || args+=(--node "$value")
+      ui_prompt_optional value '用户 NODE_ID:USER_ID' '' || return 1; [[ -z "$value" ]] || args+=(--user "$value")
+      ui_prompt_optional value '域名' '' || return 1; [[ -z "$value" ]] || args+=(--domain "$value")
+      ui_prompt_optional value 'IP' '' || return 1; [[ -z "$value" ]] || args+=(--ip "$value")
+      ui_prompt_optional value '端口（如 443 或 1000-2000）' '' || return 1; [[ -z "$value" ]] || args+=(--port "$value")
+      prompt_value value '出口：出站标签、分组标签或 block' direct || return 1
+      singbox_routing_cli route add "${args[@]}" --to "$value";;
+    8) prompt_value value '规则序号' '' || return 1; singbox_routing_cli route remove "$value";;
+    9) prompt_value value '默认出口 direct/出站/分组' direct || return 1; singbox_routing_cli route default "$value";;
+    10) prompt_value value '域名或 IP[:端口]' www.google.com || return 1; singbox_route_test "$value" || true;;
+    11) singbox_outbound_test || true;;
+    12)
+      singbox_outsub_cli list
+      printf '\n1. 添加订阅\n2. 立即刷新全部\n3. 删除订阅\n0. 返回\n'
+      ui_menu_choice value '出站订阅' 3 || return 0
+      case "$value" in
+        1)
+          prompt_value tag '订阅名称（同时作为分组名与标签前缀）' sub || return 1
+          prompt_value via '订阅地址 https://…' '' || return 1
+          prompt_value strategy '分组类型 urltest/selector/none' urltest || return 1
+          singbox_outsub_cli add "$tag" "$via" --type "$strategy" && printf '把分流规则的出口设为 %s 即可使用这些节点。\n' "$tag";;
+        2) singbox_outsub_cli refresh;;
+        3) prompt_value tag '订阅名称' '' || return 1; singbox_outsub_cli remove "$tag";;
+      esac;;
+    13)
+      singbox_dns_cli show
+      ui_prompt_optional value 'DNS 服务器（逗号分隔，留空恢复系统 DNS）' '1.1.1.1,https://dns.google/dns-query' || return 1
+      if [[ -n "$value" ]]; then singbox_dns_cli set "$value"; else singbox_dns_cli clear; fi;;
+    14)
+      printf 'AsIs：只按域名匹配（默认）；IPIfNonMatch：先解析域名，再按 IP 规则匹配。\n'
+      prompt_value value '域名策略' IPIfNonMatch || return 1; singbox_route_strategy "$value";;
+    15)
+      printf '1. UUID\n2. REALITY 密钥对\n3. WireGuard 密钥对\n4. ECH 配置\n5. REALITY 目标网站检查\n6. 证书 SHA-256（文件或 域名[:端口]）\n0. 返回\n'
+      ui_menu_choice value '选择工具' 6 || return 0
+      case "$value" in
+        1) tools_cli uuid;; 2) tools_cli reality-keypair;; 3) tools_cli wg-keypair;;
+        4) prompt_value tag 'ECH 服务器名称' '' || return 1; tools_cli ech "$tag";;
+        5) prompt_value tag '目标域名' "$SBM_RECOMMENDED_REALITY_SNI" || return 1; tools_cli reality-check "$tag" || true;;
+        6) prompt_value tag '证书文件或 域名[:端口]' '' || return 1; tools_cli cert-hash "$tag";;
+      esac;;
+  esac
+}
+
 ui_main_options() {
   cat <<'EOF_MENU'
 节点与客户端
@@ -1533,6 +1612,7 @@ ui_main_options() {
 18. 节点模板与批量操作
 19. 卸载管理器
 20. Sub-Store 订阅管理
+22. 出站、WARP 与分流
  0. 退出面板
 EOF_MENU
 }
@@ -1569,6 +1649,7 @@ ui_main() {
       17) page=ui_notification_health_menu;; 18) page=ui_template_menu;;
       19) page=ui_uninstall_menu;; 20) page=ui_substore_menu;;
       21) page=ui_vps_menu;; # compatibility with the previous VPS shortcut
+      22) page=ui_routing_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

@@ -42,6 +42,9 @@ source "$SBM_LIB/lib/traffic_groups.sh"
 source "$SBM_LIB/lib/shaping.sh"
 source "$SBM_LIB/lib/expiry.sh"
 source "$SBM_LIB/lib/user_limits.sh"
+source "$SBM_LIB/lib/singbox_routing.sh"
+source "$SBM_LIB/lib/singbox_outsub.sh"
+source "$SBM_LIB/lib/tools.sh"
 source "$SBM_LIB/lib/telegram_bot.sh"
 source "$SBM_LIB/lib/firewall.sh"
 source "$SBM_LIB/lib/vps.sh"
@@ -148,6 +151,19 @@ sb_help_full() {
   sb health configure --disk-free N --memory-max N [...]
   sb config validate|diff [--json]
 
+  sb routing [--json]              查看出站、分组、分流规则与默认出口
+  sb outbound add TAG --json JSON|@FILE [--via TAG] | remove TAG | test [TAG]   sing-box 原生出站（--via 链式）
+  sb outbound sub add NAME URL [--prefix P] [--type urltest|selector|none] | list | refresh [NAME] | remove NAME
+  sb warp [--tag warp] --register | --private-key KEY --address-v4 IP [--address-v6 IP] [--reserved a,b,c]
+  sb balancer set TAG --outbounds a,b [--type urltest|selector] | remove TAG   出站分组（urltest 自动选最快）
+  sb route add [--node ID] [--user NODE:USER] [--domain domain:x|geosite:cn] [--ip CIDR|geoip:cn] [--network tcp|udp] [--port P] --to OUTBOUND|GROUP|block
+  sb route remove INDEX | default direct|OUTBOUND|GROUP | strategy AsIs|IPIfNonMatch | test DOMAIN|IP[:PORT]
+                                 geosite:/geoip: 使用 SagerNet 远程 rule-set，由 sing-box 下载并缓存
+  sb dns show|set SERVERS|clear    自定义 DNS（1.1.1.1、https://host/dns-query、tls://host）
+  sb tools uuid|reality-keypair|wg-keypair|tls-keypair DOMAIN|ech DOMAIN   用当前 sing-box 生成密钥/参数
+  sb tools reality-check DOMAIN    检查网站是否适合作为 REALITY 目标（TLS 1.3、证书覆盖）
+  sb tools cert-hash FILE|HOST[:PORT]  证书 SHA-256
+
   sb cert setup-cloudflare [TOKEN] [ZONE_ID] [EMAIL]
   sb cert issue <DOMAIN> [EMAIL]
   sb cert list [--json]|renew|inspect <DOMAIN>
@@ -204,7 +220,7 @@ sb_help_full() {
 EOF_HELP
 }
 
-SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core openlist reality update cloudflared deps acme api realm config doctor repair logs backup restore restart uninstall'
+SBM_HELP_TOPICS='status node quick user share export subscription substore tunnel cert traffic notify health tcp bbr hy2 network probe vps firewall mux caddy maintenance settings core openlist reality update cloudflared deps acme api realm config routing outbound balancer route warp dns tools doctor repair logs backup restore restart uninstall'
 
 sb_help_overview() {
   cat <<EOF_OVERVIEW
@@ -227,6 +243,7 @@ sb-manager ${SBM_VERSION}：状态驱动的 sing-box 多协议管理器
 流量与监控：  traffic  notify  health  probe
 网络调优：    tcp  bbr  hy2  network
 服务器与网站：vps  firewall  mux  caddy  openlist  reality  maintenance  settings
+分流与出站：  routing  outbound  warp  balancer  route  dns  tools
 核心与维护：  core  cloudflared  deps  acme  api  realm  config
 备份与卸载：  backup  restore  restart  uninstall
 
@@ -517,6 +534,11 @@ main() {
         *) usage_die "未知 tunnel 操作：$action" ;;
       esac
       ;;
+    outbound|balancer|group|route) singbox_routing_cli "$@" ;;
+    routing) singbox_routing_cli show "${2:-}" ;;
+    warp) shift; singbox_warp_cli "$@" ;;
+    tools) shift; tools_cli "$@" ;;
+    dns) shift; singbox_dns_cli "$@" ;;
     subscription)
       local action=${2:-status}
       case "$action" in

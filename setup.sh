@@ -256,7 +256,7 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 ReadOnlyPaths=$SBM_ETC $SBM_LIB
-ReadWritePaths=$SBM_VAR/dashboard
+ReadWritePaths=$SBM_VAR/dashboard -$SBM_VAR/sing-box
 
 [Install]
 WantedBy=multi-user.target
@@ -522,6 +522,9 @@ source "$TARGET_LIB/lib/export.sh"
 source "$TARGET_LIB/lib/node.sh"
 source "$TARGET_LIB/lib/traffic.sh"
 source "$TARGET_LIB/lib/user_limits.sh"
+source "$TARGET_LIB/lib/singbox_routing.sh"
+source "$TARGET_LIB/lib/singbox_outsub.sh"
+source "$TARGET_LIB/lib/tools.sh"
 source "$TARGET_LIB/lib/telegram_bot.sh"
 source "$TARGET_LIB/lib/traffic_groups.sh"
 source "$TARGET_LIB/lib/shaping.sh"

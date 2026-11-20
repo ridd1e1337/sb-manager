@@ -72,6 +72,7 @@ SBM_JQ_NODE_KINDS='
 validate_state_semantics() {
   local state=$1 ids count node id protocol port domain cert_dir kind key user_ids user_id enabled_users realm_url realm_domain realm_port realm_id
   state_validate "$state" || return 1
+  if declare -F singbox_routing_validate_state >/dev/null 2>&1; then singbox_routing_validate_state "$state" || return 1; fi
   if declare -F traffic_validate_state >/dev/null 2>&1; then
     traffic_validate_state "$state" || return 1
   fi
@@ -258,7 +259,20 @@ render_config_from_state() {
     dns_advanced=true
   fi
   [[ "$api_enabled" != true ]] || api_secret=$(state_get_secret api | jq -r '.secret')
-  jq -n --argjson metered_proxies "$(jq '[.nodes[]|select(.enabled and .traffic.enabled and (.protocol|IN("socks","mixed")))|"in-"+.id]' "$state")" --arg level "$log_level" --arg strategy "$strategy" --argjson inbounds "$inbounds" --argjson api_enabled "$api_enabled" \
+  local routing='{"outbounds":[],"endpoints":[],"rules":[],"rule_set":[],"final":"direct","dns_servers":null}'
+  if declare -F singbox_routing_render >/dev/null 2>&1; then routing=$(singbox_routing_render "$state") || return 1; fi
+  # Remote rule-sets are cached by sing-box itself in a service-writable dir.
+  if [[ $(jq '.rule_set|length' <<<"$routing") != 0 && "$SBM_SKIP_INIT" != 1 ]]; then
+    install -d -m 0750 "$SBM_VAR/sing-box" && set_owner_if_exists "$SBM_SERVICE_USER" "$SBM_VAR/sing-box" || return 1
+  fi
+  # sing-box 1.14 requires an explicit HTTP client for remote rule-sets;
+  # older cores use download_detour.
+  local http_clients=false
+  if [[ $(jq '.rule_set|length' <<<"$routing") != 0 ]]; then
+    [[ -n "${core_version:-}" ]] || core_version=$(core_current_version || true)
+    if version_ge "$core_version" 1.14.0-alpha.1; then http_clients=true; fi
+  fi
+  jq -n --argjson routing "$routing" --arg cache "$SBM_VAR/sing-box/cache.db" --argjson http_clients "$http_clients" --argjson metered_proxies "$(jq '[.nodes[]|select(.enabled and .traffic.enabled and (.protocol|IN("socks","mixed")))|"in-"+.id]' "$state")" --arg level "$log_level" --arg strategy "$strategy" --argjson inbounds "$inbounds" --argjson api_enabled "$api_enabled" \
     --argjson mux "$mux_config" \
     --arg secret "$api_secret" --argjson api_port "$api_port" --argjson dashboard "$dashboard" --arg dashboard_path "$SBM_VAR/dashboard" \
     --argjson dns_advanced "$dns_advanced" --argjson dns_optimistic "$dns_optimistic" --arg dns_optimistic_timeout "$dns_optimistic_timeout" --arg dns_timeout "$dns_timeout" \
@@ -284,7 +298,7 @@ render_config_from_state() {
       | if $realm_domain=="" then . else .services[0].tls={enabled:true,server_name:$realm_domain,certificate_path:($cert_dir + "/" + $realm_domain + "/fullchain.pem"),key_path:($cert_dir + "/" + $realm_domain + "/key.pem")} end
     else . end
   | if $api_enabled then
-      .http_clients=[{tag:"http-direct",detour:"direct"}]
+      .http_clients=[{tag:"http-direct"}]
       | .route.default_http_client="http-direct"
       | .services=((.services // []) + [{
           type:"api",tag:"api-local",listen:"127.0.0.1",listen_port:$api_port,secret:$secret,
@@ -292,6 +306,30 @@ render_config_from_state() {
           dashboard:(if $dashboard then {enabled:true,path:$dashboard_path,http_client:"http-direct",update_interval:"1d"} else false end)
         }])
     else . end
+  # Outbounds, WARP endpoints, groups, rules and DNS from `sb outbound/route`.
+  | .outbounds += $routing.outbounds
+  | if ($routing.endpoints|length)>0 then .endpoints=$routing.endpoints else . end
+  | .route.rules=((.route.rules // []) + $routing.rules)
+  | if (.route.rules|length)==0 then del(.route.rules) else . end
+  | .route.final=$routing.final
+  | if ($routing.rule_set|length)>0 then
+      .experimental.cache_file={enabled:true,path:$cache}
+      | if $http_clients then
+          .http_clients=((.http_clients // []) | if any(.[]; .tag=="http-direct") then . else . + [{tag:"http-direct"}] end)
+          | .route.default_http_client="http-direct" | .route.rule_set=$routing.rule_set
+        else .route.rule_set=($routing.rule_set | map(. + {download_detour:"direct"})) end
+    else . end
+  | if $routing.dns_servers==null then . else
+      ([$routing.dns_servers | to_entries[] | .key as $k | .value as $v |
+        ("dns-" + ($k+1|tostring)) as $tag |
+        if ($v|test("^(tcp|tls|quic)://")) then ($v|capture("^(?<t>[a-z]+)://(?<h>[^/:]+)(:(?<p>[0-9]+))?")) as $c
+          | {type:$c.t, tag:$tag, server:$c.h} + (if $c.p then {server_port:($c.p|tonumber)} else {} end)
+        elif ($v|test("^(https|h3)://")) then ($v|capture("^(?<t>[a-z0-9]+)://(?<h>[^/:]+)(:(?<p>[0-9]+))?(?<path>/.*)?$")) as $c
+          | {type:$c.t, tag:$tag, server:$c.h} + (if $c.p then {server_port:($c.p|tonumber)} else {} end) + (if $c.path then {path:$c.path} else {} end)
+        else {type:"udp", tag:$tag, server:$v} end
+        | if (.server|test("^[0-9.]+$|:")) then . else .domain_resolver="dns-local" end]) as $servers
+      | .dns.servers=($servers + .dns.servers) | .dns.final=$servers[0].tag
+    end
   ' >"$output"
   jq -e . "$output" >/dev/null
 }
