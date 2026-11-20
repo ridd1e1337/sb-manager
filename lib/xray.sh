@@ -152,8 +152,18 @@ xray_render_config() {
   local routing='{"outbounds":[{"tag":"direct","protocol":"freedom"}]}'
   if declare -F xray_routing_render >/dev/null 2>&1; then routing=$(xray_routing_render "$state") || return 1; fi
   # Loopback-only Stats API for per-user traffic and online-IP limits.
-  jq -n --argjson inbounds "$inbounds" --argjson routing "$routing" --arg api "127.0.0.1:$(jq -r '.settings.xray_api_port // 10085' "$state")" '{
-    log:{loglevel:"warning"},
+  # Shared manager settings apply to both cores: log level and the direct
+  # outbound's IP family preference (sing-box domain_strategy equivalent).
+  local loglevel ip_strategy
+  case "$(jq -r '.settings.log_level // "info"' "$state")" in
+    trace|debug) loglevel=debug;; info) loglevel=info;; warn) loglevel=warning;; *) loglevel=error;;
+  esac
+  case "$(jq -r '.settings.outbound_ip_strategy // "prefer_ipv4"' "$state")" in
+    prefer_ipv6) ip_strategy=UseIPv6v4;; ipv4_only) ip_strategy=UseIPv4;; *) ip_strategy=UseIPv4v6;;
+  esac
+  routing=$(jq -c --arg s "$ip_strategy" '.outbounds |= map(if .tag=="direct" then .settings=((.settings // {})+{domainStrategy:$s}) else . end)' <<<"$routing") || return 1
+  jq -n --argjson inbounds "$inbounds" --argjson routing "$routing" --arg loglevel "$loglevel" --arg api "127.0.0.1:$(jq -r '.settings.xray_api_port // 10085' "$state")" '{
+    log:{loglevel:$loglevel},
     api:{tag:"api",listen:$api,services:["StatsService"]},
     stats:{},
     policy:{levels:{"0":{statsUserUplink:true,statsUserDownlink:true,statsUserOnline:true}},

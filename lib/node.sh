@@ -206,6 +206,7 @@ _node_add() {
   fi
   local protocol base transport secret node_secret='' node candidate user_secret_path default_address created_at reality_secret='' snell_obfs_mode snell_obfs_host
   if [[ "$type" == vless ]]; then
+    [[ "$inbound_json" == '{}' ]] || usage_die 'VLESS 服务端只由 Xray 运行，请改用 --xray-inbound-json；--sing-box-outbound-json 仍可定制 sing-box 客户端导出。'
     [[ -z "$path" ]] || vless_options+=(--path "$path")
     [[ "$proxy_listen_supplied" != 1 ]] || vless_options+=(--listen "$proxy_listen")
     vless_preview=$(jq -n --arg domain "$domain" --arg security "$security" --arg flow "$flow" \
@@ -576,7 +577,9 @@ _node_set() {
       --realm-ip-version) [[ "$value" == 0 || "$value" == 4 || "$value" == 6 ]] || { rm -f "$candidate"; die "Realm IP 版本必须是 0、4 或 6"; }; tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.realm_ip_version)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --realm-port-mapping|--no-realm-port-mapping) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.realm_port_mapping)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --clear-realm) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" '(.nodes[]|select(.id==$id)) |= (.realm_enabled=false | .realm_id="")' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
-      --sing-box-inbound-json|--inbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
+      --sing-box-inbound-json|--inbound-json)
+        [[ $(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.protocol' "$candidate") != vless ]] || { rm -f "$candidate"; die 'VLESS 服务端只由 Xray 运行，请改用 --xray-inbound-json。'; }
+        tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --sing-box-outbound-json|--outbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.singbox.outbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --xray-inbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.xray.inbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;
       --xray-outbound-json) tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --argjson v "$value" '(.nodes[]|select(.id==$id)|.xray.outbound)=$v' "$candidate" >"$tmp"; mv "$tmp" "$candidate";;

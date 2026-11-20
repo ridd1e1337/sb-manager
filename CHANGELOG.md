@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.82
+
+- Apply the shared log level and outbound IP strategy to Xray as well:
+  `log.loglevel` follows the manager log level and the `direct` freedom
+  outbound uses `UseIPv4v6`/`UseIPv6v4`/`UseIPv4` for prefer_ipv4/prefer_ipv6/
+  ipv4_only. The panel entry is renamed to 核心通用设置.
+- Reject `--sing-box-inbound-json` on VLESS nodes, which only Xray serves;
+  `--sing-box-outbound-json` still customizes sing-box client exports.
+
 ## 0.1.0-alpha.81
 
 - Speed up state changes with live per-user subscriptions (measured 32s → 5s
