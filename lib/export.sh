@@ -8,6 +8,42 @@ share_cache_context() {
   jq -c 'del(.nodes, .created_at, .updated_at, .health, .notifications, .manager_version)' "$SBM_STATE"
 }
 
+# Cache base ("DIR/KEY") for every client file exported for one node user. The
+# key covers the node, its credentials, the shared settings and the core builds.
+share_cache_key() {
+  local id=$1 user_id=$2 cache node context key
+  cache=$(share_cache_dir 2>/dev/null) || return 1
+  [[ -r "$SBM_SECRETS/users/$id/$user_id.json" ]] || return 1
+  node=$(state_get_node "$id") && context=$(share_cache_context) || return 1
+  read -r key _ < <({ printf '%s\0' "files $SBM_VERSION" "$context" "$node" "$user_id"
+    cat "$SBM_SECRETS/users/$id/$user_id.json" "$(state_secret_path "$id")" 2>/dev/null || true
+    stat -Lc '%n:%s:%Y' "${SBM_SING_BOX_BIN:-/nonexistent}" "${SBM_XRAY_BIN:-/nonexistent}" 2>/dev/null || true; } | sha256sum)
+  printf '%s/%s\n' "$cache" "$key"
+}
+
+# share_files_store BASE OUT_DIR FILE...: remember which of FILEs were produced.
+share_files_store() {
+  local base=$1 out=$2 f list=''
+  shift 2
+  ( umask 077
+    for f; do
+      if [[ -f "$out/$f" ]]; then cp "$out/$f" "$base.$f" || exit 1; list+="$f"$'\n'; else rm -f -- "$base.$f"; fi
+    done
+    printf '%s' "$list" >"$base.done.$$" && mv -f "$base.done.$$" "$base.done" ) 2>/dev/null || true
+}
+
+# share_files_restore BASE OUT_DIR: copy a remembered set back; fails when
+# there is none or it is incomplete.
+share_files_restore() {
+  local base=$1 out=$2 f
+  [[ -f "$base.done" ]] || return 1
+  while IFS= read -r f; do [[ -z "$f" || -f "$base.$f" ]] || return 1; done <"$base.done"
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    cp "$base.$f" "$out/$f" && chmod 0600 "$out/$f" || return 1
+  done <"$base.done"
+}
+
 # Cached front of _node_share_uri: successful links are stored content-addressed.
 node_share_uri() {
   local id=$1 user_id=${2:-} cache node context key file uri
@@ -182,6 +218,10 @@ node_share() {
   # The client formats are independent read-only exports: build them in
   # parallel, then report in a fixed order.
   local -a jobs=()
+  local cache_base='' restored=0
+  cache_base=$(share_cache_key "$id" "$user_id") || cache_base=''
+  if [[ -n "$cache_base" ]] && share_files_restore "$cache_base" "$out_dir"; then restored=1; fi
+  if (( ! restored )); then
   { if outbound=$(node_client_outbound "$id" "$user_id" 2>/dev/null); then
       printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
       export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null 2>&1 || rm -f "$out_dir/client.json"
@@ -189,6 +229,7 @@ node_share() {
   if [[ ! -r "$out_dir/mihomo.yaml" ]]; then
     { export_mihomo_client_config "$out_dir/mihomo.json" "$id" "$user_id" >/dev/null 2>&1 \
         && cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml" && chmod 0600 "$out_dir/mihomo.yaml" || rm -f "$out_dir/mihomo.json"; } & jobs+=($!)
+  fi
   fi
   if (( surge_ready == 0 )); then printf '\n%s节点/用户：%s/%s%s\n' "$C_BOLD" "$id" "$user_id" "$C_RESET"; fi
   if uri=$(node_share_uri "$id" "$user_id" 2>/dev/null) && [[ -n "$uri" ]]; then
@@ -203,7 +244,8 @@ node_share() {
   elif (( surge_ready == 0 )); then
     log_info '该节点没有通用分享链接格式，请使用下方客户端配置文件。'
   fi
-  wait "${jobs[@]}" 2>/dev/null || true
+  (( ${#jobs[@]} == 0 )) || wait "${jobs[@]}" 2>/dev/null || true
+  if (( ! restored )) && [[ -n "$cache_base" ]]; then share_files_store "$cache_base" "$out_dir" outbound.json client.json mihomo.json mihomo.yaml; fi
   if [[ -r "$out_dir/client.json" ]]; then printf 'sing-box 客户端配置：%s\n' "$out_dir/client.json"
   elif [[ -r "$out_dir/outbound.json" ]]; then printf 'sing-box 节点 JSON：%s\n' "$out_dir/outbound.json"; fi
   [[ ! -r "$out_dir/mihomo.yaml" ]] || printf 'mihomo 客户端配置（Clash Verge/FlClash）：%s\n' "$out_dir/mihomo.yaml"
