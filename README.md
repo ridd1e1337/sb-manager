@@ -2,7 +2,7 @@
 
 `sb-manager` 是只使用 sing-box 内核的一键安装与多协议节点管理脚本（VLESS 也由 sing-box 运行），支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.102`
+当前版本：`0.1.0-alpha.103`
 
 ## 第一步：安装
 
@@ -46,10 +46,10 @@ sb
 2. 需要 TLS 的协议直接输入 Cloudflare 托管的域名；没有可用证书时，自动添加指向本机公网 IP 的 DNS 记录（关闭橙云），再申请证书。首次填写 API Token 和邮箱，之后自动复用。
 3. 创建完成后复制分享链接、二维码或 sing-box 配置，导入客户端。Snell 会把 Surge 原生配置放在最上面，可直接复制到 Surge 的 `[Proxy]` 段。
 
-面板按节点管理和维护功能分组，菜单使用简短名称：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **15. VPS 与网站运维**。
+面板按节点管理和维护功能分组，菜单使用简短名称：Cloudflare 隧道在 **7. CF Tunnel**；初始化、防火墙、Fail2ban、Nginx/Caddy 共用 443 和网络调优集中在 **14. VPS 与网站运维**。
 
-**20. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容。
-已经有一台统一使用的 Sub-Store 时，每台 VPS 选 **20 → 13 接入已有中心 Sub-Store**（或 `sb substore remote set -`，从标准输入读取后端地址），
+**19. Sub-Store 订阅管理**用于合并多台 VPS/多个来源的节点，按客户端格式导出订阅，也能筛选、改名。单个节点可直接用分享内容。
+已经有一台统一使用的 Sub-Store 时，每台 VPS 选 **19 → 13 接入已有中心 Sub-Store**（或 `sb substore remote set -`，从标准输入读取后端地址），
 填入中心 Sub-Store 的后端地址：本机不安装 Sub-Store，节点作为一个本地来源推送过去，之后节点变化时在后台自动更新。
 只在首次创建时设置显示名和标签（如 `主节点库`），之后只更新节点内容，中心网页上的改名、标签和处理规则都会保留。
 需要在本机自建 Sub-Store 时选 **11. 首次设置**。详见[Sub-Store 使用入门](docs/OPERATIONAL_FEATURES.md#sub-store-使用入门)。
@@ -135,8 +135,7 @@ sb tools reality-check www.apple.com               # 另有 uuid、reality-keypa
 ### Telegram 命令机器人
 
 先 `sb notify configure telegram ...`，再 `sb notify bot enable --admin 你的TG用户ID`。
-管理员命令：`/status /nodes /users /enable /disable /renew /sub /backup`（`/backup` 需
-`sb notify bot backup on`），参数逐项校验后调用 `sb`。绑定了 Telegram 的用户可私聊使用 `/me` 与 `/link`。
+管理员命令：`/status /nodes /users /enable /disable /renew /sub`，参数逐项校验后调用 `sb`。绑定了 Telegram 的用户可私聊使用 `/me` 与 `/link`。
 
 ### Web 面板与多服务器
 
@@ -170,7 +169,7 @@ sb caddy rollback
 
 `sb update` 先处理管理脚本，再更新已接入管理的 Caddy；脚本没有新版本时仍会继续。现有每日任务执行相同流程，沿用原来的开关和服务器本地时间，无需另设任务。Caddy 升级先校验模块和网站配置，再切换并确认服务；失败恢复旧版。即使主版本未变，也会重新获取官方插件构建；程序摘要一致时不重启，下载失败不触发服务回滚。`--check` 只查询脚本及 Caddy 主程序版本，不下载插件构建。sing-box 和 cloudflared 继续使用各自的更新策略。详情见 [Caddy 程序维护](docs/OPERATIONAL_FEATURES.md#caddy-程序维护alpha59)。
 
-面板 `15 → 9` 提供 OpenList 网站安装、更新和 Caddy/Nginx 配置，也可执行：
+面板 `14 → 9` 提供 OpenList 网站安装、更新和 Caddy/Nginx 配置，也可执行：
 
 ```bash
 sb openlist setup files.example.com caddy
@@ -185,7 +184,7 @@ Cloudflare 凭据准备 DNS 并申请证书。初始管理员信息保存在
 `/etc/sb-manager/secrets/openlist-admin.txt`，数据保存在 `/var/lib/sb-openlist`。
 站点配置先保存备份，再校验、原子安装和平滑重载，失败尝试恢复；已有域名拒绝覆盖。
 `sb openlist detach DOMAIN` 移除本项目站点入口，保留 OpenList 数据。
-需要 OpenList 与 VLESS Vision Reality 共用 TCP/443，使用面板 `15 → 10`，或：
+需要 OpenList 与 VLESS Vision Reality 共用 TCP/443，使用面板 `14 → 10`，或：
 
 ```bash
 # 新 VPS：同时安装网站、OpenList、UFW 和 Fail2ban

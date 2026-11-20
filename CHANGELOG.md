@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.103
+
+- 移除备份与恢复功能：`sb backup`、`sb restore`、面板“13. 备份与恢复”、Telegram `/backup` 与
+  `sb notify bot backup on|off`（状态中的 `notifications.bot.backup` 自动删除）。操作失败时的自动回滚快照不受影响；
+  `sb substore backup|restore` 仍可备份 Sub-Store 数据。
+- 主菜单 13 之后的各项前移一位：13 核心通用设置、14 VPS 与网站运维、15 节点流量与限速、16 通知与健康监控、
+  17 节点模板与批量操作、18 卸载管理器、19 Sub-Store 订阅管理，`20` 为出站、WARP 与分流（原 22）；旧的 21 入口移除。
+- 子菜单输入超出范围时提示“先输入 0 返回上一级”，避免把主菜单编号输在子菜单里。
+
 ## 0.1.0-alpha.102
 
 - 修复：失败操作回滚时可能误报“自动恢复未完成”。trap 中调用的函数里，裸 `return` 继承的是触发回滚的失败状态；

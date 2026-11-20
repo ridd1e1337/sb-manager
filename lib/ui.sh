@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_backup_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -92,7 +92,7 @@ ui_menu_choice() {
     __ui_value=${!1}
     if [[ ${SBM_UI_WORKER:-0} == 1 && "$__ui_value" == 0 ]]; then exit 200; fi
     if [[ -z "$__ui_max" ]] || { [[ "$__ui_value" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( __ui_value <= __ui_max )); }; then return 0; fi
-    log_error "选择无效，请输入 0–$__ui_max。"
+    log_error "选择无效：这里只有 0–$__ui_max；要去其他功能请先输入 0 返回上一级。"
   done
 }
 
@@ -956,12 +956,6 @@ ui_uninstall_menu() {
   esac
 }
 
-ui_backup_menu() {
-  local c path
-  printf '1. 创建备份\n2. 从备份恢复\n0. 返回\n'; ui_menu_choice c '选择操作' 2
-  case "$c" in 1) backup_create;; 2) prompt_value path '备份文件路径' ''; confirm '恢复会覆盖当前配置，继续？' N && backup_restore "$path" 1;; esac
-}
-
 ui_mux_auto_menu() {
   local ids port backend items count
   items=$(jq '[.nodes[]? | select(.enabled==true) | select(
@@ -1024,7 +1018,7 @@ ui_nginx_stream_menu() {
 
 ui_settings_menu() {
   local c v
-  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 15。\n'
+  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 14。\n'
   printf '1. 默认客户端连接地址\n2. 日志详细程度\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n0. 返回\n'
   ui_menu_choice c '选择设置' 5
   case "$c" in
@@ -1626,15 +1620,14 @@ ui_main_options() {
 10. Hysteria Realm
 11. 运行日志
 12. 故障诊断与修复
-13. 备份与恢复
-14. 核心通用设置
-15. VPS 与网站运维
-16. 节点流量与限速
-17. 通知与健康监控
-18. 节点模板与批量操作
-19. 卸载管理器
-20. Sub-Store 订阅管理
-22. 出站、WARP 与分流
+13. 核心通用设置
+14. VPS 与网站运维
+15. 节点流量与限速
+16. 通知与健康监控
+17. 节点模板与批量操作
+18. 卸载管理器
+19. Sub-Store 订阅管理
+20. 出站、WARP 与分流
  0. 退出面板
 EOF_MENU
 }
@@ -1666,12 +1659,11 @@ ui_main() {
       2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_client_export_menu;; 6) page=ui_cert_menu;; 7) page=ui_tunnel_menu;;
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
-      11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;; 13) page=ui_backup_menu;;
-      14) page=ui_settings_menu;; 15) page=ui_vps_menu;; 16) page=ui_traffic_menu;;
-      17) page=ui_notification_health_menu;; 18) page=ui_template_menu;;
-      19) page=ui_uninstall_menu;; 20) page=ui_substore_menu;;
-      21) page=ui_vps_menu;; # compatibility with the previous VPS shortcut
-      22) page=ui_routing_menu;;
+      11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;;
+      13) page=ui_settings_menu;; 14) page=ui_vps_menu;; 15) page=ui_traffic_menu;;
+      16) page=ui_notification_health_menu;; 17) page=ui_template_menu;;
+      18) page=ui_uninstall_menu;; 19) page=ui_substore_menu;;
+      20) page=ui_routing_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

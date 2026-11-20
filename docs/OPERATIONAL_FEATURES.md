@@ -15,9 +15,9 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
 
 从 alpha.57 起，主菜单按“功能名＋用途”展示；7 为 CF Tunnel（Cloudflare
-隧道），14 为 sing-box 设置，15 为 VPS 与网站运维，20 为 Sub-Store 订阅管理。
+隧道），13 为 sing-box 设置，14 为 VPS 与网站运维，19 为 Sub-Store 订阅管理，20 为出站、WARP 与分流（备份与恢复已移除，其后各项前移一位）。
 VPS 分类集中提供初始化、基础环境状态、UFW/Fail2ban、Nginx/Caddy 共用 443、
-BBR/TCP/QUIC 网络调优、测速和系统支持说明。旧主菜单 21 仍可进入该分类。
+BBR/TCP/QUIC 网络调优、测速和系统支持说明。
 
 ## 系统支持说明
 
@@ -280,7 +280,7 @@ sb reality detach
 ```
 
 前两条是二选一的新 VPS 初始化入口，会安装网站、OpenList、UFW 和 Fail2ban。
-面板入口为 `15 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
+面板入口为 `14 → 10 → 1`。`sb reality setup` 默认不改变防火墙；追加 `--init-vps`
 或使用 `sb vps reality` 才显式配置基础防护。新主机只放行 22/TCP、80/TCP、443/TCP、
 443/UDP，同时保留当前 SSH 端口和已有规则，不会清空现有主机规则。
 支持 Debian/Ubuntu systemd 与 Alpine OpenRC；默认选择更节省磁盘的 Nginx。
@@ -314,7 +314,7 @@ OpenList 官方 v4.2.10 amd64 解压程序约 162.3 MiB。
 
 ## OpenList 网站配置（alpha.71）
 
-面板 `15 → 9` 可安装、更新 OpenList，并选择 Caddy 或 Nginx 配置域名。
+面板 `14 → 9` 可安装、更新 OpenList，并选择 Caddy 或 Nginx 配置域名。
 命令为 `sb openlist install|update|status`、`sb openlist setup DOMAIN caddy|nginx`
 和 `sb openlist detach DOMAIN`。网站服务需已安装、运行并使用标准配置路径。
 支持 Debian/Ubuntu 的 systemd 和 Alpine 的 OpenRC；检测到自定义启动配置、
@@ -337,8 +337,7 @@ conf.d 与 Alpine 的 http.d。两种网站程序都先保存配置、校验候�
 操作期间的配置记录位于 `/var/lib/sb-manager/backups/openlist/`，受保护并在操作结束后删除。
 
 普通卸载移除受管网站入口、停止服务，保留 OpenList 数据；彻底卸载会删除默认路径
-中的 OpenList 数据和日志。完整 `sb backup` 仍只备份管理器数据；OpenList 的数据库
-及上传文件需单独备份其数据目录。共享 Reality 入口使用上节的专用命令。
+中的 OpenList 数据和日志。OpenList 的数据库及上传文件请自行备份其数据目录。共享 Reality 入口使用上节的专用命令。
 
 VLESS 向导支持输入 sing-box 扩展 JSON 或 `@FILE`。
 
@@ -554,12 +553,11 @@ sb substore enable
 `/var/lib/sb-manager/substore/`。服务使用现有服务账号，支持 systemd/OpenRC。
 更新或恢复失败会回退程序、数据和设置。
 
-独立备份和完整 `sb backup` 都包含 Sub-Store 数据；备份期间短暂停止正在运行
+`sb substore backup` 备份 Sub-Store 数据；备份期间短暂停止正在运行
 的 Sub-Store 以取得一致副本，再恢复服务。备份含访问路径和订阅凭据，权限为
-0600。普通卸载停止组件并保留数据，彻底卸载才删除。完整恢复沿用 128 MiB
-压缩 / 512 MiB 解压上限；独立恢复为 128 MiB 压缩 / 256 MiB 解压上限。
+0600。普通卸载停止组件并保留数据，彻底卸载才删除。恢复上限为 128 MiB 压缩 / 256 MiB 解压。
 
-面板主菜单：“20. Sub-Store 订阅管理”。
+面板主菜单：“19. Sub-Store 订阅管理”。
 
 ## 多服务器接入与动态订阅（alpha.34）
 

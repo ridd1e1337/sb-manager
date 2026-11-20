@@ -21,10 +21,9 @@ sb-manager 生成配置没有使用 cache-file 字段，因此现有 state、ren
 3. 只有确认 1.15 新字段的官方 schema、行为和客户端兼容性后，才新增状态字段和
    renderer 分支。
 
-升级前建议：
+升级步骤（`sb core rollback` 可回到上一版核心）：
 
 ```bash
-sb backup /var/lib/sb-manager/backups/pre-1.15.tar.gz
 sb core channel preview
 sb core update 1.15.0-alpha.2
 sb config validate

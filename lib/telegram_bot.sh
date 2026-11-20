@@ -13,7 +13,6 @@ telegram_bot_validate_state() {
   jq -e '(.notifications.bot // {enabled:false}) as $b |
     ($b.enabled|type=="boolean")
     and (($b.admins // [])|type=="array" and all(.[]; type=="number" and floor==. and .>0))
-    and (($b.backup // false)|type=="boolean")
     and all(.nodes[]?.users[]?; (.tg_id // null)==null or (.tg_id|type=="number" and floor==. and .>0))
     and (($b.enabled|not) or ((.notifications.provider // "")=="telegram" and ($b.admins|length)>0))' "$1" >/dev/null || {
     log_error 'Telegram 机器人需要 Telegram 通知渠道和至少一个管理员用户 ID。'; return 1;
@@ -50,7 +49,6 @@ sb-manager 机器人命令：
 /enable 节点 用户 · /disable 节点 用户
 /renew 节点 用户 天数
 /sub 节点 用户 [mixed|tun|mihomo] 生成该用户动态订阅
-/backup 发送完整备份（需 sb notify bot backup on）
 已绑定 Telegram 的用户私聊机器人可用：/me 状态与到期 · /link 分享链接
 EOF
 }
@@ -88,30 +86,12 @@ telegram_bot_handle() {
   local -a argv=()
   case "${text%%[ @]*}" in
     /start|/help) telegram_bot_reply "$token" "$chat" "$(telegram_bot_help)"; return $?;;
-    /backup) telegram_bot_send_backup "$token" "$chat"; return $?;;
   esac
   mapfile -d '' -t argv < <(telegram_bot_argv "$text") || true
   if ((${#argv[@]} == 0)); then telegram_bot_reply "$token" "$chat" "无法识别或参数无效。发送 /help 查看命令。"; return $?; fi
   output=$(NO_COLOR=1 SBM_ASSUME_YES=1 timeout 120 "$SBM_BIN_DIR/sb" "${argv[@]}" </dev/null 2>&1) || rc=$?
   output=$(sed 's/\x1b\[[0-9;]*m//g' <<<"$output")
   telegram_bot_reply "$token" "$chat" "$( ((rc == 0)) && printf '✅' || printf '❌（%s）' "$rc") ${output:-完成}"
-}
-
-# Full backup as a document to the admin chat. It contains every credential,
-# so it is opt-in (sb notify bot backup on) and the temp file is removed.
-telegram_bot_send_backup() {
-  local token=$1 chat=$2 file
-  [[ $(jq -r '.notifications.bot.backup // false' "$SBM_STATE") == true ]] \
-    || { telegram_bot_reply "$token" "$chat" '备份发送未开启；在服务器运行 sb notify bot backup on。'; return $?; }
-  file=$(mktemp "$SBM_RUN/tg-backup.XXXXXX") || return $?
-  if NO_COLOR=1 SBM_ASSUME_YES=1 timeout 300 "$SBM_BIN_DIR/sb" backup "$file" </dev/null >/dev/null 2>&1; then
-    printf 'url = "https://api.telegram.org/bot%s/sendDocument"\n' "$token" |
-      curl --fail --silent --connect-timeout 10 --max-time 120 --config - -F "chat_id=$chat" \
-        -F "caption=sb-manager 备份 $(date -u +%FT%TZ)（含凭据，请妥善保管）" \
-        -F "document=@$file;filename=sb-manager-$(date -u +%Y%m%d).tar.gz" >/dev/null \
-      || telegram_bot_reply "$token" "$chat" '❌ 备份已生成但发送失败。'
-  else telegram_bot_reply "$token" "$chat" '❌ 备份失败。'; fi
-  rm -f -- "$file"
 }
 
 # Self-service for users bound with `sb user tg NODE USER TG_ID`: only in a
@@ -239,18 +219,7 @@ telegram_bot_cli() {
       require_root; with_state_transaction telegram-bot _telegram_bot_set true "$3";;
     disable) require_root; with_state_transaction telegram-bot _telegram_bot_set false;;
     run) telegram_bot_run;;
-    backup)
-      [[ "${2:-}" =~ ^(on|off)$ ]] || usage_die '用法：sb notify bot backup on|off'
-      require_root
-      _telegram_bot_backup_set() {
-        local candidate; candidate=$(state_candidate) || return 1
-        jq --argjson v "$([[ "$1" == on ]] && echo true || echo false)" '.notifications.bot=((.notifications.bot // {enabled:false,admins:[]}) + {backup:$v})' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
-        apply_candidate_state "$candidate" telegram-bot || { rm -f "$candidate"; return 1; }
-        rm -f "$candidate"
-      }
-      with_state_transaction telegram-bot _telegram_bot_backup_set "$2" || return 1
-      log_ok "机器人 /backup 已$([[ "$2" == on ]] && echo 开启（备份含全部凭据，只发给管理员会话） || echo 关闭)。";;
     status) jq '.notifications.bot // {enabled:false,admins:[]}' "$SBM_STATE";;
-    *) usage_die '用法：sb notify bot enable --admin ID[,ID]|disable|status|backup on|off|run';;
+    *) usage_die '用法：sb notify bot enable --admin ID[,ID]|disable|status|run';;
   esac
 }

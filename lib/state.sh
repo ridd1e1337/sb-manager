@@ -213,6 +213,8 @@ state_normalize_v2_file() {
     # Fields of other cores are not part of the sing-box state.
     | .settings |= del(.xray_update_policy, .vless_engine, .xray_api_port)
     | del(.xray_routing)
+    # The Telegram /backup command was removed.
+    | if (.notifications.bot|type)=="object" then .notifications.bot|=del(.backup) else . end
     | .api //= {enabled:false,listen:"127.0.0.1",port:9090,dashboard:false}
     | .realm //= {enabled:false,listen:"::",port:9443,public_url:"",tls_domain:"",user_name:"default",max_realms:0}
     | .realm.enabled //= false
