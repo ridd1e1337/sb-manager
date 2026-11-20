@@ -21,8 +21,17 @@ protocol_vless_export_result() {
   outbound=$(vless_xray_client_outbound "$node" "$secret" "$node_secret") || return 1
   name=$(jq -r '.name' <<<"$node") || return 1
   packet=$(jq -r '.xray.packet_encoding // ""' <<<"$node") || return 1
-  jq -c --arg mode "$mode" --arg name "$name" --arg packet_encoding "$packet" \
-    -f "$SBM_LIB/libexec/vless_export.jq" <<<"$outbound"
+  local dir key file result
+  if dir=$(vless_cache_dir); then
+    key=$(vless_cache_key export "$mode" "$name" "$packet" "$outbound" "$(cat "$SBM_LIB/libexec/vless_export.jq")") && file="$dir/$key.export.json"
+    if [[ -s "$file" ]]; then cat "$file"; return 0; fi
+  fi
+  result=$(jq -c --arg mode "$mode" --arg name "$name" --arg packet_encoding "$packet" \
+    -f "$SBM_LIB/libexec/vless_export.jq" <<<"$outbound") || return 1
+  if [[ -n "${file:-}" ]]; then
+    (umask 077; printf '%s\n' "$result" >"$file.$$" && mv -f "$file.$$" "$file") 2>/dev/null || rm -f "$file.$$"
+  fi
+  printf '%s\n' "$result"
 }
 
 protocol_vless_export_value() {

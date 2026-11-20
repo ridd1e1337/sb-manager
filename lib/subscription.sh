@@ -8,6 +8,39 @@ subscription_duration_seconds() {
   [[ "$unit" == h ]] && printf '%s\n' "$((number * 3600))" || printf '%s\n' "$((number * 86400))"
 }
 
+# Several tokens may serve the same user; build once per refresh and copy.
+declare -gA SBM_USER_BUNDLE_BUILT=()
+subscription_refresh_user_bundle() {
+  local bundle=$1 node_id=$2 user_id=$3 key="$2:$3" source
+  source=${SBM_USER_BUNDLE_BUILT[$key]:-}
+  if [[ -n "$source" && -s "$source" && "$source" != "$bundle" ]]; then
+    cp -p "$source" "$bundle.tmp" && mv -f "$bundle.tmp" "$bundle" || { rm -f "$bundle.tmp"; return 1; }
+    return 0
+  fi
+  subscription_user_bundle_current "$bundle" "$node_id" "$user_id" || subscription_build_bundle "$bundle" "$node_id" "$user_id" || return 1
+  SBM_USER_BUNDLE_BUILT[$key]=$bundle
+}
+
+subscription_user_bundle_current() {
+  local bundle=$1 fingerprint
+  [[ -s "$bundle" ]] || return 1
+  fingerprint=$(subscription_user_fingerprint "$2" "$3") || return 1
+  jq -e --arg f "$fingerprint" '.fingerprint==$f' "$bundle" >/dev/null 2>&1
+}
+
+# Inputs that can change a user-scoped bundle. Unrelated state changes keep
+# the fingerprint, so refreshes skip rebuilding those subscriptions.
+subscription_user_fingerprint() {
+  local node_id=$1 user_id=$2 usage='{}' secrets=''
+  [[ ! -s "${SBM_USER_USAGE:-}" ]] || usage=$(jq -c --arg k "$node_id:$user_id" '.users[$k] // {}' "$SBM_USER_USAGE") || return 1
+  [[ ! -r "$(state_user_secret_path "$node_id" "$user_id")" ]] || secrets+=$(cat "$(state_user_secret_path "$node_id" "$user_id")")
+  [[ ! -r "$(state_secret_path "$node_id")" ]] || secrets+=$(cat "$(state_secret_path "$node_id")")
+  {
+    jq -c --arg n "$node_id" '[(.nodes[]?|select(.id==$n)),.settings,.nginx_stream,.reality_site,.openlist]' "$SBM_STATE"
+    printf '%s\0%s\0%s\0%s' "$usage" "$secrets" "$SBM_VERSION" "$(stat -Lc '%s:%Y' "$SBM_XRAY_BIN" 2>/dev/null || true)"
+  } | sha256sum | awk '{print $1}'
+}
+
 # Build every client format. With NODE USER the bundle contains only that
 # user and carries usage for the Subscription-Userinfo header.
 subscription_build_bundle() (
@@ -28,13 +61,18 @@ subscription_build_bundle() (
     : >"$stage/links"; printf '[]\n' >"$stage/compatibility.json"
     for format in mixed tun xray mihomo; do printf 'null\n' >"$stage/$format.json"; done
   elif [[ -n "$user_id" ]]; then
-    if line=$(node_substore_line "$node_id" "$user_id" 2>/dev/null); then printf '%s\n' "$line" >"$stage/links"; else : >"$stage/links"; fi
-    export_vless_compatibility_json | jq --arg n "$node_id" --arg u "$user_id" 'map(select(.node_id==$n and .user_id==$u))' >"$stage/compatibility.json" || return 1
+    # The formats are independent read-only exports; build them concurrently
+    # and fail the bundle only if the compatibility report itself fails.
+    local -a jobs=()
+    { node_substore_line "$node_id" "$user_id" >"$stage/links" 2>/dev/null || : >"$stage/links"; } & jobs+=($!)
+    { export_vless_compatibility_json "$node_id" "$user_id" >"$stage/compatibility.json" || rm -f "$stage/compatibility.json"; } & jobs+=($!)
     for format in mixed tun; do
-      export_client_config "$stage/$format.json" "$format" hijack '' "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/$format.json"
+      { export_client_config "$stage/$format.json" "$format" hijack '' "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/$format.json"; } & jobs+=($!)
     done
-    export_xray_client_config "$stage/xray.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/xray.json"
-    export_mihomo_client_config "$stage/mihomo.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/mihomo.json"
+    { export_xray_client_config "$stage/xray.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/xray.json"; } & jobs+=($!)
+    { export_mihomo_client_config "$stage/mihomo.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/mihomo.json"; } & jobs+=($!)
+    wait "${jobs[@]}" || true
+    [[ -s "$stage/compatibility.json" ]] || return 1
   else
     export_substore_links "$stage/links" || return 1
     export_vless_compatibility_json >"$stage/compatibility.json" || return 1
@@ -48,12 +86,15 @@ subscription_build_bundle() (
     if ! export_xray_client_config "$stage/xray.json" >/dev/null; then printf 'null\n' >"$stage/xray.json" || return 1; fi
     if ! export_mihomo_client_config "$stage/mihomo.json" >/dev/null; then printf 'null\n' >"$stage/mihomo.json" || return 1; fi
   fi
-  jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" --argjson userinfo "$userinfo" --argjson active "$active" \
+  local fingerprint=''
+  [[ -z "$user_id" ]] || fingerprint=$(subscription_user_fingerprint "$node_id" "$user_id") || return 1
+  jq -n --arg updated "$(now_iso)" --rawfile links "$stage/links" --argjson userinfo "$userinfo" --argjson active "$active" --arg fingerprint "$fingerprint" \
     --slurpfile mixed "$stage/mixed.json" --slurpfile tun "$stage/tun.json" \
     --slurpfile xray "$stage/xray.json" --slurpfile mihomo "$stage/mihomo.json" --slurpfile compatibility "$stage/compatibility.json" '
       {schema_version:1,updated_at:$updated,substore:$links,compatibility:$compatibility[0],
        profiles:{mixed:$mixed[0],tun:$tun[0],xray:$xray[0],mihomo:$mihomo[0]}} |
       (if $userinfo==null then . else .userinfo=$userinfo end) |
+      (if $fingerprint=="" then . else .fingerprint=$fingerprint end) |
       .errors=(.profiles|to_entries|map(select(.value==null)|{key:.key,value:(if $active then "没有兼容节点，或此格式的客户端配置无法生成；请查看 compatibility。" else "该用户已停用、到期或流量用尽。" end)})|from_entries)
     ' >"$stage/bundle.json" || return 1
   chmod 0640 "$stage/bundle.json" && set_group_if_exists "$SBM_SERVICE_USER" "$stage/bundle.json" || return 1
@@ -63,6 +104,7 @@ subscription_build_bundle() (
 # Usage changes without a state change; refresh only user-scoped bundles.
 subscription_refresh_user_bundles() {
   local meta node_id user_id now
+  SBM_USER_BUNDLE_BUILT=()
   [[ -d "$SBM_SUBSCRIPTIONS" ]] || return 0
   now=$(date +%s)
   for meta in "$SBM_SUBSCRIPTIONS"/*.meta.json; do
@@ -71,13 +113,14 @@ subscription_refresh_user_bundles() {
     [[ -n "$user_id" ]] || continue
     node_id=$(jq -r '.node_id' "$meta")
     state_user_exists "$node_id" "$user_id" || continue
-    subscription_build_bundle "${meta%.meta.json}.user.json" "$node_id" "$user_id" || log_warn "用户订阅刷新失败：$node_id/$user_id"
+    subscription_refresh_user_bundle "${meta%.meta.json}.user.json" "$node_id" "$user_id" || log_warn "用户订阅刷新失败：$node_id/$user_id"
   done
 }
 
 subscription_refresh_live() {
   local extra_mode=${1:-} meta mode now needed=false node_id user_id
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || return 0
+  SBM_USER_BUNDLE_BUILT=()
   now=$(date +%s)
   for meta in "$SBM_SUBSCRIPTIONS"/*.meta.json; do
     [[ -f "$meta" ]] || continue
@@ -86,7 +129,7 @@ subscription_refresh_live() {
     if [[ -n "$user_id" ]]; then
       node_id=$(jq -r '.node_id' "$meta")
       if state_user_exists "$node_id" "$user_id"; then
-        subscription_build_bundle "${meta%.meta.json}.user.json" "$node_id" "$user_id" || return 1
+        subscription_refresh_user_bundle "${meta%.meta.json}.user.json" "$node_id" "$user_id" || return 1
       else rm -f "${meta%.meta.json}.user.json"; fi
       continue
     fi

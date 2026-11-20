@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.81
+
+- Speed up state changes with live per-user subscriptions (measured 32s → 5s
+  with two subscriptions; unrelated changes skip rebuilding). VLESS client
+  derivation, `xray -test` client checks and format conversions are cached
+  content-addressed in a root-only runtime directory (pruned daily); user
+  bundles record an input fingerprint and are rebuilt only when it changes,
+  once per user per refresh, with their formats exported concurrently; the
+  compatibility report covers only the subscribed user.
+
 ## 0.1.0-alpha.80
 
 - Fix the VLESS and ShadowTLS wizards aborting with

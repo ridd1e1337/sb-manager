@@ -224,7 +224,43 @@ vless_profile_pair_check() {
   ' <<<"$outbound" >/dev/null
 }
 
+# Deriving and pair-checking a client profile runs dozens of jq/openssl/xray
+# steps (~1s). Results depend only on the inputs and the Xray build, so cache
+# them content-addressed in a root-only runtime directory; stale entries can
+# never match new inputs and are pruned after a day.
+vless_cache_dir() {
+  local dir="$SBM_RUN/vless-cache"
+  [[ -d "$dir" ]] || { mkdir -p "$dir" && chmod 0700 "$dir"; } 2>/dev/null || return 1
+  [[ -w "$dir" ]] || return 1
+  printf '%s\n' "$dir"
+}
+
+vless_cache_key() {
+  local xray_id=none
+  [[ ! -x "$SBM_XRAY_BIN" ]] || xray_id=$(stat -Lc '%s:%Y' "$SBM_XRAY_BIN" 2>/dev/null || echo unknown)
+  { printf '%s\0' "$SBM_VERSION" "$xray_id" "$@"; } | sha256sum | awk '{print $1}'
+}
+
+vless_cache_prune() {
+  local dir
+  dir=$(vless_cache_dir) || return 0
+  find "$dir" -type f -mmin +1440 -delete 2>/dev/null || true
+}
+
 vless_xray_client_outbound() {
+  local dir key file result
+  if dir=$(vless_cache_dir); then
+    key=$(vless_cache_key outbound "$@") && file="$dir/$key.json"
+    if [[ -s "$file" ]]; then cat "$file"; return 0; fi
+  fi
+  result=$(_vless_xray_client_outbound "$@") || return 1
+  if [[ -n "${file:-}" ]]; then
+    (umask 077; printf '%s\n' "$result" >"$file.$$" && mv -f "$file.$$" "$file") 2>/dev/null || rm -f "$file.$$"
+  fi
+  printf '%s\n' "$result"
+}
+
+_vless_xray_client_outbound() {
   local node=$1 credential=$2 secret=$3 inbound stream override settings user_extra encryption decryption public='' verify='' network security flow client
   inbound=$(xray_inbound_for_node "$node" "$(jq -cn --argjson user "$credential" '[$user]')" "$secret") || return 1
   stream=$(vless_stream_normalize "$(jq -c '.streamSettings' <<<"$inbound")") || return 1
@@ -296,6 +332,11 @@ vless_profile_validate() (
   fi
   outbound=$(vless_xray_client_outbound "$node" "$credential" "$secret") || return 1
   if [[ -x "$SBM_XRAY_BIN" && $(jq -r '.settings.vless_engine // "xray"' "$state") == xray ]]; then
+    local cache marker=''
+    if cache=$(vless_cache_dir); then
+      marker="$cache/$(vless_cache_key client-test "$outbound").ok"
+      [[ ! -e "$marker" ]] || return 0
+    fi
     tmp=$(mktemp "$SBM_RUN/vless-client.XXXXXX") || return 1
     log=$(mktemp "$SBM_RUN/vless-client-check.XXXXXX.log") || { rm -f "$tmp"; return 1; }
     trap 'rm -f -- "$tmp" "$log"' EXIT
@@ -303,5 +344,6 @@ vless_profile_validate() (
     xray_test_config "$SBM_XRAY_BIN" "$tmp" "$log" || {
       log_error "VLESS 客户端参数不被当前 Xray 接受：$(grep -m1 -E 'Failed|failed|error' "$log" | cut -c1-300)"; return 1;
     }
+    [[ -z "$marker" ]] || (umask 077; : >"$marker") 2>/dev/null || true
   fi
 )

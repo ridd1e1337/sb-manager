@@ -366,7 +366,7 @@ export_mihomo_client_config() (
 )
 
 export_vless_compatibility_json() {
-  local node id user_id user secret node_secret result mode protocol
+  local only_node=${1:-} only_user=${2:-} node id user_id user secret node_secret result mode protocol
   {
     while IFS= read -r node; do
       id=$(jq -r '.id' <<<"$node"); protocol=$(jq -r '.protocol' <<<"$node")
@@ -383,8 +383,8 @@ export_vless_compatibility_json() {
           jq -cn --arg id "$id" --arg user "$user_id" --arg format "$mode" --argjson result "$result" \
             '{node_id:$id,user_id:$user,format:$format,supported:$result.ok,reason:($result.reason // null)}' || return 1
         done
-      done < <(jq -r '.users[]|select(.enabled)|.id' <<<"$node")
-    done < <(jq -c '.nodes[]?|select(.enabled)' "$SBM_STATE")
+      done < <(jq -r --arg u "$only_user" '.users[]|select(.enabled and ($u=="" or .id==$u))|.id' <<<"$node")
+    done < <(jq -c --arg n "$only_node" '.nodes[]?|select(.enabled and ($n=="" or .id==$n))' "$SBM_STATE")
   } | jq -s .
 }
 
