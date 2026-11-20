@@ -354,20 +354,8 @@ state_migrate_v1_to_v2() {
   mv -f "$candidate" "$SBM_STATE"
 }
 
-state_validate() {
-  local f=$1
-  # One full validation per state content per process: an operation checks the
-  # same candidate several times (init, install, render).
-  local __sv_key
-  __sv_key=$(sha256sum "$f" 2>/dev/null | awk '{print $1}') || __sv_key=''
-  if [[ -n "$__sv_key" && "${SBM_STATE_VALIDATED:-}" == *" $__sv_key "* ]]; then return 0; fi
-  if declare -F shaping_validate_state >/dev/null 2>&1; then shaping_validate_state "$f" || die '整形设置无效。'; fi
-  if declare -F substore_validate_state >/dev/null 2>&1; then substore_validate_state "$f" || die 'Sub-Store 状态无效。'; fi
-  if declare -F tunnel_routes_validate >/dev/null 2>&1; then tunnel_routes_validate "$f" || die 'Tunnel 路由状态无效。'; fi
-  if declare -F traffic_groups_validate >/dev/null 2>&1; then traffic_groups_validate "$f" || die '共享配额状态无效。'; fi
-  if declare -F node_expiry_validate_state >/dev/null 2>&1; then node_expiry_validate_state "$f" || die '到期策略状态无效。'; fi
-  if declare -F user_limits_validate_state >/dev/null 2>&1; then user_limits_validate_state "$f" || die '用户限额状态无效。'; fi
-  if declare -F telegram_bot_validate_state >/dev/null 2>&1; then telegram_bot_validate_state "$f" || die 'Telegram 机器人状态无效。'; fi
+# Structural schema of state v2 (kept separate so it can run in parallel).
+state_validate_schema() {
   jq -e '
     def string: type == "string";
     def nonempty: string and length > 0;
@@ -599,8 +587,45 @@ state_validate() {
         and (.name | nonempty and (explode | all(.[]; . >= 32 and . != 127)))
         and (.enabled | type == "boolean")
         and (.created_at | timestamp)))
-  ' "$f" >/dev/null || die "状态文件结构无效或字段不符合 schema v2：$f"
-  if declare -F reality_site_validate_state >/dev/null 2>&1; then reality_site_validate_state "$f" || return 1; fi
+  ' "$1" >/dev/null
+}
+
+# Run one validator in the background; results are checked in order later.
+_state_validate_spawn() {
+  declare -F "$1" >/dev/null 2>&1 || return 0
+  ( "$1" "$__sv_f" ) >/dev/null 2>&1 & __sv_pids+=($!); __sv_names+=("$1"); __sv_msgs+=("$2")
+}
+
+state_validate() {
+  local f=$1 __sv_f=$1
+  # One full validation per state content per process: an operation checks the
+  # same candidate several times (init, install, render).
+  local __sv_key
+  __sv_key=$(sha256sum "$f" 2>/dev/null | awk '{print $1}') || __sv_key=''
+  if [[ -n "$__sv_key" && "${SBM_STATE_VALIDATED:-}" == *" $__sv_key "* ]]; then return 0; fi
+  # The validators are independent jq programs; run them concurrently and
+  # report the first failure in the original order with its own message.
+  local -a __sv_pids=() __sv_names=() __sv_msgs=() __sv_rc=()
+  local __sv_i
+  _state_validate_spawn shaping_validate_state '整形设置无效。'
+  _state_validate_spawn substore_validate_state 'Sub-Store 状态无效。'
+  _state_validate_spawn tunnel_routes_validate 'Tunnel 路由状态无效。'
+  _state_validate_spawn traffic_groups_validate '共享配额状态无效。'
+  _state_validate_spawn node_expiry_validate_state '到期策略状态无效。'
+  _state_validate_spawn user_limits_validate_state '用户限额状态无效。'
+  _state_validate_spawn telegram_bot_validate_state 'Telegram 机器人状态无效。'
+  _state_validate_spawn state_validate_schema "状态文件结构无效或字段不符合 schema v2：$f"
+  _state_validate_spawn reality_site_validate_state ''
+  for __sv_i in "${!__sv_pids[@]}"; do
+    if wait "${__sv_pids[$__sv_i]}"; then __sv_rc[$__sv_i]=0; else __sv_rc[$__sv_i]=1; fi
+  done
+  for __sv_i in "${!__sv_pids[@]}"; do
+    (( __sv_rc[$__sv_i] == 0 )) && continue
+    # Re-run in the foreground so the validator prints its detailed message.
+    "${__sv_names[$__sv_i]}" "$f" || true
+    [[ -n "${__sv_msgs[$__sv_i]}" ]] && die "${__sv_msgs[$__sv_i]}"
+    return 1
+  done
   [[ -z "$__sv_key" ]] || SBM_STATE_VALIDATED="${SBM_STATE_VALIDATED:- } $__sv_key "
 }
 

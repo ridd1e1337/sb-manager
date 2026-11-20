@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.97
+
+- Performance: the state schema and the seven module validators run
+  concurrently and are checked in the original order; a failing validator is
+  re-run in the foreground so its message is unchanged. Node add 2.8 → 2.5 s,
+  `sb config validate` 1.2 → 1.0 s, `sb status` 1.4 → 1.2 s.
+
 ## 0.1.0-alpha.96
 
 - Remove the unused `/run/sb-manager/vless-cache` left by alpha.81/82 during
