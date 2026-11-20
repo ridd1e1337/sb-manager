@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`sb` is the CLI entry point and loads modules from `lib/`. State, rendering, services, certificates, backups, diagnostics, and tunnels have separate modules. Protocol renderers live in `protocols/`; installation uses `install.sh`/`setup.sh`; architecture notes are in `docs/`.
+`sb` is the CLI entry point and loads modules from `lib/`. State, rendering, services, certificates, status/logs, and tunnels have separate modules. Protocol renderers live in `protocols/`; installation uses `install.sh`/`setup.sh`; architecture notes are in `docs/`.
 
 The source of truth is `/etc/sb-manager/state.json` plus protected secret and certificate files. Never edit generated `config.json` as persistent state.
 
@@ -10,7 +10,7 @@ The source of truth is `/etc/sb-manager/state.json` plus protected secret and ce
 
 Do not add or restore test scripts, test environments, fixtures, test plans,
 or test instructions. Do not provision disposable test hosts or containers.
-Keep user-facing diagnostics, runtime configuration validation, and atomic
+Keep runtime configuration validation and atomic
 candidate-check-install-rollback behavior as production features.
 
 ## Coding Style & Naming Conventions
