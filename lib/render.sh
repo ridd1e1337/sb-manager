@@ -86,77 +86,62 @@ validate_state_semantics() {
     fi
   fi
 
-  declare -A occupied=() realm_ids=()
-  if nginx_stream_state_enabled "$state"; then
-    port=$(jq -r '.nginx_stream.port' "$state")
-    occupied[tcp:$port]='TCP/SNI 复用入口'
-  fi
-  while IFS= read -r node; do
-    [[ -n "$node" ]] || continue
-    id=$(jq -r '.id' <<<"$node")
-    if declare -F nginx_stream_effective_node >/dev/null 2>&1; then
-      node=$(nginx_stream_effective_node "$state" "$node")
-    fi
-    protocol=$(jq -r '.protocol' <<<"$node")
-    port=$(jq -r '.port' <<<"$node")
-    validate_node_id "$id" || die "节点 ID 不规范：$id"
-    validate_port "$port" || die "节点 $id 的端口无效：$port"
-    case "$protocol" in vmess-ws-cf|shadowsocks|anytls|hysteria2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed) ;; *) die "节点 $id 使用未知协议：$protocol" ;; esac
-    if [[ $(jq -r '.enabled' <<<"$node") == true ]]; then
-      if [[ "$protocol" != vmess-ws-cf ]]; then
-        local endpoint_address
-        endpoint_address=$(jq -r '.server_address // ""' <<<"$node")
-        validate_address "$endpoint_address" || die "节点 $id 的客户端服务器地址无效或为空。"
-      fi
-      if [[ "$protocol" == snell ]]; then
-        version_ge "$(core_current_version)" 1.14.0-rc.1 || die 'Snell 需要 sing-box 1.14.0-rc.1 或更高版本核心。'
-        if [[ $(jq -r '.snell_version // 5' <<<"$node") == 6 ]]; then
-          version_ge "$(core_current_version)" 1.14.0-rc.2 || die 'Snell v6 需要 sing-box 1.14.0-rc.2 或更高版本核心。'
-        fi
-      fi
-      if [[ "$protocol" == hysteria2 ]] && { [[ $(jq -r '.obfs.type // ""' <<<"$node") == gecko ]] || [[ $(jq -r '.disable_chrome_parrot // false' <<<"$node") == true ]] || [[ -n $(jq -r '.bbr_profile // ""' <<<"$node") ]] || [[ $(jq -r '.brutal_debug // false' <<<"$node") == true ]]; }; then
-        version_ge "$(core_current_version)" 1.14.0-rc.1 || die '当前 Hysteria2 配置包含 1.14+ 功能，需要 sing-box 1.14.0-rc.1 或更高版本核心。'
-      fi
-      if [[ "$protocol" == hysteria2 && $(jq -r '.realm_enabled // false' <<<"$node") == true ]]; then
-        [[ $(jq -r '.realm.enabled // false' "$state") == true ]] || die "节点 $id 启用了 Hysteria Realm，但全局 Realm 服务未启用。"
-        realm_id=$(jq -r '.realm_id // ""' <<<"$node")
-        [[ "$realm_id" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || die "节点 $id 的 Realm ID 无效：$realm_id"
-        [[ -z ${realm_ids[$realm_id]+x} ]] || die "Realm ID 重复：$realm_id（节点 ${realm_ids[$realm_id]} 与 $id）"
-        realm_ids[$realm_id]=$id
-      fi
-    fi
-    user_ids=$(jq -r '.users[].id' <<<"$node" | sort)
-    count=$(printf '%s\n' "$user_ids" | sed '/^$/d' | uniq -d | wc -l)
-    (( count == 0 )) || die "节点 $id 存在重复用户 ID。"
-    if [[ $(jq -r '.enabled' <<<"$node") == true ]]; then
-      enabled_users=$(jq '[.users[] | select(.enabled==true)] | length' <<<"$node")
-      (( enabled_users > 0 )) || jq -e 'all(.users[]; .limits.suspended!=null or .enabled)' <<<"$node" >/dev/null || die "启用节点 $id 至少需要一个启用用户。"
-      while IFS= read -r kind; do
-        key="$kind:$port"
-        [[ -z ${occupied[$key]+x} ]] || die "端口冲突：$id 与 ${occupied[$key]} 同时占用 ${port}/${kind^^}。"
-        occupied[$key]=$id
-      done < <(node_transport_kinds "$node")
-      if [[ "$protocol" == anytls || "$protocol" == hysteria2 || "$protocol" == trojan || "$protocol" == tuic || "$protocol" == naive || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == tls) ]]; then
-        domain=$(jq -r '.domain // ""' <<<"$node")
-        validate_domain "$domain" || die "节点 $id 的 TLS 域名无效：$domain"
-        cert_dir="$SBM_CERTS/$domain"
-        [[ -s "$cert_dir/fullchain.pem" && -s "$cert_dir/key.pem" ]] || die "节点 $id 缺少证书：$cert_dir/{fullchain.pem,key.pem}"
-      fi
-      while IFS= read -r user_id; do
-        [[ -r "$(state_user_secret_path "$id" "$user_id")" ]] || die "节点 $id 的用户 $user_id 缺少密钥文件。"
-      done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
-      if [[ "$protocol" == hysteria2 || "$protocol" == snell || "$protocol" == shadowtls || ("$protocol" == vless && $(jq -r '.security' <<<"$node") == reality) ]]; then
-        [[ -r "$(state_secret_path "$id")" ]] || die "节点 $id 缺少协议级密钥文件。"
-      fi
-      if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
-        [[ $(jq -r '.credential_revision // 0' <<<"$node") == 1 ]] || die "节点 $id 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"
-      fi
-    fi
-  done < <(jq -c '.nodes[]?' "$state")
-  if [[ $(jq -r '.realm.enabled // false' "$state") == true ]]; then
-    realm_port=$(jq -r '.realm.port' "$state")
-    [[ -z ${occupied[tcp:$realm_port]+x} ]] || die "Realm 端口冲突：${occupied[tcp:$realm_port]} 已占用 ${realm_port}/TCP。"
-  fi
+  # Per-node checks in one jq pass (per-node jq calls dominated latency).
+  # Work items: E msg | A node addr | C node domain | U node user | S node | V gate msg
+  local tag a b core_version=''
+  while IFS=$'\t' read -r tag a b; do
+    case "$tag" in
+      E) die "$a";;
+      A) validate_address "$b" || die "节点 $a 的客户端服务器地址无效或为空。";;
+      C) validate_domain "$b" || die "节点 $a 的 TLS 域名无效：$b"
+         [[ -s "$SBM_CERTS/$b/fullchain.pem" && -s "$SBM_CERTS/$b/key.pem" ]] || die "节点 $a 缺少证书：$SBM_CERTS/$b/{fullchain.pem,key.pem}";;
+      U) [[ -r "$(state_user_secret_path "$a" "$b")" ]] || die "节点 $a 的用户 $b 缺少密钥文件。";;
+      S) [[ -r "$(state_secret_path "$a")" ]] || die "节点 $a 缺少协议级密钥文件。";;
+      V) [[ -n "$core_version" ]] || core_version=$(core_current_version || true)
+         version_ge "$core_version" "$a" || die "$b";;
+    esac
+  done < <(jq -r '
+    def kinds:
+      if .protocol|IN("hysteria2","tuic") then ["udp"]
+      elif .protocol=="naive" then [.network // "tcp"]
+      elif .protocol=="shadowsocks" then ((.network // "tcp") | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
+      else ["tcp"] end;
+    def tab: map(tostring) | join("\t");
+    (.nginx_stream.enabled // false) as $mux | (.nginx_stream.routes // []) as $routes | . as $root |
+    ( [ (if $mux then {key:"tcp:\(.nginx_stream.port)", owner:"TCP/SNI 复用入口", port:.nginx_stream.port, kind:"tcp"} else empty end),
+        (.nodes[]? | select(.enabled==true) | . as $n | ([$routes[] | select(.node_id==$n.id)] | first) as $r |
+          (if $mux and $r != null then $r.backend_port else $n.port end) as $port |
+          kinds[] | {key:"\(.):\($port)", owner:$n.id, port:$port, kind:.}) ]
+      | (group_by(.key)[] | select(length>1) | ["E","端口冲突：\(.[1].owner) 与 \(.[0].owner) 同时占用 \(.[1].port)/\(.[1].kind|ascii_upcase)。"] | tab),
+        (if ($root.realm.enabled // false) then (map(select(.key=="tcp:\($root.realm.port)")) | first) as $c
+           | if $c then ["E","Realm 端口冲突：\($c.owner) 已占用 \($root.realm.port)/TCP。"] | tab else empty end else empty end) ),
+    ( [.nodes[]? | select(.enabled==true and .protocol=="hysteria2" and (.realm_enabled // false))] | group_by(.realm_id // "")[] | select(length>1)
+      | ["E","Realm ID 重复：\(.[0].realm_id)（节点 \(.[0].id) 与 \(.[1].id)）"] | tab ),
+    ( .nodes[]? | . as $n |
+      (if (.id|test("^[a-z0-9][a-z0-9._-]{0,47}$")|not) then ["E","节点 ID 不规范：\(.id)"]|tab else empty end),
+      (if (.port|type)!="number" or .port<1 or .port>65535 then ["E","节点 \(.id) 的端口无效：\(.port)"]|tab else empty end),
+      (if (.protocol|IN("vmess-ws-cf","shadowsocks","anytls","hysteria2","trojan","tuic","vless","naive","shadowtls","snell","socks","http","mixed")|not)
+        then ["E","节点 \(.id) 使用未知协议：\(.protocol)"]|tab else empty end),
+      ([.users[]?.id] | if length != (unique|length) then ["E","节点 \($n.id) 存在重复用户 ID。"]|tab else empty end),
+      ( select(.enabled==true) |
+        (if .protocol!="vmess-ws-cf" then ["A",.id,(.server_address // "")]|tab else empty end),
+        (if .protocol=="snell" then ["V","1.14.0-rc.1","Snell 需要 sing-box 1.14.0-rc.1 或更高版本核心。"]|tab else empty end),
+        (if .protocol=="snell" and ((.snell_version // 5)==6) then ["V","1.14.0-rc.2","Snell v6 需要 sing-box 1.14.0-rc.2 或更高版本核心。"]|tab else empty end),
+        (if .protocol=="hysteria2" and ((.obfs.type // "")=="gecko" or (.disable_chrome_parrot // false) or ((.bbr_profile // "")!="") or (.brutal_debug // false))
+          then ["V","1.14.0-rc.1","当前 Hysteria2 配置包含 1.14+ 功能，需要 sing-box 1.14.0-rc.1 或更高版本核心。"]|tab else empty end),
+        (if .protocol=="hysteria2" and (.realm_enabled // false) then
+           (if ($root.realm.enabled // false)|not then ["E","节点 \(.id) 启用了 Hysteria Realm，但全局 Realm 服务未启用。"]|tab else empty end),
+           (if ((.realm_id // "")|test("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")|not) then ["E","节点 \(.id) 的 Realm ID 无效：\(.realm_id // "")"]|tab else empty end)
+         else empty end),
+        (if ([.users[]? | select(.enabled==true)]|length)==0 and (all(.users[]?; .limits.suspended!=null or .enabled)|not)
+          then ["E","启用节点 \(.id) 至少需要一个启用用户。"]|tab else empty end),
+        (if (.protocol|IN("anytls","hysteria2","trojan","tuic","naive")) or (.protocol=="vless" and .security=="tls")
+          then ["C",.id,(.domain // "")]|tab else empty end),
+        (.users[]? | select(.enabled==true) | ["U",$n.id,.id]|tab),
+        (if (.protocol|IN("hysteria2","snell","shadowtls")) or (.protocol=="vless" and .security=="reality") then ["S",.id]|tab else empty end),
+        (if (.protocol|IN("snell","shadowtls")) and ((.credential_revision // 0)!=1)
+          then ["E","节点 \(.id) 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"]|tab else empty end) ) )
+  ' "$state")
 }
 
 node_enabled_credentials() {
@@ -191,23 +176,60 @@ render_inbound_for_node() {
   singbox_apply_override "$rendered" "$override"
 }
 
+# Content-addressed cache of rendered inbounds in a root-only runtime dir;
+# any input change yields a new key, and entries are pruned after a day.
+render_cache_dir() {
+  local dir="$SBM_RUN/render-cache"
+  [[ -d "$dir" ]] || { mkdir -p "$dir" && chmod 0700 "$dir"; } 2>/dev/null || return 1
+  [[ -w "$dir" ]] || return 1
+  printf '%s\n' "$dir"
+}
+render_cache_prune() {
+  [[ -d "$SBM_RUN/render-cache" ]] || return 0
+  find "$SBM_RUN/render-cache" -type f -mmin +1440 -delete 2>/dev/null || true
+}
+
 render_config_from_state() {
   local mux_config
   local state=$1 output=$2 node node_id credentials node_secret inbound inbounds='[]' log_level api_enabled api_secret api_port dashboard strategy dns_optimistic dns_optimistic_timeout dns_timeout dns_advanced core_version realm_enabled realm_listen realm_port realm_url realm_token realm_user realm_max realm_domain
   validate_state_semantics "$state" || return 1
   mux_config=$(mux_builtin_config "$state") || return 1
-  while IFS= read -r node; do
-    [[ -n "$node" ]] || continue
-    node_id=$(jq -r '.id' <<<"$node")
-    if declare -F nginx_stream_effective_node >/dev/null 2>&1; then
-      node=$(nginx_stream_effective_node "$state" "$node")
+  # Rendered inbounds are cached by content (see render_cache_key), so only
+  # changed nodes are rendered again; inbounds are joined in one jq call.
+  local users nsec key file cache_dir realm_part u
+  local -a rendered=() files=()
+  cache_dir=$(render_cache_dir) || cache_dir=''
+  while IFS=$'\t' read -r node_id node users; do
+    [[ -n "$node_id" ]] || continue
+    nsec=$(state_secret_path "$node_id"); file=''
+    if [[ -n "$cache_dir" ]]; then
+      files=(); for u in $users; do files+=("$(state_user_secret_path "$node_id" "$u")"); done
+      # Hysteria2 Realm blocks embed the global Realm URL and token.
+      realm_part=''
+      if [[ $(jq -r '.realm_enabled // false' <<<"$node") == true ]]; then
+        realm_part="$(jq -c '.realm // {}' "$state")$(cat -- "$SBM_REALM_SECRET" 2>/dev/null)"
+      fi
+      key=$({ printf '%s\0' render "$SBM_VERSION" "$SBM_CERTS" "$node" "$realm_part"; cat -- "${files[@]}" 2>/dev/null; [[ ! -r "$nsec" ]] || cat -- "$nsec"; } | sha256sum | awk '{print $1}')
+      file="$cache_dir/$key.inbound.json"
     fi
-    credentials=$(node_enabled_credentials "$node")
-    node_secret='{}'
-    [[ ! -r $(state_secret_path "$node_id") ]] || node_secret=$(state_get_secret "$node_id")
-    inbound=$(render_inbound_for_node "$node" "$credentials" "$node_secret") || return 1
-    inbounds=$(jq -c --argjson x "$inbound" '. + ($x | if type=="array" then . else [.] end)' <<<"$inbounds") || return 1
-  done < <(state_singbox_nodes "$state")
+    if [[ -n "$file" && -s "$file" ]]; then
+      inbound=$(<"$file")
+    else
+      credentials=$(node_enabled_credentials "$node")
+      node_secret='{}'
+      [[ ! -r "$nsec" ]] || node_secret=$(state_get_secret "$node_id")
+      inbound=$(render_inbound_for_node "$node" "$credentials" "$node_secret") || return 1
+      [[ -z "$file" ]] || { (umask 077; printf '%s\n' "$inbound" >"$file.$$" && mv -f "$file.$$" "$file") 2>/dev/null || rm -f "$file.$$"; }
+    fi
+    rendered+=("$inbound")
+  done < <(jq -r '(.nginx_stream.enabled // false) as $mux | (.nginx_stream.routes // []) as $routes |
+    .nodes[]? | select(.enabled==true and any(.users[]?; .enabled==true)) | . as $n |
+    ([$routes[] | select(.node_id==$n.id)] | first) as $r |
+    (if $mux and $r != null then .listen="127.0.0.1" | .port=$r.backend_port else . end) |
+    [.id, tojson, ([.users[] | select(.enabled==true) | .id] | join(" "))] | join("\t")' "$state")
+  if (( ${#rendered[@]} )); then
+    inbounds=$(printf '%s\n' "${rendered[@]}" | jq -cs 'map(if type=="array" then .[] else . end)') || return 1
+  fi
   log_level=$(jq -r '.settings.log_level // "info"' "$state")
   api_enabled=$(jq -r '.api.enabled // false' "$state")
   api_secret=''; api_port=$(jq -r '.api.port // 9090' "$state"); dashboard=$(jq -r '.api.dashboard // false' "$state")

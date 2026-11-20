@@ -189,7 +189,7 @@ maintenance_run() (
   flock -n 7 || { log_info '脚本更新正在运行，本轮清理跳过。'; return 0; }
   exec 8>"$SBM_RUN/setup.lock"
   flock -n 8 || { log_info '安装正在运行，本轮清理跳过。'; return 0; }
-  if declare -F vless_cache_prune >/dev/null 2>&1; then vless_cache_prune; fi
+  if declare -F render_cache_prune >/dev/null 2>&1; then render_cache_prune; fi
   with_lock _maintenance_run
 )
 

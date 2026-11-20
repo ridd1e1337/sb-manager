@@ -269,7 +269,7 @@ _node_add() {
       [[ "$flow" != auto ]] || flow=xtls-rprx-vision
       case "$flow" in ''|xtls-rprx-vision) ;; *) die 'VLESS flow 仅支持 xtls-rprx-vision 或空值。';; esac
       if [[ "$security" == reality ]]; then
-        [[ -n "$handshake_server" ]] || die 'Reality 必须指定 --handshake-server。'
+        [[ -n "$handshake_server" ]] || handshake_server=$domain  # REALITY target defaults to the SNI site
         validate_domain "$handshake_server" || validate_ipv4 "$handshake_server" || validate_ipv6 "$handshake_server" || die 'Reality 握手目标必须是域名或 IP。'
         validate_port "$handshake_port" || die '无效 Reality 握手端口。'
       fi
@@ -280,7 +280,7 @@ _node_add() {
       protocol=naive; base=naive; [[ "$network" == tcp || "$network" == udp ]] || die 'Naive network 必须是 tcp 或 udp。'; transport=$network; port=${port:-443}; domain=${domain:?Naive 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-Naive}; address=${address:-${default_address:-$domain}}; secret=$(jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}')
       ;;
     shadowtls)
-      protocol=shadowtls; base=shadowtls; transport=tcp; port=${port:-443}; handshake_server=${handshake_server:?ShadowTLS 必须指定 --handshake-server。}; validate_domain "$handshake_server" || die "无效握手域名：$handshake_server"; validate_port "$handshake_port" || die "无效握手端口：$handshake_port"; case "$strict_mode" in true|false) ;; *) die 'strict-mode 必须是 true 或 false。';; esac; case "$wildcard_sni" in off|authed|all) ;; *) die 'wildcard-sni 必须是 off、authed 或 all。';; esac; name=${name:-ShadowTLS}; address=${address:-${default_address:-$handshake_server}}; domain=$handshake_server; secret=$(jq -n --arg password "$(random_password 24)" '{password:$password}')
+      protocol=shadowtls; base=shadowtls; transport=tcp; port=${port:-443}; handshake_server=${handshake_server:-$SBM_RECOMMENDED_REALITY_SNI}; validate_domain "$handshake_server" || die "无效握手域名：$handshake_server"; validate_port "$handshake_port" || die "无效握手端口：$handshake_port"; case "$strict_mode" in true|false) ;; *) die 'strict-mode 必须是 true 或 false。';; esac; case "$wildcard_sni" in off|authed|all) ;; *) die 'wildcard-sni 必须是 off、authed 或 all。';; esac; name=${name:-ShadowTLS}; address=${address:-${default_address:-$handshake_server}}; domain=$handshake_server; secret=$(jq -n --arg password "$(random_password 24)" '{password:$password}')
       secret=$(jq --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '.shadowsocks_password=$key' <<<"$secret")
       node_secret=$(jq -n --arg key "$(ss2022_key 2022-blake3-aes-128-gcm)" '{shadowsocks_server_password:$key}')
       ;;

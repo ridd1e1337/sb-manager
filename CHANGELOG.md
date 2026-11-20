@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.88
+
+- Performance: rendered sing-box inbounds are cached by content (manager
+  version, certificate directory, effective node, secret file bytes and, for
+  Realm-enabled Hysteria2, the Realm settings and token) under
+  `/run/sb-manager/render-cache`, pruned after a day; state validation runs as
+  one jq pass. With 12 nodes a cached render drops from 9.0 s to 1.45 s and
+  validation from 2.6 s to 0.6 s; output is byte-identical.
+- Fix: `sb node add vless --security reality` and `sb node add shadowtls`
+  no longer fail without `--handshake-server`; the target defaults to the SNI
+  site (`www.apple.com` for ShadowTLS).
+
 ## 0.1.0-alpha.87
 
 - Performance: `sb traffic status` (panel menu 16) formats the whole table in
