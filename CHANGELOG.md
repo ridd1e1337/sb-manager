@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.92
+
+- Subscriptions (same as xray-manager): without `?format` the client is
+  detected from its User-Agent — Clash/mihomo/Stash/FlClash → mihomo,
+  sing-box/SFA/Hiddify → sing-box, v2rayN/Shadowrocket/Happ/NekoBox → base64
+  links; new `format=base64`; `Profile-Title` and `Profile-Update-Interval`
+  headers; disabled or expired users receive a placeholder entry that says
+  why. `sb subscription remark set '{name} | 剩 {days}天'` templates user
+  subscription names (panel subscription menu 4).
+
 ## 0.1.0-alpha.91
 
 - Same as xray-manager: `sb node clone SRC NEW` copies a node's settings with

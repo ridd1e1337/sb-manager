@@ -2,6 +2,7 @@
 """Loopback-only profile server; live generations are published by the manager."""
 
 import argparse
+import base64
 import hashlib
 import json
 import re
@@ -12,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+PROFILE_TITLE = "sb-manager"
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
@@ -44,7 +46,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         formats = parse_qs(request_url.query, keep_blank_values=True).get("format", [None])
-        if len(formats) != 1 or formats[0] not in {None, "sing-box", "substore", "xray", "mihomo", "compatibility"}:
+        if len(formats) != 1 or formats[0] not in {None, "sing-box", "substore", "base64", "xray", "mihomo", "compatibility"}:
             self.send_error(400, "Unsupported subscription format")
             return
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -64,7 +66,11 @@ class Handler(BaseHTTPRequestHandler):
             if expires is not None and int(expires) <= int(time.time()):
                 self.send_error(410, "Subscription expired")
                 return
-            output_format = formats[0] or (mode if mode in {"xray", "mihomo"} else "sing-box")
+            output_format = formats[0] or detect_format(self.headers.get("User-Agent", "")) \
+                or (mode if mode in {"xray", "mihomo"} else "sing-box")
+            encode_base64 = output_format == "base64"
+            if encode_base64:
+                output_format = "substore"
             content_type = "text/plain; charset=utf-8" if output_format == "substore" else "application/json; charset=utf-8"
             user_scoped = isinstance(meta.get("user_id"), str)
             if user_scoped:
@@ -93,6 +99,8 @@ class Handler(BaseHTTPRequestHandler):
                                            "compatibility": [item for item in report if item.get("format") == "uri"]}, ensure_ascii=False).encode("utf-8")
                     else:
                         data = bundle["substore"].encode("utf-8")
+                        if encode_base64:
+                            data = base64.b64encode(data)
                 else:
                     profile_key = (mode if mode in {"mixed", "tun"} else "mixed") if output_format == "sing-box" else output_format
                     profile = bundle["profiles"].get(profile_key)
@@ -134,9 +142,28 @@ class Handler(BaseHTTPRequestHandler):
         if userinfo:
             # De-facto header read by Clash/mihomo, sing-box clients and Sub-Store.
             self.send_header("Subscription-Userinfo", userinfo)
+        # Client display name and refresh hint (Clash/mihomo, Shadowrocket, Hiddify, v2rayN).
+        self.send_header("Profile-Title", "base64:" + base64.b64encode(PROFILE_TITLE.encode("utf-8")).decode("ascii"))
+        self.send_header("Profile-Update-Interval", "12")
         self.end_headers()
         if include_body:
             self.wfile.write(data)
+
+
+# Client families by User-Agent (3x-ui sub auto-detect). Only used when the
+# URL has no explicit ?format=; unknown clients keep the subscription mode.
+UA_FORMATS = (
+    (re.compile(r"clash|mihomo|stash|flclash|verge|koala|nyanpasu", re.I), "mihomo"),
+    (re.compile(r"sing-box|singbox|\bSF[AIMT]\b|hiddify|karing", re.I), "sing-box"),
+    (re.compile(r"v2rayn|v2rayng|v2box|shadowrocket|streisand|quantumult|happ|nekobox|nekoray|loon|surfboard|foxray|v2raytun", re.I), "base64"),
+)
+
+
+def detect_format(user_agent: str):
+    for pattern, fmt in UA_FORMATS:
+        if pattern.search(user_agent or ""):
+            return fmt
+    return None
 
 
 class LimitedThreadingHTTPServer(ThreadingHTTPServer):

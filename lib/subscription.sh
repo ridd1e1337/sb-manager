@@ -37,6 +37,8 @@ subscription_user_fingerprint() {
   {
     jq -c --arg n "$node_id" '[(.nodes[]?|select(.id==$n)),.settings,.nginx_stream,.reality_site,.openlist]' "$SBM_STATE"
     printf "%s\0%s\0%s" "$usage" "$secrets" "$SBM_VERSION"
+    # Remark templates show remaining days, which change daily.
+    if jq -e '(.settings.subscription_remark // "") != ""' "$SBM_STATE" >/dev/null; then date -u +%F; fi
   } | sha256sum | awk '{print $1}'
 }
 
@@ -56,7 +58,12 @@ subscription_build_bundle() (
        suspended:($user.limits.suspended // null)}' "$SBM_STATE") || return 1
   fi
   if [[ "$active" != true ]]; then
-    : >"$stage/links"
+    # Placeholder entry so link-based clients show why the profile is empty
+    # (3x-ui expired templates); it points at an unusable address.
+    if [[ -n "$user_id" ]]; then
+      jq -r '"vless://00000000-0000-0000-0000-000000000000@127.0.0.1:1?encryption=none&type=tcp#"
+        + ({expired:"已到期，请联系续费"}[.suspended // ""] // "账号已停用" | @uri)' <<<"$userinfo" >"$stage/links" || return 1
+    else : >"$stage/links"; fi
     for format in mixed tun mihomo; do printf 'null\n' >"$stage/$format.json"; done
   elif [[ -n "$user_id" ]]; then
     # The formats are independent read-only exports; build them concurrently.
@@ -67,6 +74,7 @@ subscription_build_bundle() (
     done
     { export_mihomo_client_config "$stage/mihomo.json" "$node_id" "$user_id" >/dev/null 2>&1 || printf 'null\n' >"$stage/mihomo.json"; } & jobs+=($!)
     wait "${jobs[@]}" || true
+    subscription_apply_remark "$stage/links" "$node_id" "$user_id" "$userinfo" || return 1
   else
     export_substore_links "$stage/links" || return 1
     # Each profile has its own compatibility boundary. Failure of one client
@@ -331,4 +339,48 @@ subscription_status() {
   subscription_list "${1:-0}"
   [[ ${1:-0} == 1 ]] && return 0
   if [[ "$SBM_SKIP_INIT" != 1 ]] && service_exists "$SBM_SUBSCRIPTION_SERVICE"; then service_status_text "$SBM_SUBSCRIPTION_SERVICE" || true; fi
+}
+
+# Optional remark template for user subscriptions (3x-ui remarkTemplate).
+# Variables: {name} {node} {user} {used} {total} {remaining} {days} {expire}.
+# Applied to the #fragment of share links; vmess:// keeps its embedded name.
+subscription_apply_remark() {
+  local file=$1 node_id=$2 user_id=$3 userinfo=$4 template name remark tmp
+  template=$(jq -r '.settings.subscription_remark // ""' "$SBM_STATE")
+  [[ -n "$template" && -s "$file" ]] || return 0
+  name=$(jq -r --arg n "$node_id" '.nodes[]|select(.id==$n)|.name' "$SBM_STATE")
+  remark=$(jq -rn --arg t "$template" --arg name "$name" --arg node "$node_id" --arg user "$user_id" --argjson i "$userinfo" --argjson now "$(date +%s)" '
+    def size: if . <= 0 then "0" else (. / 1073741824 * 100 | round / 100 | tostring) + "G" end;
+    ($i.upload + $i.download) as $used |
+    {name:$name, node:$node, user:$user, used:($used|size),
+     total:(if $i.total > 0 then ($i.total|size) else "不限" end),
+     remaining:(if $i.total > 0 then (([$i.total - $used, 0]|max)|size) else "不限" end),
+     days:(if $i.expire > 0 then ((($i.expire - $now) / 86400 | ceil | [., 0] | max)|tostring) else "∞" end),
+     expire:(if $i.expire > 0 then ($i.expire|strftime("%Y-%m-%d")) else "永久" end)} as $v |
+    reduce ($v|to_entries[]) as $e ($t; gsub("\\{" + $e.key + "\\}"; $e.value)) | @uri')
+  tmp=$(mktemp "$file.XXXXXX") || return 1
+  awk -v r="$remark" '/^vmess:\/\// {print; next} { sub(/#.*$/, ""); print $0 "#" r }' "$file" >"$tmp" && mv -f "$tmp" "$file"
+}
+
+subscription_remark_cli() {
+  local action=${1:-show} template candidate
+  case "$action" in
+    show) jq -r '.settings.subscription_remark // "（未设置）"' "$SBM_STATE";;
+    set|clear)
+      require_root
+      if [[ "$action" == set ]]; then
+        template=${2:?用法：sb subscription remark set '{name} | 剩余 {remaining} | {days} 天'}
+        (( ${#template} <= 120 )) && [[ "$template" != *$'\n'* ]] || die '模板须为一行且不超过 120 个字符。'
+      else template=''; fi
+      _subscription_remark_set() {
+        candidate=$(state_candidate) || return 1
+        jq --arg t "$1" 'if $t=="" then .settings|=del(.subscription_remark) else .settings.subscription_remark=$t end' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+        apply_candidate_state "$candidate" subscription-remark || { rm -f "$candidate"; return 1; }
+        rm -f "$candidate"
+        if declare -F subscription_refresh_user_bundles >/dev/null 2>&1; then subscription_refresh_user_bundles || true; fi
+      }
+      with_state_transaction subscription-remark _subscription_remark_set "$template" || return 1
+      log_ok "订阅备注模板：${template:-已清除}";;
+    *) usage_die "用法：sb subscription remark show|set TEMPLATE|clear（变量 {name} {node} {user} {used} {total} {remaining} {days} {expire}）";;
+  esac
 }

@@ -111,6 +111,8 @@ sb_help_full() {
   sb export config [文件] [--mode mixed|tun] [--tun-dns-mode disabled|native|hijack] [--tun-dns-address IP]
   sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL]
   sb subscription list|status|revoke <ID_OR_TOKEN>
+  sb subscription remark show|set TEMPLATE|clear   用户订阅节点名模板，如 '{name} | {days} 天'
+                                 订阅地址不带 ?format 时按客户端自动选择：Clash/mihomo、sing-box、v2rayN/Shadowrocket（base64）
   sb api enable [PORT] [--dashboard]|disable|status [--json]|show-token|cli <COMMAND> [ARGS]
   sb realm enable PORT PUBLIC_URL [--listen ADDRESS] [--tls-domain DOMAIN] [--max-realms N]
   sb realm disable|status [--json]|show-token
@@ -520,6 +522,7 @@ main() {
         list) subscription_list "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
         status) subscription_status "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
         revoke) [[ $# == 3 ]] || usage_die '用法：sb subscription revoke ID_OR_TOKEN'; subscription_revoke "$3" ;;
+        remark) shift 2; subscription_remark_cli "$@" ;;
         *) usage_die '用法：sb subscription create [7d|never] [mixed|tun] [--live] [--user NODE_ID:USER_ID] [--base-url HTTPS_URL] | list | status | revoke ID_OR_TOKEN' ;;
       esac
       ;;

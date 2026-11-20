@@ -1484,9 +1484,15 @@ ui_substore_sources_menu() {
 
 ui_subscription_menu() {
   local c base duration id items
-  printf '1. 生成动态订阅地址\n2. 查看有效期与状态\n3. 撤销订阅地址\n0. 返回\n'
-  ui_menu_choice c '选择操作' 3
+  printf '1. 生成动态订阅地址\n2. 查看有效期与状态\n3. 撤销订阅地址\n4. 用户订阅节点名模板（当前：%s）\n0. 返回\n' "$(subscription_remark_cli show)"
+  printf '提示：订阅地址不带 ?format 时会按客户端自动选择格式（Clash/mihomo、sing-box、v2rayN/Shadowrocket）。\n'
+  ui_menu_choice c '选择操作' 4
   case "$c" in
+    4)
+      printf '变量：{name} 节点名 {user} 用户 {days} 剩余天数 {expire} 到期日\n'
+      ui_prompt_optional items '模板（留空清除）' '{name} | 剩 {days}天' || return 1
+      if [[ -n "$items" ]]; then subscription_remark_cli set "$items"; else subscription_remark_cli clear; fi
+      return;;
     1)
       base=$(jq -r --arg service "http://127.0.0.1:$SBM_SUBSCRIPTION_PORT" 'first(.tunnel.routes[]?|select(.service==$service and .path=="")|"https://"+.hostname) // ""' "$SBM_STATE")
       printf '公网入口需已通过 HTTPS/Tunnel 转发到本机订阅服务；SSH 转发可留空。\n'
