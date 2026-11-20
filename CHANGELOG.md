@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.90
+
+- Share page (same as xray-manager): the link and QR come first; the sing-box
+  and mihomo client files are exported independently, so a format that
+  cannot express a node no longer hides the link or the others. mihomo
+  configs are now offered for every protocol mihomo supports (not only Snell).
+- Performance: port reservation checks use one jq pass; one shared jq socket
+  model (`SBM_JQ_NODE_KINDS`) is used by validation, port checks and status.
+
 ## 0.1.0-alpha.89
 
 - Panel onboarding (same as xray-manager): wizard steps accept Enter for the

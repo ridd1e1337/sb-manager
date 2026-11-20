@@ -42,13 +42,7 @@ status_nodes_json() {
   local traffic_data listeners
   traffic_data=$(traffic_status_json_unlocked all)
   listeners=$(singbox_listeners_json) || listeners=null
-  jq -c --argjson traffic "$traffic_data" --argjson listeners "$listeners" '
-    def kinds:
-      if .protocol|IN("hysteria2","tuic") then ["udp"]
-      elif .protocol=="naive" then [.network // "tcp"]
-      elif .protocol=="shadowsocks" then
-        (.network // "tcp" | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
-      else ["tcp"] end;
+  jq -c --argjson traffic "$traffic_data" --argjson listeners "$listeners" "$SBM_JQ_NODE_KINDS"'
     (.nginx_stream.enabled // false) as $mux | (.nginx_stream.routes // []) as $routes |
     [ .nodes[]? | . as $n | ([$routes[] | select(.node_id==$n.id)] | first) as $r |
       (if $mux and $r != null then {listen:"127.0.0.1", port:$r.backend_port} else {listen:$n.listen, port:$n.port} end) as $rt |

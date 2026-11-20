@@ -120,38 +120,38 @@ node_share() {
       cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"; chmod 0600 "$out_dir/mihomo.yaml"
     fi
   fi
-  uri=$(node_share_uri "$id" "$user_id") || return 1
-  printf '%s\n' "$uri" >"$out_dir/share.txt"; chmod 0600 "$out_dir/share.txt"
-  outbound=$(node_client_outbound "$id" "$user_id") || return 1
-  printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
-  if export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null; then
-    profile_ready=1
-  else
-    rm -f "$out_dir/client.json"
-    log_warn '完整 sing-box 配置未能生成；已经显示的分享内容和已生成文件仍可使用。'
-  fi
-  if substore_line=$(node_substore_line "$id" "$user_id" 2>/dev/null); then
-    printf '%s\n' "$substore_line" >"$out_dir/substore.txt"; chmod 0600 "$out_dir/substore.txt"
-  else
-    rm -f "$out_dir/substore.txt"
-  fi
-  if [[ "$protocol" != snell ]]; then
-    printf '\n%s节点/用户：%s/%s%s\n\n%s\n\n' "$C_BOLD" "$id" "$user_id" "$C_RESET" "$uri"
+  # The link (and QR) comes first; every client format is then exported
+  # independently, so one that cannot express the node never hides the rest.
+  rm -f "$out_dir/share.txt" "$out_dir/substore.txt" "$out_dir/outbound.json" "$out_dir/client.json"
+  [[ "$protocol" == snell ]] || rm -f "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"
+  if (( surge_ready == 0 )); then printf '\n%s节点/用户：%s/%s%s\n' "$C_BOLD" "$id" "$user_id" "$C_RESET"; fi
+  if uri=$(node_share_uri "$id" "$user_id" 2>/dev/null) && [[ -n "$uri" ]]; then
+    printf '%s\n' "$uri" >"$out_dir/share.txt"; chmod 0600 "$out_dir/share.txt"
+    cp "$out_dir/share.txt" "$out_dir/substore.txt"; chmod 0600 "$out_dir/substore.txt"
+    if [[ "$protocol" != snell ]]; then
+      printf '\n分享链接：\n%s\n\n' "$uri"
+      if [[ "$qr" == 1 ]]; then
+        if command_exists qrencode; then qrencode -t ANSIUTF8 "$uri"; else log_info '未安装二维码工具；可直接复制上面的分享链接导入客户端。'; fi
+      fi
+    fi
   elif (( surge_ready == 0 )); then
-    printf '节点/用户：%s/%s\n' "$id" "$user_id"
+    log_info '该节点没有通用分享链接格式，请使用下方客户端配置文件。'
   fi
-  printf 'sing-box 客户端节点 JSON：%s\n' "$out_dir/outbound.json"
-  if (( profile_ready )); then printf 'sing-box 完整客户端配置：%s\n' "$out_dir/client.json"; fi
+  if outbound=$(node_client_outbound "$id" "$user_id" 2>/dev/null); then
+    printf '%s\n' "$outbound" | jq . >"$out_dir/outbound.json"; chmod 0600 "$out_dir/outbound.json"
+    if export_node_client_config "$id" "$user_id" "$out_dir/client.json" >/dev/null 2>&1; then
+      printf 'sing-box 客户端配置：%s\n' "$out_dir/client.json"
+    else rm -f "$out_dir/client.json"; printf 'sing-box 节点 JSON：%s\n' "$out_dir/outbound.json"; fi
+  fi
+  if [[ ! -r "$out_dir/mihomo.yaml" ]] && export_mihomo_client_config "$out_dir/mihomo.json" "$id" "$user_id" >/dev/null 2>&1; then
+    cp "$out_dir/mihomo.json" "$out_dir/mihomo.yaml"; chmod 0600 "$out_dir/mihomo.yaml"
+  fi
+  [[ ! -r "$out_dir/mihomo.yaml" ]] || printf 'mihomo 客户端配置（Clash Verge/FlClash）：%s\n' "$out_dir/mihomo.yaml"
   if [[ "$protocol" == shadowtls ]]; then
     printf 'ShadowTLS 文件包含 Shadowsocks 内层与 ShadowTLS 外层两个 outbound，须一起导入；分享链接需要客户端支持 shadow-tls 插件。\n'
   fi
-  if [[ -r "$out_dir/mihomo.yaml" ]]; then printf 'mihomo 配置：%s\n' "$out_dir/mihomo.yaml"; fi
-  if [[ "$protocol" != snell && -r "$out_dir/substore.txt" ]]; then
-    printf '\nSub-Store 单节点内容（复制下面这一行到本地订阅）：\n%s\n' "$(<"$out_dir/substore.txt")"
-  fi
-  if [[ "$qr" == 1 && "$protocol" != snell ]]; then
-    if command_exists qrencode; then qrencode -t ANSIUTF8 "$uri"; else log_info '未安装二维码工具；可直接复制上面的分享链接导入客户端。'; fi
-  fi
+  [[ -r "$out_dir/share.txt" || -r "$out_dir/outbound.json" || -r "$out_dir/mihomo.yaml" || "$surge_ready" == 1 ]] \
+    || { log_error "节点 $id 没有可用的客户端导出。"; return 1; }
 }
 
 node_share_all() (

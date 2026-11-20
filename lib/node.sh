@@ -21,15 +21,10 @@ node_protocol_label() {
 }
 
 node_port_in_state() {
-  local kind=$1 port=$2 state=${3:-$SBM_STATE} node k
-  if [[ "$kind" == tcp ]] && jq -e --argjson port "$port" '
-    (.nginx_stream.enabled==true and .nginx_stream.port==$port)
-    or any(.nginx_stream.routes[]?; .backend_port==$port)
-  ' "$state" >/dev/null; then return 0; fi
-  while IFS= read -r node; do
-    while IFS= read -r k; do [[ "$k" == "$kind" && $(jq -r '.port' <<<"$node") == "$port" ]] && return 0; done < <(node_transport_kinds "$node")
-  done < <(jq -c '.nodes[]? | select(.enabled==true)' "$state")
-  return 1
+  local kind=$1 port=$2 state=${3:-$SBM_STATE}
+  jq -e --arg kind "$kind" --argjson port "$port" "$SBM_JQ_NODE_KINDS"'
+    ($kind=="tcp" and ((.nginx_stream.enabled==true and .nginx_stream.port==$port) or any(.nginx_stream.routes[]?; .backend_port==$port)))
+    or any(.nodes[]? | select(.enabled==true); .port==$port and (kinds | index($kind)) != null)' "$state" >/dev/null
 }
 
 node_auto_address() {

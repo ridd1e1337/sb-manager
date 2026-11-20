@@ -59,6 +59,16 @@ singbox_apply_override() {
   ' <<<"$rendered"
 }
 
+# jq definition shared by validation, port reservation and status: the
+# sockets (tcp/udp) a node listens on, mirroring node_transport_kinds.
+SBM_JQ_NODE_KINDS='
+    def kinds:
+      if .protocol|IN("hysteria2","tuic") then ["udp"]
+      elif .protocol=="naive" then [.network // "tcp"]
+      elif .protocol=="shadowsocks" then ((.network // "tcp") | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
+      else ["tcp"] end;
+'
+
 validate_state_semantics() {
   local state=$1 ids count node id protocol port domain cert_dir kind key user_ids user_id enabled_users realm_url realm_domain realm_port realm_id
   state_validate "$state" || return 1
@@ -100,12 +110,7 @@ validate_state_semantics() {
       V) [[ -n "$core_version" ]] || core_version=$(core_current_version || true)
          version_ge "$core_version" "$a" || die "$b";;
     esac
-  done < <(jq -r '
-    def kinds:
-      if .protocol|IN("hysteria2","tuic") then ["udp"]
-      elif .protocol=="naive" then [.network // "tcp"]
-      elif .protocol=="shadowsocks" then ((.network // "tcp") | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
-      else ["tcp"] end;
+  done < <(jq -r "$SBM_JQ_NODE_KINDS"'
     def tab: map(tostring) | join("\t");
     (.nginx_stream.enabled // false) as $mux | (.nginx_stream.routes // []) as $routes | . as $root |
     ( [ (if $mux then {key:"tcp:\(.nginx_stream.port)", owner:"TCP/SNI 复用入口", port:.nginx_stream.port, kind:"tcp"} else empty end),
