@@ -39,7 +39,7 @@ _substore_remote_links() {
 # jq calls per user, so the export only runs when this changes.
 substore_remote_fingerprint() {
   {
-    jq -c 'del(.created_at, .updated_at, .health, .notifications, .api, .realm, .routing, .node_templates, .manager_version, .certificates)' "$SBM_STATE"
+    jq -c 'del(.created_at, .updated_at, .health, .notifications, .api, .realm, .routing, .manager_version, .certificates)' "$SBM_STATE"
     find "$SBM_SECRETS/users" "$SBM_SECRETS/nodes" -type f -printf '%P %T@ %s\n' 2>/dev/null | LC_ALL=C sort
   } | sha256sum | awk '{print $1}'
 }

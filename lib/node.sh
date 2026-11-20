@@ -421,30 +421,6 @@ _node_set_enabled() {
 node_enable() { with_state_transaction node-enable _node_set_enabled "$1" true; }
 node_disable() { with_state_transaction node-disable _node_set_enabled "$1" false; }
 
-_node_batch_set_enabled() {
-  local action=$1 value=$2 tag=${3:-} region=${4:-} candidate count
-  [[ -n "$tag" || -n "$region" ]] || die '批量操作至少需要 --tag 或 --region。'
-  candidate=$(state_candidate)
-  count=$(jq --arg tag "$tag" --arg region "$region" '[.nodes[] | select(($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region))] | length' "$SBM_STATE")
-  (( count > 0 )) || die '没有匹配的节点。'
-  if [[ "$value" == true ]] && jq -e --arg tag "$tag" --arg region "$region" --argjson now "$(date +%s)" 'any(.nodes[]; ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) and .expiry.at!=null and .expiry.at<=$now)' "$SBM_STATE" >/dev/null; then die '匹配节点包含已到期节点，请先续期。'; fi
-  jq --arg tag "$tag" --arg region "$region" --argjson value "$value" '.nodes |= map(if ($tag=="" or (.metadata.tags|index($tag))!=null) and ($region=="" or .metadata.region==$region) then .enabled=$value | if $value==false and .expiry.suspended==true then .expiry.resume_enabled=false else . end else . end)' "$SBM_STATE" >"$candidate"
-  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then config_preview_candidate "$candidate"; rm -f "$candidate"; return 0; fi
-  if ! apply_candidate_state "$candidate" "node-batch-$action"; then rm -f "$candidate"; return 1; fi
-  rm -f "$candidate"
-  log_ok "已批量${action} $count 个节点。"
-}
-node_batch_enable() {
-  [[ -n ${1:-} || -n ${2:-} ]] || usage_die '批量操作至少需要 --tag 或 --region。'
-  [[ ${SBM_DRY_RUN:-0} == 1 ]] || { confirm '确认批量启用匹配节点？' N || return 0; }
-  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then with_lock _node_batch_set_enabled enable true "${1:-}" "${2:-}"; else with_state_transaction node-batch-enable _node_batch_set_enabled enable true "${1:-}" "${2:-}"; fi
-}
-node_batch_disable() {
-  [[ -n ${1:-} || -n ${2:-} ]] || usage_die '批量操作至少需要 --tag 或 --region。'
-  [[ ${SBM_DRY_RUN:-0} == 1 ]] || { confirm '确认批量停用匹配节点？' N || return 0; }
-  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then with_lock _node_batch_set_enabled disable false "${1:-}" "${2:-}"; else with_state_transaction node-batch-disable _node_batch_set_enabled disable false "${1:-}" "${2:-}"; fi
-}
-
 _node_delete() {
   local id=$1 candidate
   state_node_exists "$id" || die "节点不存在：$id"

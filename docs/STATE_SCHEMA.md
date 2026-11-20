@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.103",
+  "manager_version": "0.1.0-alpha.104",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -232,8 +232,6 @@ The optional top-level `realm` object configures sing-box's `hysteria-realm` ser
 Existing v1 installations migrate once, before rendering, with a pre-migration snapshot. Future changes must use explicit, one-way migration steps. Generated config files must never be parsed back into state.
 
 `nodes[].metadata` contains operator-only `remark`, `region`, `purpose`, `line`, and unique `tags`. These values are for filtering and dashboards and are deliberately excluded from protocol renderers and client exports.
-
-`node_templates` stores non-secret protocol defaults captured from existing nodes. Templates never include user or node credentials; creating a node from a template generates fresh credentials through the normal node-add transaction.
 
 `nodes[].singbox.inbound` and `nodes[].singbox.outbound` are optional JSON
 objects for fields introduced by newer sing-box releases. They are accepted by

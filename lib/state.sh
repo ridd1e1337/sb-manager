@@ -75,7 +75,6 @@ state_default_json() {
           service_restart_warn: 3
         }
       },
-      node_templates: [],
       certificates: [],
       nodes: []
     }'
@@ -243,7 +242,7 @@ state_normalize_v2_file() {
     | .health.resources.file_descriptors_max_percent //= 80
     | .health.resources.fail2ban_banned_warn //= 10
     | .health.resources.service_restart_warn //= 3
-    | .node_templates //= []
+    | del(.node_templates)
     | .nodes |= map(select((.protocol=="vless" and ((.security // "")|IN("tls","reality")|not))|not))
     | .nodes |= map(
         .metadata //= {remark:"",region:"",purpose:"",line:"",tags:[]}
@@ -347,7 +346,6 @@ state_migrate_v1_to_v2() {
     | .nginx_stream={enabled:false,listen:"::",port:443,routes:[]}
     | .notifications={enabled:false,provider:"none",traffic_thresholds:[80,90,100]}
     | .health={enabled:false,certificate_warn_days:21,resources:{disk_min_free_percent:10,inode_max_percent:90,memory_max_percent:90,cpu_load_per_core_max:2,file_descriptors_max_percent:80,fail2ban_banned_warn:10,service_restart_warn:3}}
-    | .node_templates=[]
     | .nodes |= map(
         . as $node
         | .users=[{id:"default",name:$node.name,enabled:true,created_at:$node.created_at}]
@@ -564,12 +562,6 @@ state_validate_schema() {
       and (.resources.file_descriptors_max_percent | type == "number" and floor == . and . >= 1 and . <= 100)
       and (.resources.fail2ban_banned_warn | type == "number" and floor == . and . >= 1 and . <= 1000000)
       and (.resources.service_restart_warn | type == "number" and floor == . and . >= 1 and . <= 1000000))
-    and (.node_templates | type == "array" and length <= 128)
-    and all(.node_templates[];
-      type == "object"
-      and (.name | string and test("^[a-z0-9][a-z0-9._-]{0,47}$"))
-      and (.protocol | IN("vmess-ws-cf", "shadowsocks", "anytls", "hysteria2", "trojan", "tuic", "vless", "naive", "shadowtls", "snell", "socks", "http", "mixed"))
-      and (.defaults | type == "object"))
     and (.certificates | type == "array")
     and (if .openlist==null then true else
       (.openlist | type=="object" and (.sites|type=="array") and

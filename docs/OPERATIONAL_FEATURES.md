@@ -15,7 +15,7 @@ Node.js、Python、iperf3 或 tc 依赖。兼容 Debian/systemd 和 Alpine/OpenR
 使用检测到的服务器地址，无法取得时要求填写；端口建议会避开已占用端口。
 
 从 alpha.57 起，主菜单按“功能名＋用途”展示；7 为 CF Tunnel（Cloudflare
-隧道），13 为 sing-box 设置，14 为 VPS 与网站运维，19 为 Sub-Store 订阅管理，20 为出站、WARP 与分流（备份与恢复已移除，其后各项前移一位）。
+隧道），13 为 sing-box 设置，14 为 VPS 与网站运维，18 为 Sub-Store 订阅管理，19 为出站、WARP 与分流（备份与恢复、节点模板与批量操作已移除，其后各项前移）。
 VPS 分类集中提供初始化、基础环境状态、UFW/Fail2ban、Nginx/Caddy 共用 443、
 BBR/TCP/QUIC 网络调优、测速和系统支持说明。
 
@@ -401,7 +401,7 @@ sb user add mixed-main second-user
 ```
 
 默认监听 `127.0.0.1`，也可选 `::1`、`0.0.0.0`、`::`。每个用户自动生成
-独立用户名/密码，复用节点启停、凭据轮换、模板、导出和流量策略。mixed 同时
+独立用户名/密码，复用节点启停、凭据轮换、导出和流量策略。mixed 同时
 接受 HTTP 和 SOCKS5，默认分享为 SOCKS5 链接。普通 SOCKS5/HTTP 不加密，
 跨公网访问应结合受信任的加密通道。
 
@@ -557,7 +557,7 @@ sb substore enable
 的 Sub-Store 以取得一致副本，再恢复服务。备份含访问路径和订阅凭据，权限为
 0600。普通卸载停止组件并保留数据，彻底卸载才删除。恢复上限为 128 MiB 压缩 / 256 MiB 解压。
 
-面板主菜单：“19. Sub-Store 订阅管理”。
+面板主菜单：“18. Sub-Store 订阅管理”。
 
 ## 多服务器接入与动态订阅（alpha.34）
 

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-template_validate_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]]; }
-
-node_template_safe_defaults() {
+node_clone_defaults() {
   local node=$1
   jq '{name,protocol,domain:(.domain // ""),server_address:(.server_address // ""),client_address:(.client_address // ""),
       port,listen,network:(.network // ""),method:(.method // ""),multiplex:(.multiplex // true),ws_path:(.ws_path // ""),
@@ -14,62 +12,7 @@ node_template_safe_defaults() {
       singbox:(.singbox // {inbound:{},outbound:{}})}' <<<"$node"
 }
 
-_node_template_save() {
-  local name=$1 node_id=$2 node defaults candidate
-  template_validate_name "$name" || die '模板名称只能包含小写字母、数字、点、下划线和连字符。'
-  node=$(state_get_node "$node_id"); [[ -n "$node" ]] || die "节点不存在：$node_id"
-  jq -e --arg name "$name" '.node_templates[]? | select(.name==$name)' "$SBM_STATE" >/dev/null && die "模板已存在：$name"
-  defaults=$(node_template_safe_defaults "$node")
-  candidate=$(state_candidate)
-  jq --arg name "$name" --argjson defaults "$defaults" --arg now "$(now_iso)" \
-    '.node_templates += [{name:$name,protocol:$defaults.protocol,defaults:$defaults,created_at:$now}]' "$SBM_STATE" >"$candidate"
-  if ! apply_candidate_state "$candidate" "template-save-$name"; then rm -f "$candidate"; return 1; fi
-  rm -f "$candidate"
-  log_ok "已保存节点模板：$name（来源节点：$node_id）"
-}
-node_template_save() { with_state_transaction template-save _node_template_save "$@"; }
 
-node_template_list() {
-  local json=${1:-0}
-  if [[ "$json" == 1 ]]; then jq '.node_templates' "$SBM_STATE"; else
-    printf '%-20s %-18s %s\n' '模板' '协议' '默认端口'
-    jq -r '.node_templates[]? | [.name,.protocol,(.defaults.port|tostring)] | @tsv' "$SBM_STATE" |
-      while IFS=$'\t' read -r name protocol port; do printf '%-20s %-18s %s\n' "$name" "$(node_protocol_label "$protocol")" "$port"; done
-  fi
-}
-
-_node_template_delete() {
-  local name=$1 candidate
-  template_validate_name "$name" || die '无效模板名称。'
-  jq -e --arg name "$name" '.node_templates[]? | select(.name==$name)' "$SBM_STATE" >/dev/null || die "模板不存在：$name"
-  candidate=$(state_candidate)
-  jq --arg name "$name" '.node_templates |= map(select(.name!=$name))' "$SBM_STATE" >"$candidate"
-  if ! apply_candidate_state "$candidate" "template-delete-$name"; then rm -f "$candidate"; return 1; fi
-  rm -f "$candidate"
-  log_ok "已删除节点模板：$name"
-}
-node_template_delete() { with_state_transaction template-delete _node_template_delete "$@"; }
-
-node_template_get() { jq -c --arg name "$1" '.node_templates[]? | select(.name==$name)' "$SBM_STATE"; }
-
-node_template_add() {
-  local name=$1 id=$2 template
-  shift 2
-  template=$(node_template_get "$name"); [[ -n "$template" ]] || die "模板不存在：$name"
-  node_add_from_defaults "$(jq -c '.defaults' <<<"$template")" "$id" "$@"
-}
-
-# 3x-ui "clone inbound": same settings, new ID/port, fresh credentials.
-node_clone() {
-  local src=${1:?用法：sb node clone SRC_ID NEW_ID [--port N] [--name NAME] [--domain DOMAIN]} id=${2:?缺少新节点 ID} node port
-  shift 2
-  node=$(state_get_node "$src"); [[ -n "$node" ]] || die "节点不存在：$src"
-  port=$(node_choose_port "$(node_transport_kinds "$node" | head -1)") || return 1
-  node_add_from_defaults "$(node_template_safe_defaults "$node")" "$id" --port "$port" --name "$(jq -r '.name' <<<"$node") copy" "$@"
-}
-
-# Create a node from non-secret defaults (templates and clone); credentials
-# are always generated fresh by the normal node-add transaction.
 node_add_from_defaults() {
   local defaults=$1 id=$2 protocol value address domain port node_name disabled=0 inbound_json outbound_json
   shift 2
@@ -121,4 +64,12 @@ node_add_from_defaults() {
   args+=(--remark "$remark" --region "$region" --purpose "$purpose" --line "$line" --tags "$tags")
   (( disabled == 0 )) || args+=(--disabled)
   node_add "${args[@]}"
+}
+
+node_clone() {
+  local src=${1:?用法：sb node clone SRC_ID NEW_ID [--port N] [--name NAME] [--domain DOMAIN]} id=${2:?缺少新节点 ID} node port
+  shift 2
+  node=$(state_get_node "$src"); [[ -n "$node" ]] || die "节点不存在：$src"
+  port=$(node_choose_port "$(node_transport_kinds "$node" | head -1)") || return 1
+  node_add_from_defaults "$(node_clone_defaults "$node")" "$id" --port "$port" --name "$(jq -r '.name' <<<"$node") copy" "$@"
 }

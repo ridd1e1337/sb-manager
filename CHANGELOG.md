@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.104
+
+- 移除节点模板与批量操作：面板“节点模板与批量操作”、`sb node template list|save|delete|add`、
+  `sb node enable-all|disable-all`；状态中的 `node_templates` 自动删除。`sb node clone` 保留。
+- 主菜单其后各项前移：17 卸载管理器、18 Sub-Store 订阅管理，19 出站、WARP 与分流。
+
 ## 0.1.0-alpha.103
 
 - 移除备份与恢复功能：`sb backup`、`sb restore`、面板“13. 备份与恢复”、Telegram `/backup` 与

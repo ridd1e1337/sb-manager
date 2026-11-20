@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_template_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_client_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -1090,20 +1090,6 @@ ui_tcp_tuning_menu() {
   esac
 }
 
-ui_template_menu() {
-  local c name id tag region
-  node_template_list
-  printf '\n1. 从节点保存模板\n2. 使用模板创建节点\n3. 删除模板\n4. 按标签启用节点\n5. 按标签停用节点\n0. 返回\n'
-  ui_menu_choice c '选择操作' 5
-  case "$c" in
-    1) prompt_value name '模板名称' ''; ui_select_node id || { ui_cancel; return $?; }; node_template_save "$name" "$id" ;;
-    2) prompt_value name '模板名称' ''; prompt_value id '新节点 ID' ''; node_template_add "$name" "$id" ;;
-    3) prompt_value name '模板名称' ''; confirm "确认删除模板 $name？" N && node_template_delete "$name" ;;
-    4) prompt_value tag '标签' ''; node_batch_enable "$tag" '' ;;
-    5) prompt_value tag '标签' ''; node_batch_disable "$tag" '' ;;
-  esac
-}
-
 ui_firewall_menu() {
   local c
   printf 'UFW 管理端口放行；Fail2ban 根据 SSH 登录失败日志封禁来源 IP。\n'
@@ -1624,10 +1610,9 @@ ui_main_options() {
 14. VPS 与网站运维
 15. 节点流量与限速
 16. 通知与健康监控
-17. 节点模板与批量操作
-18. 卸载管理器
-19. Sub-Store 订阅管理
-20. 出站、WARP 与分流
+17. 卸载管理器
+18. Sub-Store 订阅管理
+19. 出站、WARP 与分流
  0. 退出面板
 EOF_MENU
 }
@@ -1661,9 +1646,9 @@ ui_main() {
       8) page=ui_update_menu;; 9) page=ui_api_menu;; 10) page=ui_realm_menu;;
       11) page=show_logs; page_args=(all 100);; 12) page=ui_doctor_menu;;
       13) page=ui_settings_menu;; 14) page=ui_vps_menu;; 15) page=ui_traffic_menu;;
-      16) page=ui_notification_health_menu;; 17) page=ui_template_menu;;
-      18) page=ui_uninstall_menu;; 19) page=ui_substore_menu;;
-      20) page=ui_routing_menu;;
+      16) page=ui_notification_health_menu;;
+      17) page=ui_uninstall_menu;; 18) page=ui_substore_menu;;
+      19) page=ui_routing_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"
