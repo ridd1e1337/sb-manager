@@ -79,7 +79,7 @@ export_substore_links() {
   while IFS= read -r node; do
     id=$(jq -r '.id' <<<"$node")
     while IFS= read -r user_id; do
-      if line=$(node_substore_line "$id" "$user_id"); then printf '%s\n' "$line" >>"$tmp" || return 1
+      if line=$(node_substore_line "$id" "$user_id") && [[ -n "$line" ]]; then printf '%s\n' "$line" >>"$tmp" || return 1
       else log_warn "Sub-Store 链接已排除无法用分享链接表达的节点：$id/$user_id；请使用 sing-box 客户端配置。"; fi
     done < <(jq -r '.users[] | select(.enabled==true) | .id' <<<"$node")
   done < <(jq -c '.nodes[]? | select(.enabled==true)' "$SBM_STATE")

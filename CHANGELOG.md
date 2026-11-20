@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.105
+
+- 修复：Sub-Store 链接导出在分享链接为空时写入空行。
+
 ## 0.1.0-alpha.104
 
 - 移除节点模板与批量操作：面板“节点模板与批量操作”、`sb node template list|save|delete|add`、
