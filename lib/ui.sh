@@ -22,7 +22,7 @@ ui_clear() { [[ -t 1 && -n ${TERM:-} && ${TERM:-} != dumb ]] && command_exists c
 # would disable it inside the backend and could let failed actions continue.
 ui_worker_allowed() {
   case "$1" in
-    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_doctor_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_firewall_menu|ui_vps_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
+    ui_issue_certificate|ui_routing_menu|ui_node_finish_menu|node_share|ui_add_node|ui_vless_add|ui_user_menu|ui_manage_nodes|ui_share_export_menu|ui_cert_menu|ui_tunnel_menu|ui_update_menu|ui_manager_auto_menu|ui_api_menu|ui_realm_menu|ui_uninstall_menu|ui_nginx_stream_menu|ui_settings_menu|ui_tcp_tuning_menu|ui_firewall_menu|ui_vps_menu|ui_site443_menu|ui_vps_upkeep_menu|ui_vps_init_menu|ui_vps_network_menu|ui_caddy_menu|ui_openlist_menu|ui_reality_menu|ui_maintenance_menu|ui_substore_guide|ui_notification_health_menu|ui_traffic_menu|ui_network_benchmark_menu|ui_traffic_group_menu|ui_shaping_menu|ui_tunnel_routes_menu|ui_substore_menu|ui_config_menu|ui_dns_menu|ui_bbr_menu|ui_hy2_buffer_menu|ui_outbound_menu|ui_substore_sources_menu|ui_subscription_menu|status_summary|show_logs) return 0;;
     *) return 1;;
   esac
 }
@@ -881,26 +881,6 @@ ui_realm_menu() {
   esac
 }
 
-ui_doctor_menu() {
-  local c host count family
-  printf '1. 运行完整诊断\n2. 自动修复权限、配置与服务\n3. 低风险自动修复\n4. 协调/重启 sing-box 服务\n5. 查看 sing-box 最近日志\n6. 网络延迟、丢包与抖动检测\n7. 吞吐测速与前后对比\n0. 返回\n'
-  ui_menu_choice c '选择操作' 7
-  case "$c" in
-    1) doctor_run || true;;
-    2) doctor_run 1 || true;;
-    3) doctor_run 0 0 1 || true;;
-    4) singbox_service_reconcile && status_summary || true;;
-    5) show_logs singbox 100;;
-    6)
-      prompt_value host '目标主机名或 IP' ''
-      prompt_value count '探测次数（1–30）' '10'
-      prompt_value family 'IP 协议（auto/4/6）' 'auto'
-      network_ping "$host" "$count" "$family" || true
-      ;;
-    7) ui_open_submenu ui_network_benchmark_menu;;
-  esac
-}
-
 ui_uninstall_menu() {
   local c phrase
   printf '%s\n' \
@@ -914,8 +894,7 @@ ui_uninstall_menu() {
       ;;
     2)
       printf '%s警告：此操作会删除所有节点、证书、Token、核心和备份，无法撤销。%s\n' "$C_RED" "$C_RESET"
-      prompt_value phrase '请输入 DELETE 确认彻底卸载' ''
-      [[ "$phrase" == DELETE ]] || { log_warn '确认文字不匹配，已取消。'; return $?; }
+      confirm '确认删除程序及全部数据？' N || { log_warn '已取消。'; return 0; }
       uninstall_manager 1 1
       ;;
     0) return 0 ;;
@@ -985,7 +964,7 @@ ui_nginx_stream_menu() {
 
 ui_settings_menu() {
   local c v
-  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 13。\n'
+  printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 12。\n'
   printf '1. 默认客户端连接地址\n2. 日志详细程度\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n0. 返回\n'
   ui_menu_choice c '选择设置' 5
   case "$c" in
@@ -1079,20 +1058,36 @@ ui_firewall_menu() {
 
 ui_vps_menu() {
   local choice
-  printf 'VPS 与网站运维：集中管理主机基础环境、防火墙、SSH 防护、网站入口和网络调优。\n'
-  printf '1. 新 VPS 一键初始化\n2. 查看基础环境状态\n3. 防火墙与 SSH 防护\n4. 网站与节点共用 443\n5. 网络性能与调优\n6. 支持的 Linux 系统与当前环境\n7. Caddy 程序维护\n8. 缓存与日志\n9. OpenList 网站\n10. OpenList 与 Reality 共用 443\n0. 返回\n'
-  ui_menu_choice choice '选择服务器功能' 10
+  printf '1. 新 VPS 一键初始化（UFW、Fail2ban、Caddy；含组件状态）\n2. 防火墙与 SSH 防护\n3. 网站与 443 共用（REALITY + 网站、SNI 分流、OpenList）\n4. 网络调优与测速\n5. 程序与缓存维护\n0. 返回\n'
+  ui_menu_choice choice '选择服务器功能' 5
   case "$choice" in
     1) ui_open_submenu ui_vps_init_menu;;
-    2) vps_init_status;;
-    3) ui_open_submenu ui_firewall_menu;;
-    4) ui_open_submenu ui_nginx_stream_menu;;
-    5) ui_open_submenu ui_vps_network_menu;;
-    6) vps_system_support;;
-    7) ui_open_submenu ui_caddy_menu;;
-    8) ui_open_submenu ui_maintenance_menu;;
-    9) ui_open_submenu ui_openlist_menu;;
-    10) ui_open_submenu ui_reality_menu;;
+    2) ui_open_submenu ui_firewall_menu;;
+    3) ui_open_submenu ui_site443_menu;;
+    4) ui_open_submenu ui_vps_network_menu;;
+    5) ui_open_submenu ui_vps_upkeep_menu;;
+  esac
+}
+
+ui_site443_menu() {
+  local choice
+  printf '1. REALITY 与本机网站共用 443（推荐：普通访问进入网站，节点流量进入代理）\n2. 多个节点按 SNI 共用 443（Nginx/Caddy 分流）\n3. OpenList 网站（不与 REALITY 共用）\n0. 返回\n'
+  ui_menu_choice choice '选择方式' 3
+  case "$choice" in
+    1) ui_open_submenu ui_reality_menu;;
+    2) ui_open_submenu ui_nginx_stream_menu;;
+    3) ui_open_submenu ui_openlist_menu;;
+  esac
+}
+
+ui_vps_upkeep_menu() {
+  local choice
+  printf '1. Caddy 程序维护\n2. 缓存与日志\n3. 支持的 Linux 系统与当前环境\n0. 返回\n'
+  ui_menu_choice choice '选择操作' 3
+  case "$choice" in
+    1) ui_open_submenu ui_caddy_menu;;
+    2) ui_open_submenu ui_maintenance_menu;;
+    3) vps_system_support;;
   esac
 }
 
@@ -1569,14 +1564,13 @@ ui_main_options() {
  8. sing-box API 与网页仪表盘
  9. Hysteria Realm
 10. 运行日志
-11. 故障诊断与修复
-12. 核心通用设置
-13. VPS 与网站运维
-14. 节点流量与限速
-15. 通知与健康监控
-16. 卸载管理器
-17. Sub-Store 订阅管理
-18. 出站、WARP 与分流
+11. 核心通用设置
+12. VPS 与网站运维
+13. 节点流量与限速
+14. 通知与健康监控
+15. 卸载管理器
+16. Sub-Store 订阅管理
+17. 出站、WARP 与分流
  0. 退出面板
 EOF_MENU
 }
@@ -1608,11 +1602,11 @@ ui_main() {
       2) page=ui_add_node;; 3) page=ui_manage_nodes;; 4) page=ui_share_export_menu;;
       5) page=ui_cert_menu;; 6) page=ui_tunnel_menu;;
       7) page=ui_update_menu;; 8) page=ui_api_menu;; 9) page=ui_realm_menu;;
-      10) page=show_logs; page_args=(all 100);; 11) page=ui_doctor_menu;;
-      12) page=ui_settings_menu;; 13) page=ui_vps_menu;; 14) page=ui_traffic_menu;;
-      15) page=ui_notification_health_menu;;
-      16) page=ui_uninstall_menu;; 17) page=ui_substore_menu;;
-      18) page=ui_routing_menu;;
+      10) page=show_logs; page_args=(all 100);;
+      11) page=ui_settings_menu;; 12) page=ui_vps_menu;; 13) page=ui_traffic_menu;;
+      14) page=ui_notification_health_menu;;
+      15) page=ui_uninstall_menu;; 16) page=ui_substore_menu;;
+      17) page=ui_routing_menu;;
       0|q) return 0;; *) log_error '选择无效'; continue;;
     esac
     ui_menu_loop "$page" "${page_args[@]}"

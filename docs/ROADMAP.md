@@ -28,7 +28,7 @@ Opaque generated patches are not accepted as source changes. Work must be review
 
 ## Phase 3 — Operations and Diagnostics
 
-- [x] Add `sb probe NODE_ID` and `sb doctor --network` for DNS, listeners, TLS, UDP/QUIC, IPv4/IPv6 exposure, and firewall guidance.
+- [x] ~~Add `sb probe NODE_ID` and `sb doctor --network`~~ (removed in 0.1.0-alpha.107) for DNS, listeners, TLS, UDP/QUIC, IPv4/IPv6 exposure, and firewall guidance.
 - [x] Add log retention, disk usage checks, resource limits, and secret-safe diagnostics.
 
 ## Phase 4 — Protocol and User Model

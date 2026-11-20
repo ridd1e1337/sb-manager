@@ -146,14 +146,6 @@ nginx_stream_module_path() {
   return 1
 }
 
-nginx_stream_file_capabilities() {
-  local binary=${1:-$SBM_NGINX_STREAM_BIN} target
-  target=$(readlink -f "$binary" 2>/dev/null || true)
-  [[ -n "$target" ]] || target=$binary
-  command_exists getcap || return 0
-  getcap "$target" 2>/dev/null || true
-}
-
 nginx_stream_prepare_binary_for_backend() {
   local binary=${1:-$SBM_NGINX_STREAM_BIN} backend=${2:-} target managed
   target=$(readlink -f "$binary" 2>/dev/null || true)
@@ -485,37 +477,3 @@ nginx_stream_status() {
   fi
 }
 
-nginx_stream_doctor_check() {
-  local enabled port routes backend
-  enabled=$(jq -r '.nginx_stream.enabled // false' "$SBM_STATE")
-  [[ "$enabled" == true ]] || return 0
-  port=$(jq -r '.nginx_stream.port' "$SBM_STATE"); routes=$(jq '.nginx_stream.routes|length' "$SBM_STATE")
-  backend=$(init_system 2>/dev/null || true)
-  if [[ $(mux_backend) == caddy || $(mux_backend) == nginx-site ]]; then
-    if service_active "$(mux_service)" && host_port_in_use tcp "$port"; then
-      check_line PASS "$(mux_backend_label)服务与公网端口可见（${port}/TCP）"
-    else
-      check_line FAIL "网站复用入口未就绪：${port}/TCP"; failures=$((failures + 1))
-    fi
-    return 0
-  fi
-  if [[ $(mux_backend) == sing-box ]]; then
-    if service_active "$SBM_SERVICE" && singbox_port_in_use tcp "$port"; then
-      check_line PASS "sing-box 内置 TCP/SNI 分流正在运行（${port}/TCP，${routes} 条路由）"
-    else
-      check_line FAIL "sing-box 内置 TCP/SNI 分流未就绪：${port}/TCP"; failures=$((failures + 1))
-    fi
-    return 0
-  fi
-  if [[ "$backend" != systemd && "$backend" != openrc ]]; then
-    check_line FAIL 'Nginx Stream 复用已启用，但当前不是 systemd/OpenRC 后端'; failures=$((failures + 1)); return 0
-  fi
-  if ! nginx_stream_runtime_ready; then
-    check_line FAIL 'Nginx Stream 复用已启用，但 nginx/ngx_stream_module 缺失'; failures=$((failures + 1)); return 0
-  fi
-  if ! service_exists "$SBM_NGINX_STREAM_SERVICE"; then
-    check_line FAIL 'Nginx Stream 服务定义缺失'; failures=$((failures + 1)); return 0
-  fi
-  if service_active "$SBM_NGINX_STREAM_SERVICE"; then check_line PASS "Nginx Stream 正在运行（${routes} 条路由）"; else check_line FAIL 'Nginx Stream 服务未运行'; failures=$((failures + 1)); fi
-  if ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$|\]:${port}$"; then check_line PASS "Nginx Stream 端口可见：${port}/TCP"; else check_line FAIL "Nginx Stream 未监听 ${port}/TCP"; failures=$((failures + 1)); fi
-}

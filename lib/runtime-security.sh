@@ -179,13 +179,6 @@ systemd_runtime_preflight() {
   return 1
 }
 
-systemd_unit_allows_netlink() {
-  local unit=${1:-$SBM_SERVICE} families
-  [[ $(init_system 2>/dev/null || true) == systemd ]] || return 2
-  families=$(systemctl show "$unit" -p RestrictAddressFamilies --value 2>/dev/null || true)
-  tr ' ' '\n' <<<"$families" | grep -Fxq AF_NETLINK
-}
-
 runtime_exec_diagnostics() {
   local binary=${1:-$SBM_SING_BOX_BIN} target caps
   target=$(singbox_resolved_binary "$binary")

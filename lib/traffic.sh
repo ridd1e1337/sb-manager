@@ -569,23 +569,3 @@ _traffic_status() {
 
 traffic_status() { with_lock _traffic_status "${1:-all}" "${2:-0}"; }
 
-traffic_doctor_check() {
-  local configured
-  configured=$(jq '[.nodes[]? | select(.traffic.enabled==true)] | length' "$SBM_STATE")
-  (( configured > 0 )) || return 0
-  if ! command_exists nft; then
-    check_line FAIL '已配置流量控制，但系统缺少 nft 命令'; failures=$((failures + 1)); return 0
-  fi
-  if [[ -s "$SBM_TRAFFIC_USAGE" ]] && traffic_usage_validate "$SBM_TRAFFIC_USAGE"; then
-    check_line PASS '流量用量账本有效'
-  else
-    check_line FAIL "流量用量账本缺失或损坏：$SBM_TRAFFIC_USAGE"; failures=$((failures + 1))
-  fi
-  if (( $(traffic_active_count) > 0 )); then
-    if [[ "$SBM_SKIP_INIT" != 1 ]] && ! service_exists "$SBM_TRAFFIC_SERVICE"; then
-      check_line FAIL "流量控制服务定义缺失：$SBM_TRAFFIC_SERVICE"; failures=$((failures + 1))
-    fi
-    if traffic_runtime_complete; then check_line PASS "流量控制 nftables 表已加载：$SBM_TRAFFIC_TABLE"
-    else check_line FAIL '流量控制规则未加载；运行 sb traffic reconcile'; failures=$((failures + 1)); fi
-  fi
-}

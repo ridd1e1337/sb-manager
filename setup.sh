@@ -717,7 +717,6 @@ if manager_auto_enabled; then
   [[ "$NO_START" != 1 ]] || printf '  使用了 --no-start，本次不启用新定时任务；已有调度状态保留，可运行 sb update auto enable 启用。\n'
 else printf '  每日自动更新：保持关闭（可运行 sb update auto enable 开启）\n'; fi
 printf '  状态检查：sb status\n'
-printf '  诊断命令：sb doctor（自动修复：sb doctor --repair）\n'
 printf '  数据目录：%s\n' "$SBM_ETC"
 if ! state_runtime_required; then
   printf '  sing-box：暂无分配到本核心的启用节点，服务保持待命。\n'

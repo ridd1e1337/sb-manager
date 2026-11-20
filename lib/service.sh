@@ -279,12 +279,6 @@ service_failure_report() {
 }
 
 
-singbox_has_bind_capability() {
-  local binary=${1:-$SBM_SING_BOX_BIN}
-  command_exists getcap || return 1
-  getcap "$binary" 2>/dev/null | grep -q 'cap_net_bind_service'
-}
-
 write_openrc_supervised_service() {
   local path=$1 name=$2 description=$3 command=$4 args=$5 user=$6 stdout_log=$7 stderr_log=$8 dependency=${9:-net} start_post=${10:-} home=${11:-$SBM_VAR} start_pre_extra=${12:-} foreground_args=${13:-} foreground_line=''
   [[ -z "$foreground_args" ]] || foreground_line="command_args_foreground=\"$foreground_args\""
