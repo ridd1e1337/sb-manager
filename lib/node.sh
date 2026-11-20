@@ -638,6 +638,69 @@ _node_user_add() {
 }
 node_user_add() { with_state_transaction user-add _node_user_add "$@"; }
 
+# Batch add (3x-ui "add bulk"): PREFIX-1 … PREFIX-N in one transaction, with
+# an optional expiry for every new user. Per-user quotas and IP limits need
+# Xray's per-user statistics (xray-manager); sing-box offers expiry only.
+_node_user_batch_add() {
+  local node_id=$1 prefix=$2 count=$3 start=${4:-1} node protocol secret candidate users='[]' i user_id limits='null'
+  shift 4
+  node=$(state_get_node "$node_id"); [[ -n "$node" ]] || die "节点不存在：$node_id"
+  [[ "$count" =~ ^[1-9][0-9]{0,3}$ ]] && (( count <= 1000 )) || die '数量必须为 1-1000。'
+  [[ "$start" =~ ^[0-9]{1,6}$ ]] || die '起始编号无效。'
+  validate_node_id "$prefix-$start" || die '前缀只能包含小写字母、数字、点、下划线和连字符。'
+  protocol=$(jq -r '.protocol' <<<"$node")
+  while (($#)); do
+    case "$1" in
+      --days) [[ "${2:?}" =~ ^[1-9][0-9]{0,3}$ ]] || die '天数必须为 1-3650。'
+        limits=$(jq -cn --argjson e "$(( $(date +%s) + $2 * 86400 ))" '{expires_at:$e,suspended:null,resume_enabled:false}'); shift 2;;
+      --quota|--ip-limit|--reset-day) die "$1 需要用户级流量统计，sing-box 官方版本不提供；请使用到期时间或 xray-manager。";;
+      *) die "未知参数：$1";;
+    esac
+  done
+  for ((i = start; i < start + count; i++)); do
+    user_id="$prefix-$i"
+    validate_node_id "$user_id" || die "用户 ID 过长：$user_id"
+    jq -e --arg u "$user_id" 'any(.users[]; .id==$u)' <<<"$node" >/dev/null && die "用户已存在：$node_id/$user_id"
+    secret=$(node_user_generate_secret "$node" "$user_id") || return 1
+    state_write_user_secret "$node_id" "$user_id" "$secret" || return 1
+    node=$(jq -c --arg u "$user_id" '.users += [{id:$u,name:$u,enabled:true}]' <<<"$node")
+    users=$(jq -c --arg u "$user_id" --arg now "$(now_iso)" --argjson l "$limits" \
+      '. + [{id:$u,name:$u,enabled:true,created_at:$now} + (if $l==null then {} else {limits:$l} end)]' <<<"$users")
+  done
+  candidate=$(state_candidate)
+  jq --arg nid "$node_id" --argjson users "$users" '(.nodes[] | select(.id==$nid) | .users) += $users' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+  if [[ "$protocol" == shadowsocks && $(jq -r '.credential_mode // "legacy"' <<<"$node") == legacy ]]; then
+    state_write_secret "$node_id" "$(jq -n --arg p "$(ss2022_key "$(jq -r '.method' <<<"$node")")" '{server_password:$p}')" || return 1
+    jq --arg nid "$node_id" '(.nodes[] | select(.id==$nid) | .credential_mode)="multi"' "$candidate" >"$candidate.tmp" && mv "$candidate.tmp" "$candidate"
+    log_warn "Shadowsocks 节点已切换到 2022 多用户模式；原单用户分享链接需要重新导出。"
+  fi
+  if [[ "$protocol" == snell ]]; then
+    jq --arg nid "$node_id" '(.nodes[] | select(.id==$nid) | .credential_mode)="multi"' "$candidate" >"$candidate.tmp" && mv "$candidate.tmp" "$candidate"
+  fi
+  if ! apply_candidate_state "$candidate" "user-batch-$node_id"; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  log_ok "已添加 $count 个用户：$node_id/$prefix-$start … $prefix-$((start + count - 1))"
+}
+node_user_batch_add() { with_state_transaction user-batch _node_user_batch_add "$@"; }
+
+# Remove users whose expiry passed (3x-ui "delete depleted"; sing-box has
+# no per-user quota, so only expiry applies).
+_node_user_purge_depleted() {
+  local filter=${1:-} candidate list entry
+  list=$(jq -r --arg f "$filter" '.nodes[]? | select($f=="" or .id==$f) | .id as $n | .users[] | select((.limits.suspended // "")=="expired") | "\($n)/\(.id)"' "$SBM_STATE")
+  [[ -n "$list" ]] || { log_info '没有已到期的用户。'; return 0; }
+  printf '将删除：\n%s\n' "$list"
+  confirm '确认删除这些用户及其凭据？' || return 1
+  candidate=$(state_candidate)
+  jq --arg f "$filter" '.nodes |= map(if $f=="" or .id==$f then .users |= map(select((.limits.suspended // "")!="expired")) else . end)' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+  jq -e 'all(.nodes[]?; (.users|length)>0)' "$candidate" >/dev/null || { rm -f "$candidate"; die '删除后会有节点没有用户；请先为该节点保留或添加一个用户。'; }
+  if ! apply_candidate_state "$candidate" user-purge; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  while IFS= read -r entry; do rm -f -- "$(state_user_secret_path "${entry%%/*}" "${entry#*/}")"; done <<<"$list"
+  log_ok "已删除 $(wc -l <<<"$list") 个用户。"
+}
+node_user_purge_depleted() { with_state_transaction user-purge _node_user_purge_depleted "$@"; }
+
 _node_user_set_enabled() {
   local node_id=$1 user_id=$2 value=$3 candidate
   state_user_exists "$node_id" "$user_id" || die "用户不存在：$node_id/$user_id"

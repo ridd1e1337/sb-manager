@@ -53,10 +53,27 @@ node_template_delete() { with_state_transaction template-delete _node_template_d
 node_template_get() { jq -c --arg name "$1" '.node_templates[]? | select(.name==$name)' "$SBM_STATE"; }
 
 node_template_add() {
-  local name=$1 id=$2 template defaults protocol value address domain port node_name disabled=0 inbound_json outbound_json
+  local name=$1 id=$2 template
   shift 2
   template=$(node_template_get "$name"); [[ -n "$template" ]] || die "模板不存在：$name"
-  defaults=$(jq -c '.defaults' <<<"$template"); protocol=$(jq -r '.protocol' <<<"$template")
+  node_add_from_defaults "$(jq -c '.defaults' <<<"$template")" "$id" "$@"
+}
+
+# 3x-ui "clone inbound": same settings, new ID/port, fresh credentials.
+node_clone() {
+  local src=${1:?用法：sb node clone SRC_ID NEW_ID [--port N] [--name NAME] [--domain DOMAIN]} id=${2:?缺少新节点 ID} node port
+  shift 2
+  node=$(state_get_node "$src"); [[ -n "$node" ]] || die "节点不存在：$src"
+  port=$(node_choose_port "$(node_transport_kinds "$node" | head -1)") || return 1
+  node_add_from_defaults "$(node_template_safe_defaults "$node")" "$id" --port "$port" --name "$(jq -r '.name' <<<"$node") copy" "$@"
+}
+
+# Create a node from non-secret defaults (templates and clone); credentials
+# are always generated fresh by the normal node-add transaction.
+node_add_from_defaults() {
+  local defaults=$1 id=$2 protocol value address domain port node_name disabled=0 inbound_json outbound_json
+  shift 2
+  protocol=$(jq -r '.protocol' <<<"$defaults")
   inbound_json=$(jq -c '.singbox.inbound // {}' <<<"$defaults")
   outbound_json=$(jq -c '.singbox.outbound // {}' <<<"$defaults")
   node_name=$(jq -r '.name // ""' <<<"$defaults"); node_name=${node_name:-$id}

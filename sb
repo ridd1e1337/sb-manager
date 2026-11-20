@@ -85,6 +85,7 @@ sb_help_full() {
   sb node enable|disable|delete|rotate <ID>
   sb node enable-all|disable-all --tag TAG|--region REGION
   sb node template list|save NAME NODE_ID|delete NAME|add NAME ID [参数]
+  sb node clone SRC_ID NEW_ID [--port N] [--name NAME]   复制节点设置，重新生成凭据
   sb node set <ID> --port N|--address HOST|--domain DOMAIN|--name NAME|--path PATH
                  [--remark TEXT] [--region REGION] [--purpose PURPOSE] [--line LINE] [--tags a,b]
                  [--method METHOD] [--network tcp|udp] [--obfs TYPE] [--obfs-host DOMAIN]
@@ -98,6 +99,9 @@ sb_help_full() {
                  [--realm-id ID] [--realm-ip-version 0|4|6] [--realm-port-mapping|--no-realm-port-mapping]
   sb user list <NODE_ID>
   sb user add <NODE_ID> <USER_ID> [NAME]
+  sb user add <NODE_ID> --count N [--prefix P] [--start K] [--days 30]   批量添加
+  sb user purge-depleted [NODE_ID]  删除已到期的用户
+  sb user export NODE_ID USER_ID [文件] | import NODE_ID 文件 [新ID]   迁移用户（含凭据，客户端无需重导）
   sb user enable|disable|delete|rotate <NODE_ID> <USER_ID>
   sb user limit <NODE_ID> <USER_ID> [--days N|--expire-at UTC|--no-expiry]
   sb user stats [NODE_ID] [--json] | tick
@@ -393,6 +397,7 @@ main() {
           while (($#)); do case "$1" in --tag) tag=${2:?缺少标签}; shift 2;; --region) region=${2:?缺少地区}; shift 2;; *) usage_die '用法：sb node enable-all|disable-all --tag TAG|--region REGION';; esac; done
           [[ "$action" == enable-all ]] && node_batch_enable "$tag" "$region" || node_batch_disable "$tag" "$region"
           ;;
+        clone) (($# >= 2)) || usage_die '用法：sb node clone SRC_ID NEW_ID [--port N] [--name NAME] [--domain DOMAIN]'; node_clone "$@" ;;
         template)
           local template_action=${1:-list}; shift || true
           case "$template_action" in
@@ -430,7 +435,18 @@ main() {
       local action=${2:-list}; shift 2 || true
       case "$action" in
         list) (($# >= 1)) || die '缺少节点 ID'; node_user_list "$1" "$([[ ${2:-} == --json ]] && echo 1 || echo 0)" ;;
-        add) (($# >= 2)) || die '用法：sb user add NODE_ID USER_ID [NAME]'; node_user_add "$1" "$2" "${3:-$2}" ;;
+        add)
+          if [[ "${2:-}" == --count ]]; then
+            local b_node=$1 b_count=${3:?缺少数量} b_prefix=user b_start=1; shift 3
+            local -a b_rest=()
+            while (($#)); do case "$1" in --prefix) b_prefix=${2:?}; shift 2;; --start) b_start=${2:?}; shift 2;; *) b_rest+=("$1"); shift;; esac; done
+            node_user_batch_add "$b_node" "$b_prefix" "$b_count" "$b_start" "${b_rest[@]}"
+          else
+            (($# >= 2)) || die '用法：sb user add NODE_ID USER_ID [NAME] | sb user add NODE_ID --count N [--prefix P] [--days N]'; node_user_add "$1" "$2" "${3:-$2}"
+          fi ;;
+        purge-depleted) node_user_purge_depleted "${1:-}" ;;
+        export) (($# >= 2)) || die '用法：sb user export NODE_ID USER_ID [文件]'; user_export "$1" "$2" "${3:-}" ;;
+        import) (($# >= 2)) || die '用法：sb user import NODE_ID 文件 [新用户ID]'; user_import "$1" "$2" "${3:-}" ;;
         enable) (($# == 2)) || die '用法：sb user enable NODE_ID USER_ID'; node_user_enable "$1" "$2" ;;
         disable) (($# == 2)) || die '用法：sb user disable NODE_ID USER_ID'; node_user_disable "$1" "$2" ;;
         delete) (($# == 2)) || die '用法：sb user delete NODE_ID USER_ID'; node_user_delete "$1" "$2" ;;

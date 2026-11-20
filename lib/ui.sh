@@ -549,9 +549,20 @@ ui_user_menu() {
   protocol=$(state_get_node "$id" | jq -r '.protocol') || return 1
   user_stats "$id" || return 1
   printf '\n1. 添加用户\n2. 启用用户\n3. 停用用户\n4. 删除用户\n5. 轮换用户凭据\n6. 设置到期时间\n'
-  printf '7. 清除到期时间\n8. 生成该用户的动态订阅（含到期信息）\n0. 返回\n'
-  ui_menu_choice choice '用户操作' 8 || return 0
+  printf '7. 清除到期时间\n8. 生成该用户的动态订阅（含到期信息）\n'
+  printf '9. 批量添加用户\n10. 删除已到期的用户\n11. 导出用户（迁移到同协议节点）\n12. 导入用户\n0. 返回\n'
+  ui_menu_choice choice '用户操作' 12 || return 0
   [[ "$choice" != 0 ]] || return 0
+  case "$choice" in
+    9)
+      local count prefix days
+      prompt_value count '数量（1-1000）' 10 || return 1
+      prompt_value prefix '用户 ID 前缀' user || return 1
+      args=(); ui_prompt_optional days '有效天数（留空永久）' '' || return 1; [[ -z "$days" ]] || args+=(--days "$days")
+      node_user_batch_add "$id" "$prefix" "$count" 1 "${args[@]}"; return;;
+    10) node_user_purge_depleted "$id"; return;;
+    12) prompt_value value '用户导出文件路径' "$SBM_EXPORTS/user.json" || return 1; user_import "$id" "$value"; return;;
+  esac
   if [[ "$choice" != 1 ]]; then
     prompt_value user_id '用户 ID' "$(state_get_node "$id" | jq -r '.users[0].id')" || return 1
   fi
@@ -560,6 +571,7 @@ ui_user_menu() {
       prompt_value user_id '新用户 ID（小写字母、数字、._-）' '' || return 1
       prompt_value name '显示名称' "$user_id" || return 1
       node_user_add "$id" "$user_id" "$name";;
+    11) prompt_value value '导出到文件' "$SBM_EXPORTS/$id-$user_id.json" || return 1; user_export "$id" "$user_id" "$value";;
     2) node_user_enable "$id" "$user_id";;
     3) node_user_disable "$id" "$user_id";;
     4) confirm "确认删除用户 $id/$user_id？" N && node_user_delete "$id" "$user_id";;

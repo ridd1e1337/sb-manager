@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.91
+
+- Same as xray-manager: `sb node clone SRC NEW` copies a node's settings with
+  a free port and fresh credentials (REALITY keys included); templates and
+  clone share one implementation.
+- Users: `sb user add NODE --count N [--prefix P] [--days N]` adds a batch in
+  one transaction; `sb user purge-depleted` deletes expired users;
+  `sb user export|import` moves a user between nodes of the same protocol
+  with unchanged credentials. Panel user menu 9–12. Per-user quotas, IP
+  limits and delayed-start expiry need per-user counters that official
+  sing-box does not provide (xray-manager has them).
+
 ## 0.1.0-alpha.90
 
 - Share page (same as xray-manager): the link and QR come first; the sing-box

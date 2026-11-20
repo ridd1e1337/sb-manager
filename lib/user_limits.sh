@@ -152,3 +152,40 @@ user_stats() {
     done
   printf '\n用户级流量配额与在线 IP 需要 Xray 统计，请使用 xray-manager；节点级配额见 sb traffic status。\n'
 }
+
+# Portable user record (3x-ui client export): profile, expiry and the
+# credential, so a user can move to another node of the same protocol without
+# re-importing the client. The file is a secret (0600).
+user_export() {
+  local node_id=$1 user_id=$2 output=${3:-} node record
+  require_root
+  node=$(state_get_node "$node_id"); [[ -n "$node" ]] || die "节点不存在：$node_id"
+  state_user_exists "$node_id" "$user_id" || die "用户不存在：$node_id/$user_id"
+  record=$(jq -n --argjson node "$node" --arg u "$user_id" --argjson secret "$(state_get_user_secret "$node_id" "$user_id")" '
+    ($node.users[] | select(.id==$u)) as $user |
+    {format:"sb-manager-user",version:1,protocol:$node.protocol,method:($node.method // null),
+     user:($user | {id,name,enabled,limits}),secret:$secret}') || return 1
+  if [[ -z "$output" ]]; then printf '%s\n' "$record"; return; fi
+  (umask 077; printf '%s\n' "$record" >"$output") && log_ok "已导出用户：$output（含凭据，请妥善保管）"
+}
+
+_user_import() {
+  local node_id=$1 file=$2 new_id=${3:-} node record protocol user_id candidate
+  node=$(state_get_node "$node_id"); [[ -n "$node" ]] || die "节点不存在：$node_id"
+  record=$(jq -ce 'select(.format=="sb-manager-user" and .version==1)' "$file") || die '不是有效的用户导出文件。'
+  protocol=$(jq -r '.protocol' <<<"$record")
+  [[ "$protocol" == "$(jq -r '.protocol' <<<"$node")" ]] || die "协议不同：文件为 $protocol，目标节点为 $(jq -r '.protocol' <<<"$node")。"
+  [[ "$protocol" != shadowsocks || $(jq -r '.method' <<<"$record") == $(jq -r '.method' <<<"$node") ]] || die 'Shadowsocks 加密方式不同，凭据不可复用。'
+  [[ "$protocol" != snell && "$protocol" != shadowtls ]] || die "$protocol 的用户凭据与节点密钥绑定，请在目标节点新建用户。"
+  user_id=${new_id:-$(jq -r '.user.id' <<<"$record")}
+  validate_node_id "$user_id" || die "无效用户 ID：$user_id"
+  state_user_exists "$node_id" "$user_id" && die "用户已存在：$node_id/$user_id"
+  state_write_user_secret "$node_id" "$user_id" "$(jq -c '.secret' <<<"$record")" || return 1
+  candidate=$(state_candidate) || return 1
+  jq --arg n "$node_id" --arg u "$user_id" --argjson r "$record" --arg now "$(now_iso)" '
+    (.nodes[]|select(.id==$n)|.users) += [($r.user + {id:$u,created_at:$now}) | with_entries(select(.value!=null))]' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+  if ! apply_candidate_state "$candidate" "user-import-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  log_ok "已导入用户：$node_id/$user_id"
+}
+user_import() { require_root; with_state_transaction user-import _user_import "$@"; }
