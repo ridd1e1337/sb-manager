@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.99
+
+- Performance: state migration, validation and the credential check are
+  skipped when the state content and manager version match the last full
+  init (`/run/sb-manager/.state-ready`); read-only commands such as
+  `sb node list` and `sb routing` drop from 0.35 s to 0.15 s, and every panel
+  page opens faster. A changed or corrupted state is still fully checked.
+- Status/health: UFW and Fail2ban are probed concurrently and resource
+  metrics are computed once per page (`sb status` about 20 % faster).
+
 ## 0.1.0-alpha.98
 
 - No leftover files: a failed state normalization no longer leaves an empty

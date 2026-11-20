@@ -6,7 +6,7 @@ SBM_LIB="${SBM_LIB:-${SBM_PREFIX}/lib/sb-manager}"
 SBM_BIN_DIR="${SBM_BIN_DIR:-${SBM_PREFIX}/bin}"
 if [[ -z ${SBM_VERSION:-} ]]; then
   if [[ -r "$SBM_LIB/VERSION" ]]; then SBM_VERSION=$(tr -d '[:space:]' <"$SBM_LIB/VERSION" 2>/dev/null || true); fi
-  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.98}
+  SBM_VERSION=${SBM_VERSION:-0.1.0-alpha.99}
 fi
 SBM_ETC="${SBM_ETC:-/etc/sb-manager}"
 SBM_VAR="${SBM_VAR:-/var/lib/sb-manager}"
@@ -386,13 +386,25 @@ prompt_secret() {
 # probe is exported so subshells reuse it. Mutating commands never use this.
 host_probe_init() {
   [[ -z "${SBM_PROBE_DONE:-}" ]] || return 0
+  local f2b_file='' f2b_pid=''
+  # fail2ban-client runs in the background while ufw is queried.
+  if command_exists fail2ban-client && f2b_file=$(mktemp "$SBM_RUN/.probe.XXXXXX" 2>/dev/null); then
+    { fail2ban-client status sshd >"$f2b_file" 2>/dev/null || printf '__inactive__' >"$f2b_file"; } & f2b_pid=$!
+  fi
   if command_exists ufw; then
     if ufw status 2>/dev/null | grep -qi '^status: active'; then SBM_PROBE_UFW=active; else SBM_PROBE_UFW=inactive; fi
   else SBM_PROBE_UFW=not_installed; fi
-  if command_exists fail2ban-client; then SBM_PROBE_F2B=$(fail2ban-client status sshd 2>/dev/null) || SBM_PROBE_F2B=__inactive__
+  if [[ -n "$f2b_pid" ]]; then wait "$f2b_pid" 2>/dev/null || true; SBM_PROBE_F2B=$(<"$f2b_file"); rm -f -- "$f2b_file"
+  elif command_exists fail2ban-client; then SBM_PROBE_F2B=$(fail2ban-client status sshd 2>/dev/null) || SBM_PROBE_F2B=__inactive__
   else SBM_PROBE_F2B=__missing__; fi
+  [[ -n "$SBM_PROBE_F2B" ]] || SBM_PROBE_F2B=__inactive__
   SBM_PROBE_DONE=1
   export SBM_PROBE_UFW SBM_PROBE_F2B SBM_PROBE_DONE
+  # Resource metrics are read by status and health in separate subshells.
+  if declare -F _health_resource_metrics_json >/dev/null 2>&1; then
+    SBM_PROBE_METRICS=$(_health_resource_metrics_json 2>/dev/null) || SBM_PROBE_METRICS=''
+    export SBM_PROBE_METRICS
+  fi
 }
 host_ufw_state() { host_probe_init; printf '%s\n' "$SBM_PROBE_UFW"; }
 host_f2b_state() { host_probe_init; case "$SBM_PROBE_F2B" in __missing__) echo not_installed;; __inactive__) echo inactive;; *) echo active;; esac; }

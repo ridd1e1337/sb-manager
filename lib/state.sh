@@ -104,6 +104,15 @@ _state_init() {
     chmod 0600 "$tmp"
     mv "$tmp" "$SBM_STATE"
   fi
+  # Migration, validation and the credential check depend only on the state
+  # content and the manager version: skip them when both match the last
+  # successful init (one sha256 instead of ~0.5 s of jq on every command).
+  local __ready="$SBM_RUN/.state-ready" __key
+  __key="$SBM_VERSION $(sha256sum "$SBM_STATE" 2>/dev/null | awk '{print $1}')"
+  if [[ -r "$__ready" && "$(<"$__ready")" == "$__key" ]]; then
+    SBM_STATE_VALIDATED="${SBM_STATE_VALIDATED:- } ${__key#* } "
+    return 0
+  fi
   state_migrate
   state_validate "$SBM_STATE" || return 1
   if [[ "$upgrade_protocols" == 1 && -x "$SBM_SING_BOX_BIN" ]] && state_protocol_credentials_need_upgrade "$SBM_STATE"; then
@@ -111,6 +120,10 @@ _state_init() {
     # runner directly so no nested flock can deadlock this migration.
     _state_transaction_run protocol-credentials _state_upgrade_protocol_credentials || return 1
   fi
+  # Only a full init (credential upgrade allowed) may mark the state ready.
+  [[ "$upgrade_protocols" == 1 ]] || return 0
+  __key="$SBM_VERSION $(sha256sum "$SBM_STATE" 2>/dev/null | awk '{print $1}')"
+  (umask 077; printf '%s\n' "$__key" >"$__ready.$$" && mv -f "$__ready.$$" "$__ready") 2>/dev/null || rm -f "$__ready.$$" 2>/dev/null || true
 }
 state_init() { with_lock _state_init "$@"; }
 

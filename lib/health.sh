@@ -7,6 +7,10 @@ health_issue() {
 }
 
 health_resource_metrics_json() {
+  if [[ -n "${SBM_PROBE_METRICS:-}" ]]; then printf '%s\n' "$SBM_PROBE_METRICS"; return 0; fi
+  _health_resource_metrics_json
+}
+_health_resource_metrics_json() {
   local disk_used disk_avail disk_pct inode_pct mem_total mem_available mem_pct load cores fd_used fd_max fd_pct banned restarts
   disk_used=0; disk_avail=0; disk_pct=0; inode_pct=0
   # A missing data directory must not be reported as 0% usage (healthy).
