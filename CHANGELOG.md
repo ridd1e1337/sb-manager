@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.93
+
+- Telegram bot (same as xray-manager): `sb user tg NODE USER TG_ID` lets a
+  bound user use `/me` (status, expiry) and `/link` (share link) in a private
+  chat, scoped to their own users; expiry reminders 3 days ahead, once per
+  expiry date, to the admin channel and the bound user; `/backup` sends a full
+  backup to the admin chat when enabled with `sb notify bot backup on`.
+
 ## 0.1.0-alpha.92
 
 - Subscriptions (same as xray-manager): without `?format` the client is

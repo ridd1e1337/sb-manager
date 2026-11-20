@@ -2,7 +2,7 @@
 
 `sb-manager` 以 sing-box 一键安装和多协议节点管理为主，支持 systemd 和 OpenRC，并提供可选的新 VPS 基础初始化。所有协议（含 VLESS）只由 sing-box 运行；需要 Xray-core 专属能力（XHTTP、mKCP、VLESS 加密、用户级流量配额等）时请使用姊妹项目 xray-manager，两者可以装在同一台服务器上。安装后运行 `sb`，按面板提示添加节点、申请证书和导入客户端。
 
-当前版本：`0.1.0-alpha.92`
+当前版本：`0.1.0-alpha.93`
 
 ## 第一步：安装
 

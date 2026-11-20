@@ -73,6 +73,7 @@ user_limits_tick_unlocked() {
   if jq -e --slurpfile current "$SBM_STATE" '. == $current[0]' "$candidate" >/dev/null; then
     rm -f "$candidate"
     if declare -F subscription_refresh_user_bundles >/dev/null 2>&1; then subscription_refresh_user_bundles || true; fi
+    user_limits_warn_unlocked || true
     return 0
   fi
   before=$(mktemp "$SBM_RUN/user-limits-before.XXXXXX") || { rm -f "$candidate"; return 1; }
@@ -80,6 +81,7 @@ user_limits_tick_unlocked() {
   _state_transaction_run user-limits _user_limits_apply "$candidate" || { rm -f "$before"; return 1; }
   user_limits_notify_changes "$before" "$SBM_STATE" || true
   rm -f "$before"
+  user_limits_warn_unlocked || true
 }
 user_limits_tick() { require_root; with_lock user_limits_tick_unlocked; }
 
@@ -189,3 +191,41 @@ _user_import() {
   log_ok "已导入用户：$node_id/$user_id"
 }
 user_import() { require_root; with_state_transaction user-import _user_import "$@"; }
+
+_user_tg_set() {
+  local node_id=$1 user_id=$2 value=$3 candidate tg=null
+  state_user_exists "$node_id" "$user_id" || die "用户不存在：$node_id/$user_id"
+  if [[ "$value" != none ]]; then [[ "$value" =~ ^[1-9][0-9]{0,15}$ ]] || die 'Telegram 用户 ID 须为数字（可让用户向 @userinfobot 查询）。'; tg=$value; fi
+  candidate=$(state_candidate) || return 1
+  jq --arg n "$node_id" --arg u "$user_id" --argjson tg "$tg" '(.nodes[]|select(.id==$n)|.users[]|select(.id==$u)) |= (if $tg==null then del(.tg_id) else .tg_id=$tg end)' "$SBM_STATE" >"$candidate" || { rm -f "$candidate"; return 1; }
+  if ! apply_candidate_state "$candidate" "user-tg-$node_id-$user_id"; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  if [[ "$tg" == null ]]; then log_ok "已解除 $node_id/$user_id 的 Telegram 绑定。"
+  else log_ok "已绑定 $node_id/$user_id → Telegram $tg；该用户私聊机器人可用 /me 与 /link，并接收到期提醒。"; fi
+}
+user_tg_set() { require_root; with_state_transaction user-tg _user_tg_set "$@"; }
+
+# Expiry warning 3 days ahead, once per user and expiry date; sent to the
+# admin channel and, when bound, to the user.
+SBM_USER_WARNINGS="${SBM_USER_WARNINGS:-$SBM_VAR/user-warnings.json}"
+user_limits_warn_unlocked() {
+  local sent='{}' rows row key msg tg token
+  [[ $(jq -r '.notifications.enabled // false' "$SBM_STATE") == true ]] || return 0
+  [[ ! -s "$SBM_USER_WARNINGS" ]] || sent=$(jq -c . "$SBM_USER_WARNINGS" 2>/dev/null) || sent='{}'
+  rows=$(jq -c --argjson sent "$sent" --argjson now "$(date +%s)" '
+    [.nodes[]? | .id as $n | .users[] | select(.enabled and .limits.expires_at!=null) | . as $u
+      | select($u.limits.expires_at>$now and ($u.limits.expires_at-$now)<=259200)
+      | {key:"\($n):\($u.id):expire:\($u.limits.expires_at)", msg:"用户 \($n)/\($u.id) 将于 \($u.limits.expires_at|todateiso8601) 到期。", tg:($u.tg_id // null)}
+      | select($sent[.key]==null)]' "$SBM_STATE") || return 0
+  [[ "$rows" != '[]' ]] || return 0
+  token=$(jq -r 'select(.provider=="telegram")|.bot_token // empty' "$SBM_NOTIFICATION_SECRET" 2>/dev/null || true)
+  while IFS= read -r row; do
+    key=$(jq -r '.key' <<<"$row"); msg=$(jq -r '.msg' <<<"$row"); tg=$(jq -r '.tg // empty' <<<"$row")
+    notification_send user_limit "$msg" || true
+    if [[ -n "$tg" && -n "$token" && $(jq -r '.notifications.bot.enabled // false' "$SBM_STATE") == true ]]; then
+      telegram_bot_reply "$token" "$tg" "提醒：$msg" || true
+    fi
+    sent=$(jq -c --arg k "$key" --argjson now "$(date +%s)" '.[$k]=$now' <<<"$sent")
+  done < <(jq -c '.[]' <<<"$rows")
+  (umask 077; jq -c --argjson now "$(date +%s)" 'with_entries(select(.value > $now - 3456000))' <<<"$sent" >"$SBM_USER_WARNINGS.tmp" && mv -f "$SBM_USER_WARNINGS.tmp" "$SBM_USER_WARNINGS")
+}
