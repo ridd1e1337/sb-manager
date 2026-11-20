@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.85
+
+- Remove scratch files (`state.candidate.*`, `user-limits-before.*`,
+  `xray-test.*`, `*.tmp.*`) older than ten minutes from the runtime directory
+  whenever the manager lock is taken, so an operation aborted mid-way no
+  longer leaves stale state copies behind.
+
 ## 0.1.0-alpha.84
 
 - Add mihomo client export for every protocol (`export_mihomo_client_config`,
