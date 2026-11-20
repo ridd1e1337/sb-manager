@@ -220,11 +220,9 @@ replacement and roll back their setting/definitions if reconciliation fails.
 
 Each sing-box version is kept under `cores/sing-box/<version>/`. `/usr/local/bin/sing-box` is an atomic symlink. A candidate binary must validate the current configuration before the symlink is switched. Service failure restores the previous target.
 
-Every switch records a known-good core/config/secret/certificate snapshot in
-`/var/lib/sb-manager/backups/snapshots/` and appends a paired entry to
-`core-history/sing-box.tsv`. If an older core rejects the current configuration,
-rollback restores that paired snapshot before switching, so the binary and
-configuration remain compatible.
+A core switch validates the current configuration with the new build and
+switches back automatically if the service does not start. Only the active
+core is kept on disk afterwards; `sb core update VERSION` installs another one.
 
 ## Protected control plane
 

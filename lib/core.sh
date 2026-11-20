@@ -346,12 +346,7 @@ core_switch_to() {
       return 1
     fi
   fi
-  if [[ ${SBM_CORE_RETENTION:-1} =~ ^[0-9]+$ ]] && (( SBM_CORE_RETENTION > 1 )); then
-    mkdir -p "$SBM_VAR/core-history" || return 1
-    printf '%s\t%s\t%s\t\n' "$(now_iso)" "$previous" "$binary" >"$SBM_VAR/core-history/sing-box.tsv" || return 1
-  else
-    rm -f "$SBM_VAR/core-history/sing-box.tsv" || return 1
-  fi
+  rm -rf -- "$SBM_VAR/core-history" || return 1
   core_prune_cached_versions || return 1
   log_ok "sing-box 已切换到 $(core_current_version)。"
 }
@@ -497,25 +492,6 @@ cloudflared_auto_update() {
       ;;
   esac
 }
-
-_core_rollback() {
-  local current candidate version history_line previous paired_snapshot
-  current=$(readlink -f "$SBM_SING_BOX_BIN" 2>/dev/null || true)
-  if [[ -s "$SBM_VAR/core-history/sing-box.tsv" ]]; then
-    history_line=$(awk -F '\t' -v cur="$current" '$3==cur && $2!="none" {line=$0} END {print line}' "$SBM_VAR/core-history/sing-box.tsv")
-    if [[ -n "$history_line" ]]; then
-      IFS=$'\t' read -r _ previous _ paired_snapshot <<<"$history_line"
-      [[ -x "$previous" ]] && candidate=$previous
-    fi
-  fi
-  if [[ -z ${candidate:-} ]]; then
-    candidate=$(find "$SBM_CORE_DIR/sing-box" -mindepth 2 -maxdepth 2 -type f -name sing-box -perm -u+x -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk -v cur="$current" '$2!=cur && !seen {print $2; seen=1}')
-  fi
-  [[ -n "$candidate" ]] || { log_error '默认仅保留当前核心；如需旧版，请运行 sb core update VERSION 指定官方版本。'; return 1; }
-  version=$(basename "$(dirname "$candidate")")
-  core_switch_to "$version"
-}
-core_rollback() { require_root; with_lock _core_rollback; }
 
 cloudflared_release_json() { github_api 'https://api.github.com/repos/cloudflare/cloudflared/releases/latest'; }
 cloudflared_latest_version() {

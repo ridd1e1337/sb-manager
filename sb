@@ -182,7 +182,7 @@ sb_help_full() {
   sb firewall status|ports|clear-iptables|ufw-allow [--yes]
   sb firewall fail2ban|ufw [--yes] [--dry-run]
 
-  sb core check|update [VERSION]|rollback|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
+  sb core check|update [VERSION]|schema [文件]|capabilities [--json]|policy <manual|notify|patch|stable>|channel <stable|preview>|auto
   sb openlist status|install|update|setup DOMAIN [caddy|nginx]|detach DOMAIN
   sb reality status|setup DOMAIN [nginx|caddy] [--node ID] [--init-vps]|detach
   sb vps reality DOMAIN [nginx|caddy] [--node ID]  一键部署 OpenList、Reality 与基础防护
@@ -644,7 +644,6 @@ main() {
       case "$action" in
         check) local rc=0; core_check_update || rc=$?; [[ "$rc" == 0 || "$rc" == 10 ]] || return "$rc" ;;
         update) core_update "${3:-latest}" ;;
-        rollback) core_rollback ;;
         schema) (($# <= 3)) || usage_die '用法：sb core schema [文件]'; core_schema "${3:-}" ;;
         capabilities) (($# <= 3)) || usage_die '用法：sb core capabilities [--json]'; core_capabilities "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
         policy) core_set_policy "${3:?缺少策略}" ;;
