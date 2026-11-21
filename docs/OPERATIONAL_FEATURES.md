@@ -637,3 +637,11 @@ Tunnel/TCP-SNI 复用的 loopback 回源和其他网卡的流量继续使用 nft
 保留记录并中止卸载。默认安装不启用整形。
 
 面板：“流量统计、配额与限速 → tc 下行平滑限速”。
+
+## 服务器更换公网 IP
+
+`sb settings refresh-ip`（面板：核心通用设置 → 服务器换了 IP）重新探测公网 IP 并更新依赖它的内容：`settings.public_ipv4/6`、
+等于旧 IP 的默认地址与节点 `server_address`/`client_address`、本机在 Cloudflare 的 A/AAAA 记录、分享链接与订阅。维护定时器
+每 15 分钟自动检查，仅当两个独立服务报告相同的新 IPv4 时才动作。DNS 只修改带本管理器标记或仍指向本机旧 IP 的 DNS-only
+记录；更新失败时把旧地址记在 `public-ip.pending`，后续检查重试，成功后删除。证书按域名签发，换 IP 后继续有效。
+`sb cert delete 域名` 删除不再使用的证书并停止续签。

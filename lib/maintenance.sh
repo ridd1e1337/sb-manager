@@ -191,7 +191,8 @@ maintenance_run() (
   exec 8>"$SBM_RUN/setup.lock"
   flock -n 8 || { log_info '安装正在运行，本轮清理跳过。'; return 0; }
   if declare -F render_cache_prune >/dev/null 2>&1; then render_cache_prune; fi
-  with_lock _maintenance_run
+  with_lock _maintenance_run || return $?
+  if declare -F public_ip_auto_check >/dev/null 2>&1; then public_ip_auto_check || true; fi
 )
 
 maintenance_reconcile() {

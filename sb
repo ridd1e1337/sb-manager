@@ -53,6 +53,7 @@ source "$SBM_LIB/lib/health.sh"
 source "$SBM_LIB/lib/status.sh"
 source "$SBM_LIB/lib/export.sh"
 source "$SBM_LIB/lib/cert.sh"
+source "$SBM_LIB/lib/public_ip.sh"
 source "$SBM_LIB/lib/tunnel.sh"
 source "$SBM_LIB/lib/tunnel_routes.sh"
 source "$SBM_LIB/lib/subscription.sh"
@@ -163,7 +164,7 @@ sb_help_full() {
 
   sb cert setup-cloudflare [TOKEN] [ZONE_ID] [EMAIL]
   sb cert issue <DOMAIN> [EMAIL]
-  sb cert list [--json]|renew|inspect <DOMAIN>
+  sb cert list [--json]|renew|inspect <DOMAIN>|delete <DOMAIN>
 
   sb substore remote set -|https://域名/后端路径 [--name 来源名] [--display 显示名] [--tag 主节点库]
                                  接入已有的中心 Sub-Store：本机节点作为一个来源推送过去，节点变化后自动更新
@@ -177,7 +178,8 @@ sb_help_full() {
   sb tunnel quick <NODE_ID>
   sb tunnel refresh|set-token|status [--json]|stop
 
-  sb settings show|detect-ip|address <auto|HOST>|dns <optimistic|timeout> VALUE
+  sb settings show|refresh-ip|address <auto|HOST>|dns <optimistic|timeout> VALUE
+                                 refresh-ip：服务器换 IP 后更新公网地址、本机的 Cloudflare DNS 记录和分享链接（每 15 分钟也会自动检查）
   sb settings outbound-ip <prefer_ipv4|prefer_ipv6|ipv4_only>
   sb firewall status|ports|clear-iptables|ufw-allow [--yes]
   sb firewall fail2ban|ufw [--yes] [--dry-run]
@@ -479,6 +481,7 @@ main() {
         list) [[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && cert_list_json || cert_list ;;
         renew) cert_renew "$([[ ${3:-} == --quiet ]] && echo 1 || echo 0)" ;;
         inspect) cert_inspect "${3:?缺少域名}" ;;
+        delete) cert_delete "${3:?缺少域名}" ;;
         hook) cert_hook "${3:?缺少域名}" ;;
         *) usage_die "未知 cert 操作：$action" ;;
       esac
@@ -726,7 +729,7 @@ main() {
     settings)
       case ${2:-show} in
         show) settings_show_addresses "$([[ ${3:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]] && echo 1 || echo 0)" ;;
-        detect-ip) settings_detect_public_ip ;;
+        detect-ip|refresh-ip) public_ip_refresh ;;
         address) settings_set_default_address "${3:?缺少地址}" ;;
         outbound-ip) settings_set_outbound_ip_strategy "${3:?缺少出站 IP 策略}" ;;
         dns)
@@ -738,7 +741,7 @@ main() {
             *) usage_die '用法：sb settings dns show|optimistic <true|false>|optimistic-timeout DURATION|timeout DURATION' ;;
           esac
           ;;
-        *) usage_die '用法：sb settings show|detect-ip|address <auto|HOST>|outbound-ip <prefer_ipv4|prefer_ipv6|ipv4_only>|dns ...' ;;
+        *) usage_die '用法：sb settings show|refresh-ip|address <auto|HOST>|outbound-ip <prefer_ipv4|prefer_ipv6|ipv4_only>|dns ...' ;;
       esac
       ;;
     *) usage_die "未知命令：$cmd；运行 sb help 查看帮助。" ;;

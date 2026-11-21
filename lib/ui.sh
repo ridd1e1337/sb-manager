@@ -781,14 +781,15 @@ ui_share_export_menu() {
 ui_cert_menu() {
   local c token zone email domain
   printf 'TLS 证书用于节点加密和身份验证；域名由 Cloudflare 托管时可自动申请。\n'
-  printf '1. 查看域名证书与到期时间\n2. 配置 Cloudflare DNS API Token\n3. 签发/续发域名证书\n4. 立即执行全部续签检查\n5. 查看证书详情\n0. 返回\n'
-  ui_menu_choice c '选择操作' 5
+  printf '1. 查看域名证书与到期时间\n2. 配置 Cloudflare DNS API Token\n3. 签发/续发域名证书\n4. 立即执行全部续签检查\n5. 查看证书详情\n6. 删除证书\n0. 返回\n'
+  ui_menu_choice c '选择操作' 6
   case "$c" in
     1) cert_list;;
     2) cert_setup_cloudflare;;
     3) prompt_value domain '域名' ''; ui_issue_certificate "$domain";;
     4) cert_renew;;
     5) prompt_value domain '域名' ''; cert_inspect "$domain";;
+    6) cert_list; prompt_value domain '要删除证书的域名' ''; confirm "删除 $domain 的证书并停止续签？" N && cert_delete "$domain";;
   esac
 }
 
@@ -965,9 +966,10 @@ ui_nginx_stream_menu() {
 ui_settings_menu() {
   local c v
   printf '设置 sing-box 的地址、日志和 DNS。服务器防火墙、网站与网络调优在主菜单 12。\n'
-  printf '1. 默认客户端连接地址\n2. 日志详细程度\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n0. 返回\n'
-  ui_menu_choice c '选择设置' 5
+  printf '1. 默认客户端连接地址\n2. 日志详细程度\n3. 出站 IPv4/IPv6 优先级\n4. 配置校验与修改差异\n5. DNS 缓存与查询超时\n6. 服务器换了 IP：更新公网地址、DNS 记录和分享链接\n0. 返回\n'
+  ui_menu_choice c '选择设置' 6
   case "$c" in
+    6) public_ip_refresh;;
     1) prompt_value v '域名或 IP' "$(jq -r '.settings.default_server_address // ""' "$SBM_STATE")"; settings_set_default_address "$v";;
     2) prompt_value v '日志级别 (trace/debug/info/warn/error/fatal/panic)' "$(jq -r '.settings.log_level' "$SBM_STATE")"; settings_set_log_level "$v";;
     3) ui_open_submenu ui_outbound_menu;;

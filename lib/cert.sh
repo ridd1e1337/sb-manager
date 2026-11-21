@@ -235,6 +235,31 @@ cert_renew() {
   return "$rc"
 }
 
+# Refusals happen before the transaction, so nothing is rolled back for them.
+_cert_delete_check() {
+  local domain=$1 users
+  validate_domain "$domain" || { log_error "无效域名：$domain"; return 1; }
+  [[ -d "$SBM_CERTS/$domain" ]] || jq -e --arg d "$domain" 'any(.certificates[]?; .domain==$d)' "$SBM_STATE" >/dev/null || { log_error "没有这个域名的证书：$domain"; return 1; }
+  users=$(jq -r --arg d "$domain" '[(.nodes[]? | select(.domain==$d and (.security // "")!="reality") | "节点 " + .id),
+      (.openlist.sites[]? | select(.domain==$d) | "OpenList 网站"), (if any(.reality_site.domains[]?; .==$d) or .reality_site.domain?==$d then "Reality 共用 443 的网站" else empty end)] | join("、")' "$SBM_STATE")
+  [[ -z "$users" ]] || { log_error "证书仍在使用（$users）；请先删除或改用其他域名，再删除证书。"; return 1; }
+}
+
+_cert_delete() {
+  local domain=$1 candidate
+  candidate=$(state_candidate)
+  jq --arg d "$domain" '.certificates |= map(select(.domain!=$d))' "$SBM_STATE" >"$candidate"
+  if ! apply_candidate_state "$candidate" "cert-delete-$domain"; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  # Stop renewing it, then remove the files.
+  if [[ -x "$SBM_ACME_BIN" ]]; then
+    "$SBM_ACME_BIN" --home "$SBM_ACME_HOME" --config-home "$SBM_ACME_CONFIG" --cert-home "$SBM_ACME_CERT_HOME" --remove -d "$domain" --ecc >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$SBM_ACME_CERT_HOME/${domain}_ecc" "$SBM_CERTS/$domain"
+  log_ok "已删除证书并停止续签：$domain（Cloudflare 上的 DNS 记录未改动）"
+}
+cert_delete() { require_root; _cert_delete_check "$1" || return 1; with_state_transaction cert-delete _cert_delete "$@"; }
+
 acme_update() {
   [[ -x "$SBM_ACME_BIN" ]] || die "acme.sh 尚未安装。"
   local email

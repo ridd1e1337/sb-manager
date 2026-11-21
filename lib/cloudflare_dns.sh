@@ -80,9 +80,27 @@ cloudflare_dns_records_match() {
       elif .type=="AAAA" then .content==$ipv6 and .proxied==false
       else true end)
   ' <<<"$records" >/dev/null; then
-    log_error "$domain 已有指向其他地址、开启橙云或 CNAME/NS 的记录；请使用新的节点子域名，或先在 Cloudflare 修正记录。"
+    log_error "$domain 已有指向其他服务器、开启橙云或 CNAME/NS 的记录；请使用新的节点子域名，或先在 Cloudflare 修正记录（本机换 IP 后的旧记录会自动更新，不在此列）。"
     return 1
   fi
+}
+
+# After a public IP change, move this server's own records to the new address.
+# A record is ours when it carries the manager marker or still holds the
+# address this server had before; proxied records and other targets are left.
+cloudflare_dns_repoint() {
+  local domain=$1 zone=$2 old4=$3 old6=$4 new4=$5 new6=$6 records id type content new
+  records=$(cloudflare_dns_records "$zone" "$domain") || return 1
+  while IFS=$'\t' read -r id type content; do
+    [[ "$id" =~ ^[a-fA-F0-9]{32}$ ]] || continue
+    if [[ "$type" == A ]]; then new=$new4; else new=$new6; fi
+    [[ -n "$new" && "$content" != "$new" ]] || continue
+    cloudflare_dns_api PATCH "zones/$zone/dns_records/$id" "$(jq -cn --arg c "$new" '{content:$c}')" >/dev/null || return 1
+    log_info "DNS 已更新：$domain $type $content → $new"
+  done < <(jq -r --arg old4 "$old4" --arg old6 "$old6" --arg mark "sb-manager:" '
+    .[] | select((.type=="A" or .type=="AAAA") and .proxied==false and
+      (((.comment // "")|startswith($mark)) or (.type=="A" and $old4!="" and .content==$old4) or (.type=="AAAA" and $old6!="" and .content==$old6)))
+    | [.id,.type,.content] | @tsv' <<<"$records")
 }
 
 # Called under the manager transaction lock. Never repoint an existing name.
@@ -96,6 +114,11 @@ cloudflare_dns_prepare() {
     log_error '无法探测公网 IP；请设置 SBM_PUBLIC_IPV4 / SBM_PUBLIC_IPV6 后重试。'; return 1;
   }
   ipv6=$(jq -n --arg ip "$ipv6" '[{type:"AAAA",content:$ip}]' | cloudflare_dns_normalize_records | jq -r '.[0].content') || return 1
+  # The server may have changed its public IP since the record was made.
+  local old4 old6
+  old4=$(jq -r '.settings.public_ipv4 // ""' "$SBM_STATE"); old6=$(jq -r '.settings.public_ipv6 // ""' "$SBM_STATE")
+  [[ -z "$old6" ]] || old6=$(jq -n --arg ip "$old6" '[{type:"AAAA",content:$ip}]' | cloudflare_dns_normalize_records | jq -r '.[0].content') || return 1
+  cloudflare_dns_repoint "$domain" "$zone" "$old4" "$old6" "$ipv4" "$ipv6" || return 1
   records=$(cloudflare_dns_records "$zone" "$domain") || return 1
   # An existing AAAA must also match, even when only an A will be created.
   # Unknown/disabled IPv6 detection cannot prove an existing AAAA is safe.

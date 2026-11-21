@@ -772,7 +772,6 @@ _settings_detect_public_ip() {
   rm -f "$candidate"
   log_ok "公网入口探测完成：IPv4=${ipv4:--} IPv6=${ipv6:--}"
 }
-settings_detect_public_ip() { with_state_transaction settings-detect-ip _settings_detect_public_ip; }
 
 
 settings_show_addresses() {
