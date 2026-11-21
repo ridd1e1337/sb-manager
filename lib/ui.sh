@@ -409,9 +409,34 @@ ui_prompt_port() {
 }
 
 ui_prompt_server_address() {
-  local __address_var=$1 __address_default=${2:-} __address_value
+  local __address_var=$1 __address_default=${2:-} __address_value __address_ip __address_choice __address_manual=''
   if ! { validate_ipv4 "$__address_default" || validate_ipv6 "$__address_default" || validate_domain "$__address_default"; }; then
     __address_default=''
+  fi
+  # Offer the detected public IP as a ready choice next to the domain.
+  __address_ip=$(jq -r '.settings.public_ipv4 // ""' "$SBM_STATE" 2>/dev/null || true)
+  [[ -n "$__address_ip" ]] || __address_ip=$(detect_public_ipv4 2>/dev/null || true)
+  if [[ -n "$__address_ip" ]]; then
+    printf '\n客户端连接地址：\n'
+    if validate_domain "$__address_default"; then
+      printf '1. 域名 %s（推荐：换 IP 后客户端不用改）\n2. 本机公网 IP %s（自动获取；连接不依赖 DNS）\n3. 手动输入\n0. 返回\n' "$__address_default" "$__address_ip"
+      ui_menu_choice __address_choice '选择（回车=推荐）' 3 1 || return 1
+      case "$__address_choice" in
+        1) printf -v "$__address_var" '%s' "$__address_default"; return 0;;
+        2) printf -v "$__address_var" '%s' "$__address_ip"; return 0;;
+        3) ;;
+        *) ui_cancel; return 1;;
+      esac
+    else
+      if [[ -n "$__address_default" && "$__address_default" != "$__address_ip" ]]; then __address_manual=$__address_default; fi
+      printf '1. 本机公网 IP %s（自动获取）\n2. 手动输入域名或其他 IP%s\n0. 返回\n' "$__address_ip" "${__address_manual:+（当前 $__address_manual）}"
+      ui_menu_choice __address_choice '选择（回车=推荐）' 2 "$([[ -n "$__address_manual" ]] && echo 2 || echo 1)" || return 1
+      case "$__address_choice" in
+        1) printf -v "$__address_var" '%s' "$__address_ip"; return 0;;
+        2) ;;
+        *) ui_cancel; return 1;;
+      esac
+    fi
   fi
   while true; do
     prompt_value __address_value '客户端连接地址（域名或公网 IP）' "$__address_default" || return 1
