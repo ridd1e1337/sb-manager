@@ -36,6 +36,17 @@ uninstall_manager() {
   fi
   if [[ "$assume_yes" != 1 ]]; then confirm "$message" N || return 0; fi
   manager_update_lock || die '脚本更新正在进行，暂不能卸载；请等待更新完成。'
+  # A full removal can also remove the DNS records this manager created.
+  # Decide now, while the state and the Cloudflare token still exist.
+  local dns_records=''
+  if [[ "$purge" == 1 ]]; then
+    dns_records=$(cloudflare_dns_owned_records 2>/dev/null || true)
+    if [[ -n "$dns_records" ]]; then
+      printf '本脚本在 Cloudflare 创建的 DNS 记录：\n'
+      awk -F'\t' '{printf "  %s  %s  %s\n", $3, $4, $5}' <<<"$dns_records"
+      confirm '同时删除这些 DNS 记录？' N || dns_records=''
+    fi
+  fi
   if [[ -L "$SBM_OPENLIST_BIN" && $(readlink -f "$SBM_OPENLIST_BIN") == "$SBM_CORE_DIR/openlist/"* ]]; then
     openlist_owned=true
   fi
@@ -47,6 +58,7 @@ uninstall_manager() {
     reality_site_detach || die '无法恢复 Reality 网站入口，卸载已取消。'
   fi
   openlist_detach_all || die '无法安全移除 OpenList 站点，卸载已取消，请检查配置。'
+  [[ -z "$dns_records" ]] || cloudflare_dns_delete_owned "$dns_records"
 
   if [[ -f "$SBM_SHAPING_DIR/baseline.json" ]]; then
     with_lock shaping_restore || die "无法恢复 tc 队列；卸载已取消，请检查 $SBM_SHAPING_DIR。"

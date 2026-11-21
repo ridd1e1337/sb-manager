@@ -148,6 +148,31 @@ cloudflare_dns_prepare() {
   cloudflare_dns_records_match "$records" "$ipv4" "$ipv6" "$domain"
 }
 
+# Records this manager created (they carry its marker) for the domains it
+# knows: "zone<TAB>id<TAB>name<TAB>type<TAB>content" lines.
+cloudflare_dns_owned_records() {
+  local domain zone
+  [[ -s "$SBM_CF_DNS_ENV" && -s "$SBM_STATE" ]] || return 0
+  cert_load_cloudflare_env || return 1
+  while IFS= read -r domain; do
+    [[ -n "$domain" ]] || continue
+    zone=$(cloudflare_dns_zone "$domain" 2>/dev/null) || continue
+    cloudflare_dns_records "$zone" "$domain" 2>/dev/null | jq -r --arg zone "$zone" --arg mark "sb-manager:" '
+      .[] | select((.type=="A" or .type=="AAAA") and ((.comment // "")|startswith($mark))) | [$zone,.id,.name,.type,.content] | @tsv' || true
+  done < <(jq -r '[.certificates[]?.domain, .openlist.sites[]?.domain, .reality_site.domain?, .reality_site.domains[]?, (.nodes[]?|.domain?)]
+    | map(select(type=="string" and length>0)) | unique[]' "$SBM_STATE")
+}
+
+# Delete lines from cloudflare_dns_owned_records; failures are reported, not fatal.
+cloudflare_dns_delete_owned() {
+  local zone id name type content
+  while IFS=$'\t' read -r zone id name type content; do
+    [[ "$zone" =~ ^[a-fA-F0-9]{32}$ && "$id" =~ ^[a-fA-F0-9]{32}$ ]] || continue
+    if cloudflare_dns_api DELETE "zones/$zone/dns_records/$id" >/dev/null 2>&1; then log_info "已删除 DNS：$name $type $content"
+    else log_warn "未能删除 DNS：$name $type $content（请在 Cloudflare 控制台手动删除）"; fi
+  done <<<"$1"
+}
+
 # Only delete records bearing this transaction's random marker and unchanged
 # connection fields. Pre-existing records and concurrently edited ones survive.
 cloudflare_dns_rollback() (
