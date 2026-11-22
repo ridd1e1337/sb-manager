@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.128
+
+- `sb node schema`：每个字段标明现有节点里对应的值在哪里（`from`）、创建后能否修改（`edit`、`create_only`），并给出修改命令（顶层 `edit`），
+  网页面板据此用同一张表单编辑节点，只提交改动过的项。
+- `sb panel schema` 新增页面：隧道（Cloudflare Tunnel、多域名路由、cloudflared 程序）、网站与端口（443 端口复用、与现有网站共用 443、
+  Reality 伪装站、OpenList）；流量页新增流量分组，系统页新增健康检查阈值、备份与清理。状态值带中文说明（`map`），令牌类字段标记为 `secret`，
+  节点下拉可按协议筛选（`source.filter`），节点列表可点选（`tags` + `source`）。去掉节点菜单里的简易「编辑」。
+
 ## 0.1.0-alpha.127
 
 - `sb node schema` 升到 version 3：字段按 3x-ui「添加入站」的顺序和分节重排（启用、备注、协议、监听、端口、总流量、流量重置、到期时间，

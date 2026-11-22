@@ -3,54 +3,6 @@
  "tool": "sb",
  "node_actions": [
   {
-   "label": "编辑",
-   "args": [
-    "node",
-    "set",
-    "{row.id}"
-   ],
-   "fields": [
-    {
-     "key": "name",
-     "label": "名称",
-     "kind": "text",
-     "flag": "--name"
-    },
-    {
-     "key": "port",
-     "label": "端口",
-     "kind": "number",
-     "flag": "--port"
-    },
-    {
-     "key": "address",
-     "label": "客户端连接地址",
-     "kind": "text",
-     "flag": "--address"
-    },
-    {
-     "key": "remark",
-     "label": "备注",
-     "kind": "text",
-     "flag": "--remark"
-    },
-    {
-     "key": "region",
-     "label": "地区",
-     "kind": "text",
-     "flag": "--region"
-    },
-    {
-     "key": "tags",
-     "label": "标签",
-     "kind": "text",
-     "flag": "--tags",
-     "placeholder": "a,b"
-    }
-   ],
-   "note": "只填需要修改的项，留空的保持不变。"
-  },
-  {
    "label": "到期时间",
    "args": [
     "node",
@@ -451,6 +403,216 @@
        }
       ]
      }
+    },
+    {
+     "title": "流量分组",
+     "note": "让几个节点共用一份额度；用完后组内节点一起停止，到重置日恢复。一个节点只能属于一个分组。",
+     "table": {
+      "cmd": [
+       "traffic",
+       "group",
+       "status",
+       "--json"
+      ],
+      "empty": "还没有分组。",
+      "columns": [
+       {
+        "label": "分组",
+        "path": "id",
+        "kind": "mono"
+       },
+       {
+        "label": "节点",
+        "path": "nodes",
+        "kind": "list"
+       },
+       {
+        "label": "额度",
+        "path": "quota_bytes",
+        "kind": "bytes"
+       },
+       {
+        "label": "已用",
+        "path": "used_bytes",
+        "kind": "bytes"
+       },
+       {
+        "label": "剩余",
+        "path": "remaining_bytes",
+        "kind": "bytes"
+       },
+       {
+        "label": "计量",
+        "path": "quota_mode",
+        "map": {
+         "total": "上行 + 下行",
+         "download": "仅下行"
+        }
+       },
+       {
+        "label": "重置日",
+        "path": "reset_day"
+       },
+       {
+        "label": "已用完",
+        "path": "exhausted",
+        "kind": "bool"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "修改",
+        "args": [
+         "traffic",
+         "group",
+         "set",
+         "{row.id}"
+        ],
+        "fields": [
+         {
+          "key": "nodes",
+          "label": "节点 ID",
+          "kind": "tags",
+          "flag": "--nodes",
+          "required": true,
+          "note": "点选要包含的节点",
+          "source": {
+           "cmd": [
+            "node",
+            "list",
+            "--json"
+           ],
+           "value": "id",
+           "text": "name"
+          }
+         },
+         {
+          "key": "quota",
+          "label": "共用额度",
+          "kind": "text",
+          "flag": "--quota",
+          "required": true,
+          "placeholder": "如 500G"
+         },
+         {
+          "key": "reset_day",
+          "label": "每月重置日",
+          "kind": "number",
+          "flag": "--reset-day",
+          "placeholder": "1-28，默认 1"
+         },
+         {
+          "key": "quota_mode",
+          "label": "计量方式",
+          "kind": "select",
+          "flag": "--quota-mode",
+          "options": [
+           {
+            "value": "total",
+            "label": "上行 + 下行"
+           },
+           {
+            "value": "download",
+            "label": "仅下行"
+           }
+          ]
+         }
+        ],
+        "note": "会整体替换这个分组的设置，请把节点和额度重新填完整；本周期已用流量保留。"
+       },
+       {
+        "label": "清零",
+        "args": [
+         "traffic",
+         "group",
+         "reset",
+         "{row.id}"
+        ],
+        "confirm": "把这个分组本周期的已用流量清零。"
+       },
+       {
+        "label": "删除",
+        "args": [
+         "traffic",
+         "group",
+         "remove",
+         "{row.id}"
+        ],
+        "danger": true,
+        "confirm": "删除这个分组，组内节点不再共用额度。节点各自的流量设置保留。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "新建分组",
+       "args": [
+        "traffic",
+        "group",
+        "set",
+        "{id}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "id",
+         "label": "分组 ID",
+         "kind": "text",
+         "required": true,
+         "placeholder": "小写字母、数字、. _ -"
+        },
+        {
+         "key": "nodes",
+         "label": "节点 ID",
+         "kind": "tags",
+         "flag": "--nodes",
+         "required": true,
+         "note": "点选要包含的节点",
+         "source": {
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name"
+         }
+        },
+        {
+         "key": "quota",
+         "label": "共用额度",
+         "kind": "text",
+         "flag": "--quota",
+         "required": true,
+         "placeholder": "如 500G"
+        },
+        {
+         "key": "reset_day",
+         "label": "每月重置日",
+         "kind": "number",
+         "flag": "--reset-day",
+         "placeholder": "1-28，默认 1"
+        },
+        {
+         "key": "quota_mode",
+         "label": "计量方式",
+         "kind": "select",
+         "flag": "--quota-mode",
+         "options": [
+          {
+           "value": "total",
+           "label": "上行 + 下行"
+          },
+          {
+           "value": "download",
+           "label": "仅下行"
+          }
+         ]
+        }
+       ],
+       "note": "加入分组的节点会自动开启流量统计。"
+      }
+     ]
     }
    ]
   },
@@ -905,6 +1067,945 @@
    ]
   },
   {
+   "id": "tunnel",
+   "label": "隧道",
+   "sections": [
+    {
+     "title": "Cloudflare Tunnel",
+     "note": "让 VMess-WS-CF 节点经 Cloudflare 网络对外提供服务，本机不需要开放端口。临时隧道不用域名，但地址会变；固定隧道使用您自己的域名。需要先安装下方的 cloudflared。",
+     "status": {
+      "cmd": [
+       "tunnel",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "模式",
+        "path": "mode",
+        "map": {
+         "none": "未开启",
+         "quick": "临时隧道",
+         "fixed": "固定隧道",
+         "managed": "多域名隧道"
+        }
+       },
+       {
+        "label": "服务",
+        "path": "service_state",
+        "map": {
+         "running": "运行中",
+         "active": "运行中",
+         "stopped": "已停止",
+         "inactive": "已停止",
+         "off": "未启用",
+         "failed": "异常",
+         "test": "测试"
+        }
+       },
+       {
+        "label": "节点",
+        "path": "node_id",
+        "kind": "mono",
+        "empty": "无"
+       },
+       {
+        "label": "域名",
+        "path": "domain",
+        "kind": "mono",
+        "empty": "无"
+       },
+       {
+        "label": "客户端连接地址",
+        "path": "client_address",
+        "kind": "mono",
+        "hide_empty": true
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "开启临时隧道",
+       "args": [
+        "tunnel",
+        "quick",
+        "{node}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "node",
+         "label": "节点",
+         "kind": "select",
+         "source": {
+          "key": "node",
+          "label": "节点",
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name",
+          "filter": {
+           "protocol": [
+            "vmess-ws-cf"
+           ]
+          }
+         },
+         "required": true
+        }
+       ],
+       "confirm": "为这个节点开启 trycloudflare.com 临时隧道，会替换当前的隧道设置。只支持 VMess-WS-CF 节点。"
+      },
+      {
+       "label": "开启固定隧道",
+       "args": [
+        "tunnel",
+        "fixed",
+        "{node}",
+        "{domain}",
+        "{token}",
+        "{client_address?}"
+       ],
+       "fields": [
+        {
+         "key": "node",
+         "label": "节点",
+         "kind": "select",
+         "source": {
+          "key": "node",
+          "label": "节点",
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name",
+          "filter": {
+           "protocol": [
+            "vmess-ws-cf"
+           ]
+          }
+         },
+         "required": true
+        },
+        {
+         "key": "domain",
+         "label": "隧道域名",
+         "kind": "text",
+         "required": true,
+         "placeholder": "node.example.com"
+        },
+        {
+         "key": "token",
+         "label": "Tunnel Token",
+         "kind": "text",
+         "required": true,
+         "note": "在 Cloudflare Zero Trust 创建隧道时给出的令牌",
+         "secret": true
+        },
+        {
+         "key": "client_address",
+         "label": "客户端连接地址",
+         "kind": "text",
+         "placeholder": "留空与域名相同",
+         "note": "可填优选域名或 IP"
+        }
+       ],
+       "confirm": "会替换当前的隧道设置。完成后还要在 Cloudflare 隧道里把这个域名指向输出中提示的本机地址。只支持 VMess-WS-CF 节点。"
+      },
+      {
+       "label": "刷新临时域名",
+       "args": [
+        "tunnel",
+        "refresh"
+       ]
+      },
+      {
+       "label": "更换 Token",
+       "args": [
+        "tunnel",
+        "set-token",
+        "{token}"
+       ],
+       "fields": [
+        {
+         "key": "token",
+         "label": "新的 Tunnel Token",
+         "kind": "text",
+         "required": true,
+         "secret": true
+        }
+       ],
+       "note": "仅用于固定隧道。"
+      },
+      {
+       "label": "查看状态",
+       "args": [
+        "tunnel",
+        "status"
+       ],
+       "show": true
+      },
+      {
+       "label": "停止隧道",
+       "args": [
+        "tunnel",
+        "stop"
+       ],
+       "danger": true,
+       "confirm": "停止并移除隧道服务，节点本身保留。"
+      }
+     ]
+    },
+    {
+     "title": "多域名隧道路由",
+     "note": "用一条隧道把多个域名分别转到本机的不同端口。要先用隧道 ID 和凭据文件启用，再添加路由；每个域名的 CNAME 需指向「隧道 ID.cfargotunnel.com」。",
+     "table": {
+      "cmd": [
+       "tunnel",
+       "route",
+       "list"
+      ],
+      "empty": "还没有路由。",
+      "columns": [
+       {
+        "label": "名称",
+        "path": "id",
+        "kind": "mono"
+       },
+       {
+        "label": "域名",
+        "path": "hostname",
+        "kind": "mono"
+       },
+       {
+        "label": "转到",
+        "path": "service",
+        "kind": "mono"
+       },
+       {
+        "label": "路径",
+        "path": "path",
+        "kind": "mono",
+        "empty": "全部"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "删除",
+        "args": [
+         "tunnel",
+         "route",
+         "remove",
+         "{row.id}"
+        ],
+        "danger": true,
+        "confirm": "删除这条隧道路由。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "添加路由",
+       "args": [
+        "tunnel",
+        "route",
+        "add",
+        "{id}",
+        "{domain}",
+        "{service}",
+        "{path?}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "id",
+         "label": "名称",
+         "kind": "text",
+         "required": true,
+         "placeholder": "小写字母、数字、. _ -"
+        },
+        {
+         "key": "domain",
+         "label": "域名",
+         "kind": "text",
+         "required": true,
+         "placeholder": "app.example.com"
+        },
+        {
+         "key": "service",
+         "label": "转到本机地址",
+         "kind": "text",
+         "required": true,
+         "placeholder": "http://127.0.0.1:8080",
+         "note": "只能是本机地址"
+        },
+        {
+         "key": "path",
+         "label": "只匹配这个路径",
+         "kind": "text",
+         "placeholder": "留空匹配全部，如 /api"
+        }
+       ]
+      },
+      {
+       "label": "启用多域名隧道",
+       "args": [
+        "tunnel",
+        "managed",
+        "{uuid}",
+        "{credentials}"
+       ],
+       "fields": [
+        {
+         "key": "uuid",
+         "label": "隧道 ID",
+         "kind": "text",
+         "required": true,
+         "placeholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        },
+        {
+         "key": "credentials",
+         "label": "凭据文件路径",
+         "kind": "text",
+         "required": true,
+         "placeholder": "/root/.cloudflared/隧道ID.json",
+         "note": "这台服务器上的文件，由 cloudflared tunnel create 生成"
+        }
+       ],
+       "confirm": "会替换当前的隧道设置，改为由本机管理的多域名隧道。"
+      }
+     ]
+    },
+    {
+     "title": "cloudflared 程序",
+     "note": "Cloudflare Tunnel 的客户端程序，使用隧道前需要先安装。",
+     "status": {
+      "cmd": [
+       "cloudflared",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "已安装",
+        "path": "installed",
+        "kind": "bool"
+       },
+       {
+        "label": "版本",
+        "path": "version",
+        "kind": "mono",
+        "empty": "无"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "安装",
+       "args": [
+        "cloudflared",
+        "install"
+       ],
+       "confirm": "下载并安装最新版 cloudflared。"
+      },
+      {
+       "label": "更新",
+       "args": [
+        "cloudflared",
+        "update"
+       ],
+       "confirm": "下载最新版 cloudflared；正在运行的隧道会重启。"
+      },
+      {
+       "label": "更新策略",
+       "args": [
+        "cloudflared",
+        "policy",
+        "{policy}"
+       ],
+       "fields": [
+        {
+         "key": "policy",
+         "label": "策略",
+         "kind": "select",
+         "required": true,
+         "options": [
+          {
+           "value": "manual",
+           "label": "手动：只在我点更新时更新"
+          },
+          {
+           "value": "notify",
+           "label": "通知：有新版本时提醒"
+          },
+          {
+           "value": "patch",
+           "label": "补丁：自动更新小版本"
+          },
+          {
+           "value": "stable",
+           "label": "稳定：自动跟随最新稳定版"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web",
+   "label": "网站与端口",
+   "sections": [
+    {
+     "title": "443 端口复用",
+     "note": "让多个 TLS 节点共用同一个端口（通常是 443），按客户端访问的域名（SNI）分到各自的节点。",
+     "status": {
+      "cmd": [
+       "mux",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "复用",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "方式",
+        "path": "backend",
+        "kind": "mono"
+       },
+       {
+        "label": "公网端口",
+        "path": "port"
+       },
+       {
+        "label": "服务",
+        "path": "service_state",
+        "map": {
+         "running": "运行中",
+         "active": "运行中",
+         "stopped": "已停止",
+         "inactive": "已停止",
+         "off": "未启用",
+         "failed": "异常",
+         "test": "测试"
+        }
+       }
+      ]
+     },
+     "table": {
+      "cmd": [
+       "mux",
+       "route",
+       "list"
+      ],
+      "empty": "还没有节点加入复用。",
+      "columns": [
+       {
+        "label": "节点",
+        "path": "node_id",
+        "kind": "mono"
+       },
+       {
+        "label": "域名（SNI）",
+        "path": "sni",
+        "kind": "mono"
+       },
+       {
+        "label": "本机端口",
+        "path": "backend_port"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "移出",
+        "args": [
+         "mux",
+         "route",
+         "remove",
+         "{row.node_id}"
+        ],
+        "danger": true,
+        "confirm": "把这个节点移出端口复用。启用中的最后一个节点不能移出，请先停用复用。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "一键启用",
+       "args": [
+        "mux",
+        "auto",
+        "{ids?}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "ids",
+         "label": "节点 ID",
+         "kind": "tags",
+         "note": "点选要包含的节点；一个都不选表示全部支持的节点",
+         "source": {
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name"
+         }
+        },
+        {
+         "key": "port",
+         "label": "公网端口",
+         "kind": "number",
+         "flag": "--port",
+         "placeholder": "默认 443"
+        },
+        {
+         "key": "backend",
+         "label": "复用方式",
+         "kind": "select",
+         "flag": "--backend",
+         "options": [
+          {
+           "value": "sing-box",
+           "label": "sing-box 内置"
+          },
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          },
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          }
+         ],
+         "empty_label": "保持当前"
+        }
+       ],
+       "confirm": "把节点加入复用并立即启用。端口已被其他程序占用时会拒绝，不会改动现有网站。"
+      },
+      {
+       "label": "添加节点",
+       "args": [
+        "mux",
+        "route",
+        "add",
+        "{node}",
+        "{sni}",
+        "{backend_port?}"
+       ],
+       "fields": [
+        {
+         "key": "node",
+         "label": "节点",
+         "kind": "select",
+         "source": {
+          "key": "node",
+          "label": "节点",
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name"
+         },
+         "required": true
+        },
+        {
+         "key": "sni",
+         "label": "域名（SNI）",
+         "kind": "text",
+         "required": true,
+         "placeholder": "node.example.com",
+         "note": "必须与节点自身的域名一致"
+        },
+        {
+         "key": "backend_port",
+         "label": "本机端口",
+         "kind": "number",
+         "placeholder": "留空自动分配"
+        }
+       ]
+      },
+      {
+       "label": "启用",
+       "args": [
+        "mux",
+        "enable",
+        "{port?}"
+       ],
+       "fields": [
+        {
+         "key": "port",
+         "label": "公网端口",
+         "kind": "number",
+         "placeholder": "留空保持当前"
+        },
+        {
+         "key": "backend",
+         "label": "复用方式",
+         "kind": "select",
+         "flag": "--backend",
+         "options": [
+          {
+           "value": "sing-box",
+           "label": "sing-box 内置"
+          },
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          },
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          }
+         ],
+         "empty_label": "保持当前"
+        }
+       ]
+      },
+      {
+       "label": "复用方式",
+       "args": [
+        "mux",
+        "backend",
+        "{backend}"
+       ],
+       "fields": [
+        {
+         "key": "backend",
+         "label": "复用方式",
+         "kind": "select",
+         "required": true,
+         "options": [
+          {
+           "value": "sing-box",
+           "label": "sing-box 内置"
+          },
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          },
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "label": "停用",
+       "args": [
+        "mux",
+        "disable"
+       ],
+       "confirm": "停用端口复用，节点恢复使用各自的端口；已加入的节点列表保留。"
+      }
+     ]
+    },
+    {
+     "title": "与现有网站共用 443",
+     "note": "服务器上已有 Nginx 或 Caddy 网站时，让网站和节点共用 443；之后节点增删会自动同步。",
+     "status": {
+      "cmd": [
+       "mux",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "已接入",
+        "path": "website.managed",
+        "kind": "bool",
+        "empty": "否"
+       },
+       {
+        "label": "网站程序",
+        "path": "website.server",
+        "kind": "mono",
+        "hide_empty": true
+       },
+       {
+        "label": "网站配置",
+        "path": "website.config",
+        "kind": "mono",
+        "hide_empty": true
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "接入现有网站",
+       "args": [
+        "mux",
+        "setup"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "server",
+         "label": "网站程序",
+         "kind": "select",
+         "flag": "--server",
+         "options": [
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          },
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          }
+         ],
+         "empty_label": "自动识别"
+        },
+        {
+         "key": "config",
+         "label": "网站配置文件路径",
+         "kind": "text",
+         "flag": "--config",
+         "placeholder": "留空自动查找"
+        },
+        {
+         "key": "binary",
+         "label": "网站程序路径",
+         "kind": "text",
+         "flag": "--binary",
+         "placeholder": "留空自动查找"
+        },
+        {
+         "key": "build_caddy",
+         "label": "Caddy 缺少所需模块时在本机重新编译",
+         "kind": "switch",
+         "flag": "--build-caddy"
+        }
+       ],
+       "confirm": "会修改现有网站的配置并重载网站程序；失败时自动恢复原配置。"
+      },
+      {
+       "label": "解除接入",
+       "args": [
+        "mux",
+        "detach"
+       ],
+       "danger": true,
+       "confirm": "恢复接入前的网站配置，节点恢复使用各自的端口。"
+      }
+     ]
+    },
+    {
+     "title": "Reality 伪装站",
+     "note": "用您自己的域名建一个真实网站（内容是 OpenList 网盘），并让 VLESS Reality 节点在 443 上以它作为伪装目标。",
+     "actions": [
+      {
+       "label": "查看",
+       "args": [
+        "reality",
+        "status"
+       ],
+       "show": true
+      },
+      {
+       "label": "一键建站",
+       "args": [
+        "reality",
+        "setup",
+        "{domain}",
+        "{server?}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "domain",
+         "label": "网站域名",
+         "kind": "text",
+         "required": true,
+         "placeholder": "www.example.com",
+         "note": "域名需已解析到这台服务器"
+        },
+        {
+         "key": "server",
+         "label": "网站程序",
+         "kind": "select",
+         "options": [
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          },
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          }
+         ],
+         "empty_label": "默认（Nginx）"
+        },
+        {
+         "key": "node",
+         "label": "使用的节点",
+         "kind": "select",
+         "source": {
+          "key": "node",
+          "label": "节点",
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name",
+          "filter": {
+           "protocol": [
+            "vless"
+           ]
+          }
+         },
+         "flag": "--node",
+         "empty_label": "自动（使用 443 上的 VLESS 节点，没有则新建）"
+        }
+       ],
+       "confirm": "会安装 OpenList 和网站程序、准备证书，并占用 443 端口；失败时自动恢复。已启用 443 端口复用时需先停用。使用 Nginx 时需要已配置好证书申请。"
+      },
+      {
+       "label": "解除",
+       "args": [
+        "reality",
+        "detach"
+       ],
+       "danger": true,
+       "confirm": "移除 Reality 网站入口并停用对应的节点，网站本身保留。"
+      }
+     ]
+    },
+    {
+     "title": "OpenList",
+     "note": "OpenList 网盘程序：安装后只在本机监听，绑定域名后才能从外网访问。",
+     "status": {
+      "cmd": [
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "状态",
+        "path": "components.openlist.state",
+        "map": {
+         "not_installed": "未安装",
+         "installed": "已安装",
+         "running": "运行中",
+         "stopped": "已停止",
+         "active": "运行中",
+         "inactive": "已停止"
+        }
+       },
+       {
+        "label": "版本",
+        "path": "components.openlist.version",
+        "kind": "mono",
+        "empty": "无"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "查看",
+       "args": [
+        "openlist",
+        "status"
+       ],
+       "show": true
+      },
+      {
+       "label": "安装",
+       "args": [
+        "openlist",
+        "install"
+       ],
+       "confirm": "下载并安装 OpenList，作为本机服务运行。"
+      },
+      {
+       "label": "更新",
+       "args": [
+        "openlist",
+        "update"
+       ],
+       "confirm": "更新 OpenList 到最新版，服务会短暂重启。"
+      },
+      {
+       "label": "绑定域名",
+       "args": [
+        "openlist",
+        "setup",
+        "{domain}",
+        "{server?}"
+       ],
+       "fields": [
+        {
+         "key": "domain",
+         "label": "网站域名",
+         "kind": "text",
+         "required": true,
+         "placeholder": "pan.example.com",
+         "note": "域名需已解析到这台服务器"
+        },
+        {
+         "key": "server",
+         "label": "网站程序",
+         "kind": "select",
+         "options": [
+          {
+           "value": "caddy",
+           "label": "Caddy"
+          },
+          {
+           "value": "nginx",
+           "label": "Nginx"
+          }
+         ],
+         "empty_label": "默认（Caddy）"
+        }
+       ],
+       "confirm": "会在网站程序里为这个域名添加反向代理。使用 Nginx 时需要已配置好证书申请。"
+      },
+      {
+       "label": "解绑域名",
+       "args": [
+        "openlist",
+        "detach",
+        "{domain}"
+       ],
+       "danger": true,
+       "fields": [
+        {
+         "key": "domain",
+         "label": "网站域名",
+         "kind": "text",
+         "required": true,
+         "placeholder": "pan.example.com"
+        }
+       ],
+       "confirm": "从网站程序里移除这个域名的 OpenList 入口，OpenList 本身和数据保留。"
+      }
+     ]
+    }
+   ]
+  },
+  {
    "id": "system",
    "label": "系统",
    "sections": [
@@ -1312,6 +2413,22 @@
         "label": "内存已用",
         "path": "resources_current.memory_used_percent",
         "suffix": "%"
+       },
+       {
+        "label": "上次检查",
+        "path": "last_report.checked_at",
+        "kind": "date",
+        "hide_empty": true
+       },
+       {
+        "label": "错误",
+        "path": "last_report.summary.errors",
+        "hide_empty": true
+       },
+       {
+        "label": "警告",
+        "path": "last_report.summary.warnings",
+        "hide_empty": true
        }
       ]
      },
@@ -1325,10 +2442,27 @@
        "show": true
       },
       {
+       "label": "查看设置",
+       "args": [
+        "health",
+        "status"
+       ],
+       "show": true
+      },
+      {
        "label": "开启",
        "args": [
         "health",
-        "enable"
+        "enable",
+        "{days?}"
+       ],
+       "fields": [
+        {
+         "key": "days",
+         "label": "证书到期前几天提醒",
+         "kind": "number",
+         "placeholder": "1-365，留空保持当前"
+        }
        ]
       },
       {
@@ -1336,6 +2470,63 @@
        "args": [
         "health",
         "disable"
+       ]
+      },
+      {
+       "label": "提醒阈值",
+       "args": [
+        "health",
+        "configure"
+       ],
+       "note": "超过阈值时提醒。只填需要修改的项，至少填一项。",
+       "fields": [
+        {
+         "key": "disk_free",
+         "label": "磁盘剩余低于（%）",
+         "kind": "number",
+         "flag": "--disk-free",
+         "placeholder": "1-99"
+        },
+        {
+         "key": "memory_max",
+         "label": "内存占用高于（%）",
+         "kind": "number",
+         "flag": "--memory-max",
+         "placeholder": "1-100"
+        },
+        {
+         "key": "inode_max",
+         "label": "inode 占用高于（%）",
+         "kind": "number",
+         "flag": "--inode-max",
+         "placeholder": "1-100"
+        },
+        {
+         "key": "load_per_core",
+         "label": "每核负载高于",
+         "kind": "text",
+         "flag": "--load-per-core",
+         "placeholder": "如 2"
+        },
+        {
+         "key": "fd_max",
+         "label": "文件句柄占用高于（%）",
+         "kind": "number",
+         "flag": "--fd-max",
+         "placeholder": "1-100"
+        },
+        {
+         "key": "banned_warn",
+         "label": "Fail2ban 封禁数达到",
+         "kind": "number",
+         "flag": "--banned-warn"
+        },
+        {
+         "key": "restart_warn",
+         "label": "服务重启次数达到",
+         "kind": "number",
+         "flag": "--restart-warn"
+        }
        ]
       }
      ]
@@ -1398,6 +2589,54 @@
         "--yes"
        ],
        "confirm": "把上面列出的节点端口加入 UFW 允许规则，不改动其他规则。"
+      }
+     ]
+    },
+    {
+     "title": "备份与清理",
+     "note": "脚本没有整机备份命令；这里可以把节点导出成客户端配置文件、备份 Sub-Store 数据，以及清理缓存和旧日志。备份文件含凭据，请妥善保管。",
+     "actions": [
+      {
+       "label": "导出节点配置",
+       "args": [
+        "export",
+        "outbounds"
+       ],
+       "confirm": "把所有启用的节点导出成客户端出站配置文件，保存在这台服务器上；文件含凭据。"
+      },
+      {
+       "label": "备份 Sub-Store",
+       "args": [
+        "substore",
+        "backup",
+        "{file}"
+       ],
+       "fields": [
+        {
+         "key": "file",
+         "label": "保存到（服务器上的路径）",
+         "kind": "text",
+         "required": true,
+         "placeholder": "/root/substore-backup.tar.gz"
+        }
+       ],
+       "note": "需要已安装 Sub-Store；备份期间 Sub-Store 会短暂停止。"
+      },
+      {
+       "label": "查看清理策略",
+       "args": [
+        "maintenance",
+        "status"
+       ],
+       "show": true
+      },
+      {
+       "label": "立即清理",
+       "args": [
+        "maintenance",
+        "run"
+       ],
+       "confirm": "清理下载缓存和超过保留期的日志，不影响节点、证书和备份。"
       }
      ]
     },

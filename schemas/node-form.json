@@ -49,7 +49,8 @@
    "top": true,
    "default": true,
    "invert": true,
-   "flag": "--disabled"
+   "flag": "--disabled",
+   "create_only": true
   },
   "name": {
    "label": "备注",
@@ -57,7 +58,8 @@
    "group": "basic",
    "top": true,
    "flag": "--name",
-   "placeholder": "显示在分享链接里的名称"
+   "placeholder": "显示在分享链接里的名称",
+   "from": "name"
   },
   "port": {
    "label": "端口",
@@ -68,7 +70,8 @@
     10000,
     60000
    ],
-   "required": true
+   "required": true,
+   "from": "port"
   },
   "total": {
    "label": "总流量",
@@ -86,7 +89,8 @@
     "suffix": "G"
    },
    "pattern": "^[1-9]\\d*$",
-   "pattern_hint": "填大于 0 的整数，不限制请留空"
+   "pattern_hint": "填大于 0 的整数，不限制请留空",
+   "create_only": true
   },
   "reset_day": {
    "label": "流量重置",
@@ -131,7 +135,8 @@
     ],
     "flag": "--reset-day"
    },
-   "when_filled": "total"
+   "when_filled": "total",
+   "create_only": true
   },
   "expiry": {
    "label": "到期时间",
@@ -148,7 +153,8 @@
     "flag": "--days"
    },
    "pattern": "^[1-9]\\d*$",
-   "pattern_hint": "填大于 0 的天数"
+   "pattern_hint": "填大于 0 的天数",
+   "create_only": true
   },
   "uuid": {
    "label": "ID",
@@ -157,7 +163,8 @@
    "flag": "--uuid",
    "generate": "uuid",
    "auto": true,
-   "required": true
+   "required": true,
+   "create_only": true
   },
   "password": {
    "label": "密码",
@@ -166,21 +173,24 @@
    "flag": "--password",
    "generate": "password:20",
    "auto": true,
-   "required": true
+   "required": true,
+   "create_only": true
   },
   "cred_auto": {
    "label": "凭据",
    "kind": "text",
    "group": "client",
    "value": "创建时自动生成，可在「分享」里查看",
-   "readonly": true
+   "readonly": true,
+   "create_only": true
   },
   "address": {
    "label": "客户端连接地址",
    "kind": "text",
    "group": "advanced",
    "flag": "--address",
-   "placeholder": "留空自动使用域名或本机公网 IP"
+   "placeholder": "留空自动使用域名或本机公网 IP",
+   "from": "server_address"
   },
   "__id": {
    "label": "节点 ID",
@@ -188,26 +198,30 @@
    "group": "advanced",
    "placeholder": "留空自动生成",
    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
-   "pattern_hint": "小写字母、数字、. _ -"
+   "pattern_hint": "小写字母、数字、. _ -",
+   "create_only": true
   },
   "remark": {
    "label": "附注",
    "kind": "text",
    "group": "advanced",
-   "flag": "--remark"
+   "flag": "--remark",
+   "from": "metadata.remark"
   },
   "region": {
    "label": "地区",
    "kind": "text",
    "group": "advanced",
-   "flag": "--region"
+   "flag": "--region",
+   "from": "metadata.region"
   },
   "tags": {
    "label": "标签",
    "kind": "text",
    "group": "advanced",
    "flag": "--tags",
-   "placeholder": "a,b"
+   "placeholder": "a,b",
+   "from": "metadata.tags"
   },
   "sni": {
    "label": "SNI",
@@ -215,7 +229,8 @@
    "group": "security",
    "flag": "--domain",
    "placeholder": "留空使用推荐站点",
-   "note": "伪装成访问这个网站"
+   "note": "伪装成访问这个网站",
+   "from": "domain"
   },
   "dest": {
    "label": "目标网站（Target）",
@@ -223,14 +238,16 @@
    "group": "security",
    "flag": "--handshake-server",
    "placeholder": "留空与 SNI 相同",
-   "note": "需支持 TLS 1.3 的真实网站"
+   "note": "需支持 TLS 1.3 的真实网站",
+   "from": "handshake_server"
   },
   "dest_port": {
    "label": "目标端口",
    "kind": "number",
    "group": "security",
    "flag": "--handshake-port",
-   "value": 443
+   "value": 443,
+   "from": "handshake_port"
   },
   "short_id": {
    "label": "Short ID",
@@ -240,14 +257,16 @@
    "generate": "hex:8",
    "auto": true,
    "pattern": "^([0-9a-fA-F]{2}){1,8}$",
-   "pattern_hint": "2-16 位十六进制，位数为偶数"
+   "pattern_hint": "2-16 位十六进制，位数为偶数",
+   "create_only": true
   },
   "reality_keys": {
    "label": "公钥 / 私钥",
    "kind": "text",
    "group": "security",
    "value": "创建时自动生成",
-   "readonly": true
+   "readonly": true,
+   "create_only": true
   },
   "domain": {
    "label": "域名",
@@ -256,14 +275,17 @@
    "flag": "--domain",
    "placeholder": "node.example.com",
    "required": true,
-   "note": "需要域名证书；没有时自动签发（DNS 服务商在「设置」里填写）。"
+   "note": "需要域名证书；没有时自动签发（DNS 服务商在「设置」里填写）。",
+   "from": "domain"
   },
   "listen": {
    "label": "监听",
    "kind": "text",
    "group": "basic",
    "flag": "--listen",
-   "placeholder": "留空监听所有地址"
+   "placeholder": "留空监听所有地址",
+   "from": "listen",
+   "edit": "no"
   },
   "proxy_listen": {
    "label": "监听",
@@ -288,7 +310,9 @@
      "value": "::1",
      "label": "::1"
     }
-   ]
+   ],
+   "from": "listen",
+   "edit": "no"
   },
   "security": {
    "label": "安全",
@@ -305,7 +329,9 @@
      "value": "tls",
      "label": "TLS"
     }
-   ]
+   ],
+   "from": "security",
+   "edit": "no"
   },
   "flow": {
    "label": "Flow",
@@ -329,7 +355,8 @@
      ""
     ]
    },
-   "hidden_emit": ""
+   "hidden_emit": "",
+   "from": "flow"
   },
   "transport": {
    "label": "传输",
@@ -622,7 +649,8 @@
     "2022-blake3-aes-256-gcm",
     "2022-blake3-aes-128-gcm",
     "2022-blake3-chacha20-poly1305"
-   ]
+   ],
+   "from": "method"
   },
   "mux": {
    "label": "多路复用",
@@ -630,7 +658,9 @@
    "group": "proto",
    "default": true,
    "invert": true,
-   "flag": "--no-mux"
+   "flag": "--no-mux",
+   "from": "multiplex",
+   "edit": "no"
   },
   "up_mbps": {
    "label": "上行带宽",
@@ -677,7 +707,15 @@
    "kind": "radio",
    "group": "proto",
    "flag": "--obfs",
-   "empty_label": "无"
+   "empty_label": "无",
+   "from": [
+    "obfs.type",
+    "obfs_mode"
+   ],
+   "from_map": {
+    "none": ""
+   },
+   "edit_empty": "none"
   },
   "obfs_min": {
    "label": "最小包长",
@@ -689,7 +727,8 @@
     "obfs": [
      "gecko"
     ]
-   }
+   },
+   "from": "obfs.min_packet_size"
   },
   "obfs_max": {
    "label": "最大包长",
@@ -701,7 +740,8 @@
     "obfs": [
      "gecko"
     ]
-   }
+   },
+   "from": "obfs.max_packet_size"
   },
   "obfs_host": {
    "label": "混淆主机",
@@ -713,7 +753,8 @@
     "obfs": [
      "http"
     ]
-   }
+   },
+   "from": "obfs_host"
   },
   "masquerade": {
    "label": "伪装网址",
@@ -721,7 +762,8 @@
    "group": "proto",
    "flag": "--masquerade",
    "placeholder": "https://example.com",
-   "note": "非代理访问会看到这个网站"
+   "note": "非代理访问会看到这个网站",
+   "from": "masquerade"
   },
   "bbr_profile": {
    "label": "BBR 档位",
@@ -732,7 +774,8 @@
     "conservative",
     "standard",
     "aggressive"
-   ]
+   ],
+   "from": "bbr_profile"
   },
   "congestion": {
    "label": "拥塞控制",
@@ -744,6 +787,10 @@
     "cubic",
     "new_reno",
     "bbr"
+   ],
+   "from": [
+    "congestion_control",
+    "quic_congestion_control"
    ]
   },
   "zero_rtt": {
@@ -782,7 +829,12 @@
      "value": "udp",
      "label": "QUIC (UDP)"
     }
-   ]
+   ],
+   "from": "network",
+   "from_map": {
+    "tcp": ""
+   },
+   "edit_empty": "tcp"
   },
   "st_dest": {
    "label": "握手网站",
@@ -790,14 +842,16 @@
    "group": "security",
    "flag": "--handshake-server",
    "placeholder": "留空使用推荐站点",
-   "note": "借用它的 TLS 握手，需支持 TLS 1.3"
+   "note": "借用它的 TLS 握手，需支持 TLS 1.3",
+   "from": "handshake_server"
   },
   "st_dest_port": {
    "label": "握手端口",
    "kind": "number",
    "group": "security",
    "flag": "--handshake-port",
-   "value": 443
+   "value": 443,
+   "from": "handshake_port"
   },
   "strict_mode": {
    "label": "严格模式",
@@ -813,7 +867,8 @@
      "value": "false",
      "label": "关闭"
     }
-   ]
+   ],
+   "from": "strict_mode"
   },
   "wildcard_sni": {
    "label": "通配 SNI",
@@ -824,7 +879,8 @@
     "off",
     "authed",
     "all"
-   ]
+   ],
+   "from": "wildcard_sni"
   },
   "snell_version": {
    "label": "版本",
@@ -841,7 +897,8 @@
      "value": "6",
      "label": "v6"
     }
-   ]
+   ],
+   "from": "snell_version"
   },
   "snell_mode": {
    "label": "流量整形",
@@ -857,21 +914,24 @@
     "snell_version": [
      "6"
     ]
-   }
+   },
+   "from": "snell_mode"
   },
   "ws_path": {
    "label": "路径",
    "kind": "text",
    "group": "transport",
    "flag": "--path",
-   "placeholder": "留空自动生成"
+   "placeholder": "留空自动生成",
+   "from": "ws_path"
   },
   "cf_domain": {
    "label": "域名",
    "kind": "text",
    "group": "security",
    "flag": "--domain",
-   "placeholder": "经 Cloudflare 代理的域名"
+   "placeholder": "经 Cloudflare 代理的域名",
+   "from": "domain"
   }
  },
  "json_flags": {
@@ -959,7 +1019,8 @@
     "min_tls",
     "tfo",
     "mptcp"
-   ]
+   ],
+   "state": "vless"
   },
   {
    "type": "trojan",
@@ -978,7 +1039,8 @@
     "domain",
     "tfo",
     "mptcp"
-   ]
+   ],
+   "state": "trojan"
   },
   {
    "type": "hy2",
@@ -1016,7 +1078,8 @@
     "bbr_profile",
     "domain",
     "udp_fragment"
-   ]
+   ],
+   "state": "hysteria2"
   },
   {
    "type": "tuic",
@@ -1038,7 +1101,8 @@
     "heartbeat",
     "domain",
     "udp_fragment"
-   ]
+   ],
+   "state": "tuic"
   },
   {
    "type": "anytls",
@@ -1057,7 +1121,8 @@
     "domain",
     "tfo",
     "mptcp"
-   ]
+   ],
+   "state": "anytls"
   },
   {
    "type": "naive",
@@ -1075,7 +1140,8 @@
     "password",
     "naive_network",
     "domain"
-   ]
+   ],
+   "state": "naive"
   },
   {
    "type": "ss",
@@ -1095,7 +1161,8 @@
     "mux",
     "tfo",
     "mptcp"
-   ]
+   ],
+   "state": "shadowsocks"
   },
   {
    "type": "shadowtls",
@@ -1116,7 +1183,8 @@
     "st_dest_port",
     "strict_mode",
     "wildcard_sni"
-   ]
+   ],
+   "state": "shadowtls"
   },
   {
    "type": "snell",
@@ -1149,7 +1217,8 @@
     },
     "obfs_host",
     "snell_mode"
-   ]
+   ],
+   "state": "snell"
   },
   {
    "type": "vmess",
@@ -1168,7 +1237,8 @@
     "uuid",
     "ws_path",
     "cf_domain"
-   ]
+   ],
+   "state": "vmess-ws-cf"
   },
   {
    "type": "socks",
@@ -1185,7 +1255,8 @@
     "reset_day",
     "expiry",
     "password"
-   ]
+   ],
+   "state": "socks"
   },
   {
    "type": "http",
@@ -1202,7 +1273,8 @@
     "reset_day",
     "expiry",
     "password"
-   ]
+   ],
+   "state": "http"
   },
   {
    "type": "mixed",
@@ -1219,7 +1291,19 @@
     "reset_day",
     "expiry",
     "password"
-   ]
+   ],
+   "state": "mixed"
   }
- ]
+ ],
+ "edit": {
+  "cmd": [
+   "node",
+   "set",
+   "{id}"
+  ]
+ },
+ "ext_from": {
+  "inbound": "singbox.inbound",
+  "outbound": "singbox.outbound"
+ }
 }
