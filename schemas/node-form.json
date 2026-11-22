@@ -31,11 +31,6 @@
    "id": "meta",
    "label": "备注与标签",
    "collapsed": true
-  },
-  {
-   "id": "expert",
-   "label": "专家：原始配置片段",
-   "collapsed": true
   }
  ],
  "common": [
@@ -768,21 +763,6 @@
     "::"
    ],
    "empty_label": "127.0.0.1（仅本机）"
-  },
-  "inbound_json": {
-   "flag": "--sing-box-inbound-json",
-   "label": "入站配置片段（JSON）",
-   "kind": "json",
-   "group": "expert",
-   "merge": "inbound",
-   "note": "与上面表单生成的内容合并；仅在需要表单里没有的字段时使用"
-  },
-  "outbound_json": {
-   "flag": "--sing-box-outbound-json",
-   "label": "客户端出站配置片段（JSON）",
-   "kind": "json",
-   "group": "expert",
-   "merge": "outbound"
   }
  },
  "json_flags": {
@@ -846,9 +826,7 @@
     "fingerprint",
     "listen",
     "tfo",
-    "mptcp",
-    "inbound_json",
-    "outbound_json"
+    "mptcp"
    ]
   },
   {
@@ -884,9 +862,7 @@
     "brutal_debug",
     "realm_id",
     "realm_ip_version",
-    "realm_port_mapping",
-    "inbound_json",
-    "outbound_json"
+    "realm_port_mapping"
    ]
   },
   {
@@ -906,9 +882,7 @@
     "zero_rtt",
     "heartbeat",
     "auth_timeout",
-    "udp_fragment",
-    "inbound_json",
-    "outbound_json"
+    "udp_fragment"
    ]
   },
   {
@@ -925,9 +899,7 @@
      "default": 443
     },
     "tfo",
-    "mptcp",
-    "inbound_json",
-    "outbound_json"
+    "mptcp"
    ]
   },
   {
@@ -944,9 +916,7 @@
      "default": 443
     },
     "tfo",
-    "mptcp",
-    "inbound_json",
-    "outbound_json"
+    "mptcp"
    ]
   },
   {
@@ -962,9 +932,7 @@
      "key": "port",
      "default": 443
     },
-    "naive_network",
-    "inbound_json",
-    "outbound_json"
+    "naive_network"
    ]
   },
   {
@@ -979,9 +947,7 @@
     "method",
     "no_mux",
     "tfo",
-    "mptcp",
-    "inbound_json",
-    "outbound_json"
+    "mptcp"
    ]
   },
   {
@@ -996,9 +962,7 @@
     "st_handshake",
     "st_handshake_port",
     "strict_mode",
-    "wildcard_sni",
-    "inbound_json",
-    "outbound_json"
+    "wildcard_sni"
    ]
   },
   {
@@ -1023,9 +987,7 @@
      }
     },
     "obfs_host",
-    "snell_mode",
-    "inbound_json",
-    "outbound_json"
+    "snell_mode"
    ]
   },
   {
@@ -1041,9 +1003,7 @@
      "key": "port",
      "placeholder": "留空自动选择"
     },
-    "path",
-    "inbound_json",
-    "outbound_json"
+    "path"
    ]
   },
   {
@@ -1055,9 +1015,7 @@
      "key": "port",
      "default": 1080
     },
-    "proxy_listen",
-    "inbound_json",
-    "outbound_json"
+    "proxy_listen"
    ]
   },
   {
@@ -1069,9 +1027,7 @@
      "key": "port",
      "default": 1080
     },
-    "proxy_listen",
-    "inbound_json",
-    "outbound_json"
+    "proxy_listen"
    ]
   },
   {
@@ -1083,9 +1039,7 @@
      "key": "port",
      "default": 1080
     },
-    "proxy_listen",
-    "inbound_json",
-    "outbound_json"
+    "proxy_listen"
    ]
   }
  ]
