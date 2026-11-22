@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.117
+
+- Debian/Ubuntu 安装依赖时只处理确实缺少的软件包：依赖已齐全时不再运行 `apt-get update`，
+  软件源索引刷新失败时改用现有索引继续安装。此前任意一个第三方软件源异常或 apt 锁被占用，都会让安装和升级在第一步失败。
+
 ## 0.1.0-alpha.116
 
 - 新增 `sb node schema`：以 JSON 输出 `sb node add` 支持的协议、每个协议的参数、输入类型和可选值

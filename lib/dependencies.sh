@@ -89,11 +89,18 @@ dependency_install_packages() {
       apk add --no-cache "${packages[@]}" || rc=$?
       ;;
     debian)
+      # Only touch apt for packages that are really missing: an upgrade on a
+      # host whose package index cannot refresh (broken third-party source,
+      # held lock) must not fail when everything needed is already there.
+      local -a missing=()
+      local pkg
+      for pkg in "${packages[@]}"; do
+        dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+      done
+      ((${#missing[@]} > 0)) || return 0
       export DEBIAN_FRONTEND=noninteractive
-      apt-get update -y || rc=$?
-      if (( rc == 0 )); then
-        apt-get install -y --no-install-recommends "${packages[@]}" || rc=$?
-      fi
+      apt-get update -y || log_warn '软件源索引刷新失败，改用现有索引继续安装。'
+      apt-get install -y --no-install-recommends "${missing[@]}" || rc=$?
       ;;
     dnf)
       dnf install -y "${packages[@]}" || rc=$?
