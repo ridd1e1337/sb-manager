@@ -91,6 +91,108 @@ acme_install() {
   log_ok "acme.sh $SBM_ACME_VERSION 已通过固定摘要安装。"
 }
 
+SBM_DNS_ENV="${SBM_DNS_ENV:-$SBM_SECRETS/dns-provider.env}"
+
+# DNS-01 providers: name → acme.sh dnsapi id, display name and the credential
+# variables that dnsapi script reads.  Cloudflare keeps its own env file
+# because the DNS-record automation (cloudflare_dns.sh) shares it.
+cert_provider_id() {
+  case "$1" in
+    cloudflare|cf|dns_cf) printf 'dns_cf\n';;
+    aliyun|ali|dns_ali) printf 'dns_ali\n';;
+    dnspod|dp|dns_dp) printf 'dns_dp\n';;
+    namesilo|dns_namesilo) printf 'dns_namesilo\n';;
+    *) return 1;;
+  esac
+}
+cert_provider_label() {
+  case "$1" in
+    dns_cf) printf 'Cloudflare\n';; dns_ali) printf '阿里云\n';;
+    dns_dp) printf '腾讯云 DNSPod\n';; dns_namesilo) printf 'NameSilo\n';; *) printf '%s\n' "$1";;
+  esac
+}
+cert_provider_vars() {
+  case "$1" in
+    dns_cf) printf 'CF_Token\n';; dns_ali) printf 'Ali_Key Ali_Secret\n';;
+    dns_dp) printf 'DP_Id DP_Key\n';; dns_namesilo) printf 'Namesilo_Key\n';;
+  esac
+}
+cert_current_provider() { jq -r '.settings.acme_dns_provider // "dns_cf"' "$SBM_STATE"; }
+
+# sb cert setup PROVIDER --email EMAIL [--stdin] [VAR=VALUE ...]
+# Credentials are read as VAR=VALUE lines from standard input with --stdin, so
+# they never appear in the process list or shell history.
+_cert_setup() {
+  local provider email='' from_stdin=0 line key value var tmp candidate target
+  local -A creds=()
+  provider=$(cert_provider_id "${1:-}") || usage_die '用法：sb cert setup <cloudflare|aliyun|dnspod|namesilo> --email EMAIL [--stdin] [变量=值 …]'
+  shift
+  while (($#)); do
+    case "$1" in
+      --email) email=${2:?缺少邮箱}; shift 2;;
+      --stdin) from_stdin=1; shift;;
+      *=*) creds[${1%%=*}]=${1#*=}; shift;;
+      *) usage_die "未知参数：$1";;
+    esac
+  done
+  if [[ "$from_stdin" == 1 ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ "$line" == *=* ]] || continue
+      key=${line%%=*}; value=${line#*=}; creds[$key]=$value
+    done
+  fi
+  [[ -n "$email" ]] || email=$(jq -r '.settings.acme_email // ""' "$SBM_STATE")
+  [[ "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || die '请用 --email 提供有效的 ACME 账户邮箱。'
+  for var in $(cert_provider_vars "$provider"); do
+    value=${creds[$var]:-}
+    [[ -n "$value" ]] || die "缺少 $(cert_provider_label "$provider") 的凭据：$var"
+    [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || die "$var 含有换行符。"
+  done
+  acme_install "$email"
+  if [[ "$provider" == dns_cf ]]; then target=$SBM_CF_DNS_ENV; else target=$SBM_DNS_ENV; fi
+  tmp=$(mktemp "$SBM_SECRETS/.dns-provider.XXXXXX")
+  {
+    for var in $(cert_provider_vars "$provider"); do printf '%s=%q\n' "$var" "${creds[$var]}"; done
+    [[ "$provider" != dns_cf || -z "${creds[CF_Zone_ID]:-}" ]] || printf 'CF_Zone_ID=%q\n' "${creds[CF_Zone_ID]}"
+  } >"$tmp"
+  chmod 0600 "$tmp"; mv "$tmp" "$target"
+  [[ "$provider" != dns_cf ]] || rm -f "$SBM_DNS_ENV"  # credentials of a provider no longer in use
+  candidate=$(state_candidate)
+  jq --arg e "$email" --arg p "$provider" '.settings.acme_email=$e | .settings.acme_dns_provider=$p' "$SBM_STATE" >"$candidate"
+  if ! apply_candidate_state "$candidate" acme-settings; then rm -f "$candidate"; return 1; fi
+  rm -f "$candidate"
+  log_ok "$(cert_provider_label "$provider") DNS-01 凭据已保存（不会回显）。"
+  [[ "$provider" == dns_cf ]] || log_info '提示：这个服务商只用于证书验证；节点域名的 A/AAAA 记录需要你自己指向本机。'
+}
+cert_setup() { with_state_transaction cert-provider _cert_setup "$@"; }
+
+# Load the credentials of the configured provider into the environment.
+cert_load_dns_env() {
+  local provider
+  provider=$(cert_current_provider)
+  if [[ "$provider" == dns_cf ]]; then cert_load_cloudflare_env; return $?; fi
+  [[ -s "$SBM_DNS_ENV" ]] || die "尚未配置 $(cert_provider_label "$provider") 的 DNS 凭据。运行：sb cert setup"
+  unset Ali_Key Ali_Secret DP_Id DP_Key Namesilo_Key
+  set -a
+  # shellcheck disable=SC1090
+  source "$SBM_DNS_ENV"
+  set +a
+}
+
+cert_status_json() {
+  local provider configured=false
+  provider=$(cert_current_provider)
+  if [[ "$provider" == dns_cf ]]; then [[ ! -s "$SBM_CF_DNS_ENV" ]] || configured=true
+  else [[ ! -s "$SBM_DNS_ENV" ]] || configured=true; fi
+  jq -n --arg provider "$provider" --arg label "$(cert_provider_label "$provider")" --argjson configured "$configured" \
+    --arg email "$(jq -r '.settings.acme_email // ""' "$SBM_STATE")" \
+    '{provider:$provider,label:$label,configured:$configured,email:$email,auto_dns:($provider=="dns_cf"),
+      providers:[{id:"cloudflare",label:"Cloudflare",vars:[{name:"CF_Token",label:"API Token"}]},
+                 {id:"aliyun",label:"阿里云",vars:[{name:"Ali_Key",label:"AccessKey ID"},{name:"Ali_Secret",label:"AccessKey Secret"}]},
+                 {id:"dnspod",label:"腾讯云 DNSPod",vars:[{name:"DP_Id",label:"Token ID"},{name:"DP_Key",label:"Token"}]},
+                 {id:"namesilo",label:"NameSilo",vars:[{name:"Namesilo_Key",label:"API Key"}]}]}'
+}
+
 _cert_setup_cloudflare() {
   local token=${1:-} zone_id=${2:-} email=${3:-} candidate tmp
   [[ -n "$token" ]] || prompt_secret token 'Cloudflare API Token'
@@ -139,12 +241,17 @@ _cert_prepare_node_domain() {
   [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die 'DNS 和证书申请不支持 --dry-run。'
   validate_domain "$domain" || { log_error "无效域名：$domain"; return 1; }
   if cert_usable "$domain"; then log_info "复用现有证书：$domain"; return 0; fi
-  cert_load_cloudflare_env || return 1
+  cert_load_dns_env || return 1
   email=$(jq -r '.settings.acme_email // ""' "$SBM_STATE") || return 1
-  [[ -n "$email" ]] || { log_error '请先用 sb cert setup-cloudflare 配置 ACME 邮箱。'; return 1; }
+  [[ -n "$email" ]] || { log_error '请先用 sb cert setup 配置 DNS 服务商和 ACME 邮箱。'; return 1; }
   acme_install "$email" || return 1
-  zone=$(cloudflare_dns_zone "$domain") || return 1
-  cloudflare_dns_prepare "$domain" "$zone" || return 1
+  if [[ $(cert_current_provider) == dns_cf ]]; then
+    zone=$(cloudflare_dns_zone "$domain") || return 1
+    cloudflare_dns_prepare "$domain" "$zone" || return 1
+  else
+    zone=''
+    log_info "$(cert_provider_label "$(cert_current_provider)") 只用于证书验证；请确认 $domain 的 A/AAAA 记录已指向本机。"
+  fi
   _cert_issue "$domain" "$email" "$zone" || return 1
   cert_usable "$domain"
 }
@@ -180,25 +287,30 @@ _cert_record_state() {
   local domain=$1 candidate tmp
   candidate=$(state_candidate)
   jq --arg d "$domain" --arg now "$(now_iso)" --arg cert "$SBM_CERTS/$domain/fullchain.pem" --arg key "$SBM_CERTS/$domain/key.pem" '
-    .certificates |= (map(select(.domain!=$d)) + [{domain:$d,provider:"acme.sh/dns_cf",key_type:"ec-256",certificate_path:$cert,key_path:$key,updated_at:$now}])
+    (.settings.acme_dns_provider // "dns_cf") as $prov |
+    .certificates |= (map(select(.domain!=$d)) + [{domain:$d,provider:("acme.sh/" + $prov),key_type:"ec-256",certificate_path:$cert,key_path:$key,updated_at:$now}])
   ' "$SBM_STATE" >"$candidate"
   if ! apply_candidate_state "$candidate" "cert-$domain"; then rm -f "$candidate"; return 1; fi
   rm -f "$candidate"
 }
 
 _cert_issue() {
-  local domain=$1 email=${2:-} zone=${3:-} dir reloadcmd
+  local domain=$1 email=${2:-} zone=${3:-} dir reloadcmd provider timeout
+  local -a dns_args
   validate_domain "$domain" || die "无效域名：$domain"
   [[ -n "$email" ]] || email=$(jq -r '.settings.acme_email // ""' "$SBM_STATE")
   acme_install "$email" || return 1
-  cert_load_cloudflare_env || return 1
-  [[ -z "$zone" ]] || export CF_Zone_ID="$zone"
+  cert_load_dns_env || return 1
+  provider=$(cert_current_provider); dns_args=(--dns "$provider"); timeout=$SBM_ACME_ISSUE_TIMEOUT
+  [[ "$provider" != dns_cf || -z "$zone" ]] || export CF_Zone_ID="$zone"
+  # NameSilo publishes record changes in batches of up to 15 minutes.
+  if [[ "$provider" == dns_namesilo ]]; then dns_args+=(--dnssleep 900); (( timeout >= 1500 )) || timeout=1500; fi
   acme_migrate_legacy_home || return 1
   dir="$SBM_CERTS/$domain"; mkdir -p "$dir"; chmod 0750 "$dir"
-  log_info "使用 Cloudflare DNS-01 为 $domain 签发 ECDSA 证书…"
-  acme_run_timed "为 $domain 签发证书" "$SBM_ACME_ISSUE_TIMEOUT" '0 2' \
+  log_info "使用 $(cert_provider_label "$provider") DNS-01 为 $domain 签发 ECDSA 证书…"
+  acme_run_timed "为 $domain 签发证书" "$timeout" '0 2' \
     --home "$SBM_ACME_HOME" --config-home "$SBM_ACME_CONFIG" --cert-home "$SBM_ACME_CERT_HOME" \
-    --accountemail "$email" --issue --dns dns_cf -d "$domain" --server letsencrypt --keylength ec-256 || return $?
+    --accountemail "$email" --issue "${dns_args[@]}" -d "$domain" --server letsencrypt --keylength ec-256 || return $?
   reloadcmd="SBM_SKIP_STATE_INIT=1 $(printf '%q' "$SBM_BIN_DIR/sb") cert hook $(printf '%q' "$domain")"
   acme_run_timed "为 $domain 部署证书" "$SBM_ACME_INSTALL_TIMEOUT" '0' \
     --home "$SBM_ACME_HOME" --config-home "$SBM_ACME_CONFIG" --cert-home "$SBM_ACME_CERT_HOME" \
@@ -213,7 +325,7 @@ cert_issue() { with_state_transaction cert-issue _cert_issue "$@"; }
 _cert_renew() {
   local quiet=${1:-0}
   [[ -x "$SBM_ACME_BIN" ]] || { [[ "$quiet" == 1 ]] || log_warn "acme.sh 尚未安装。"; return 0; }
-  cert_load_cloudflare_env
+  cert_load_dns_env
   if [[ "$quiet" == 1 ]]; then
     acme_run_timed 'ACME 定时续签' "$SBM_ACME_CRON_TIMEOUT" '0' \
       --home "$SBM_ACME_HOME" --config-home "$SBM_ACME_CONFIG" --cert-home "$SBM_ACME_CERT_HOME" \
