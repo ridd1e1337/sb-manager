@@ -30,3 +30,7 @@ Treat backups, exports, API tokens, node credentials, and private keys as secret
 ## Panel Form Schema
 
 `sb node schema` prints `schemas/node-form.json` (version 2); the web panel builds its "add node" form from it. Whenever a `node add` flag, protocol, or allowed value changes, update that file in the same commit. Each field has a `group`, a `kind` (`text`, `number`, `select`, `switch`), and either a `flag` or a `set` list of `[target, path, fixed-value?]` entries that the panel writes into the inbound / outbound extension JSON. `when` shows a field only for the listed values of another field; `hidden_emit` is the flag value sent while the field is hidden. Never add a field that asks the operator to type JSON (`kind: json`): raw fragments are a CLI-only feature.
+
+## Panel Feature Pages
+
+`sb panel schema` prints `schemas/panel.json`: the pages, status lines, tables and actions the web panel shows besides the node form. Each action is a command template (`args` with `{field}`, `{row.key}` and optional `{field?}` placeholders) plus `fields` (the same kinds as the node form; a field with a `flag` is appended as an option). When a command, flag or JSON output changes, update this file in the same commit. Only offer commands that work without a terminal (no prompts) and never ask for JSON input.

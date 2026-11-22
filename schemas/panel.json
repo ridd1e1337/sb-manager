@@ -1,0 +1,1443 @@
+{
+ "version": 1,
+ "tool": "sb",
+ "node_actions": [
+  {
+   "label": "编辑",
+   "args": [
+    "node",
+    "set",
+    "{row.id}"
+   ],
+   "fields": [
+    {
+     "key": "name",
+     "label": "名称",
+     "kind": "text",
+     "flag": "--name"
+    },
+    {
+     "key": "port",
+     "label": "端口",
+     "kind": "number",
+     "flag": "--port"
+    },
+    {
+     "key": "address",
+     "label": "客户端连接地址",
+     "kind": "text",
+     "flag": "--address"
+    },
+    {
+     "key": "remark",
+     "label": "备注",
+     "kind": "text",
+     "flag": "--remark"
+    },
+    {
+     "key": "region",
+     "label": "地区",
+     "kind": "text",
+     "flag": "--region"
+    },
+    {
+     "key": "tags",
+     "label": "标签",
+     "kind": "text",
+     "flag": "--tags",
+     "placeholder": "a,b"
+    }
+   ],
+   "note": "只填需要修改的项，留空的保持不变。"
+  },
+  {
+   "label": "到期时间",
+   "args": [
+    "node",
+    "expiry",
+    "{row.id}"
+   ],
+   "fields": [
+    {
+     "key": "days",
+     "label": "有效天数",
+     "kind": "number",
+     "flag": "--days"
+    },
+    {
+     "key": "clear",
+     "label": "取消到期时间",
+     "kind": "switch",
+     "flag": "--clear"
+    }
+   ]
+  },
+  {
+   "label": "复制节点",
+   "args": [
+    "node",
+    "clone",
+    "{row.id}",
+    "{new_id}"
+   ],
+   "fields": [
+    {
+     "key": "new_id",
+     "label": "新节点 ID",
+     "kind": "text",
+     "required": true
+    },
+    {
+     "key": "port",
+     "label": "端口",
+     "kind": "number",
+     "flag": "--port"
+    },
+    {
+     "key": "name",
+     "label": "名称",
+     "kind": "text",
+     "flag": "--name"
+    }
+   ],
+   "note": "复制设置并生成新的凭据。"
+  },
+  {
+   "label": "轮换凭据",
+   "args": [
+    "node",
+    "rotate",
+    "{row.id}"
+   ],
+   "confirm": "这个节点现有的分享链接会全部失效，需要重新导入。"
+  }
+ ],
+ "pages": [
+  {
+   "id": "users",
+   "label": "用户",
+   "sections": [
+    {
+     "title": "节点用户",
+     "note": "每个用户有独立的凭据和分享链接；停用或删除后立即失效。",
+     "context": {
+      "key": "node",
+      "label": "节点",
+      "cmd": [
+       "node",
+       "list",
+       "--json"
+      ],
+      "value": "id",
+      "text": "name"
+     },
+     "table": {
+      "cmd": [
+       "user",
+       "stats",
+       "{node}",
+       "--json"
+      ],
+      "empty": "这个节点还没有用户。",
+      "columns": [
+       {
+        "label": "用户",
+        "path": "user",
+        "kind": "mono"
+       },
+       {
+        "label": "名称",
+        "path": "name"
+       },
+       {
+        "label": "状态",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "启用",
+         "停用"
+        ]
+       },
+       {
+        "label": "到期",
+        "path": "limits.expires_at",
+        "kind": "ts",
+        "empty": "不限"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "分享",
+        "args": [
+         "share",
+         "{node}",
+         "--user",
+         "{row.user}"
+        ],
+        "show": true
+       },
+       {
+        "label": "期限",
+        "args": [
+         "user",
+         "limit",
+         "{node}",
+         "{row.user}"
+        ],
+        "fields": [
+         {
+          "key": "days",
+          "label": "有效天数",
+          "kind": "number",
+          "flag": "--days",
+          "placeholder": "从现在起 N 天后到期"
+         },
+         {
+          "key": "no_expiry",
+          "label": "不设到期时间",
+          "kind": "switch",
+          "flag": "--no-expiry"
+         }
+        ]
+       },
+       {
+        "label": "停用",
+        "args": [
+         "user",
+         "disable",
+         "{node}",
+         "{row.user}"
+        ],
+        "when": {
+         "path": "enabled",
+         "eq": true
+        }
+       },
+       {
+        "label": "启用",
+        "args": [
+         "user",
+         "enable",
+         "{node}",
+         "{row.user}"
+        ],
+        "when": {
+         "path": "enabled",
+         "eq": false
+        }
+       },
+       {
+        "label": "轮换凭据",
+        "args": [
+         "user",
+         "rotate",
+         "{node}",
+         "{row.user}"
+        ],
+        "confirm": "这个用户现有的分享链接会失效，需要重新导入。"
+       },
+       {
+        "label": "删除",
+        "args": [
+         "user",
+         "delete",
+         "{node}",
+         "{row.user}"
+        ],
+        "danger": true,
+        "yes": true,
+        "confirm": "用户的凭据和分享链接会立即失效，无法恢复。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "添加用户",
+       "args": [
+        "user",
+        "add",
+        "{node}",
+        "{user_id}",
+        "{name?}"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "user_id",
+         "label": "用户 ID",
+         "kind": "text",
+         "required": true,
+         "placeholder": "小写字母、数字、. _ -"
+        },
+        {
+         "key": "name",
+         "label": "显示名称",
+         "kind": "text",
+         "placeholder": "留空与 ID 相同"
+        }
+       ]
+      },
+      {
+       "label": "批量添加",
+       "args": [
+        "user",
+        "add",
+        "{node}",
+        "--count",
+        "{count}"
+       ],
+       "fields": [
+        {
+         "key": "count",
+         "label": "数量",
+         "kind": "number",
+         "required": true
+        },
+        {
+         "key": "prefix",
+         "label": "用户名前缀",
+         "kind": "text",
+         "flag": "--prefix",
+         "placeholder": "默认 user"
+        },
+        {
+         "key": "days",
+         "label": "有效天数",
+         "kind": "number",
+         "flag": "--days"
+        }
+       ]
+      },
+      {
+       "label": "清理到期用户",
+       "args": [
+        "user",
+        "purge-depleted",
+        "{node}"
+       ],
+       "yes": true,
+       "confirm": "删除这个节点上所有已到期的用户。"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "traffic",
+   "label": "流量",
+   "sections": [
+    {
+     "title": "节点流量",
+     "note": "按节点统计本周期流量；设置额度后用完自动停止该节点，到重置日恢复。",
+     "table": {
+      "cmd": [
+       "traffic",
+       "status",
+       "--json"
+      ],
+      "empty": "还没有节点。",
+      "columns": [
+       {
+        "label": "节点",
+        "path": "name",
+        "sub": "id"
+       },
+       {
+        "label": "统计",
+        "path": "traffic_enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "上行",
+        "path": "upload_bytes",
+        "kind": "bytes"
+       },
+       {
+        "label": "下行",
+        "path": "download_bytes",
+        "kind": "bytes"
+       },
+       {
+        "label": "额度",
+        "path": "quota_bytes",
+        "kind": "bytes",
+        "empty": "不限"
+       },
+       {
+        "label": "剩余",
+        "path": "remaining_bytes",
+        "kind": "bytes",
+        "empty": "-"
+       },
+       {
+        "label": "重置日",
+        "path": "reset_day"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "设置",
+        "args": [
+         "traffic",
+         "set",
+         "{row.id}"
+        ],
+        "fields": [
+         {
+          "key": "quota",
+          "label": "流量额度",
+          "kind": "text",
+          "flag": "--quota",
+          "placeholder": "如 100G，unlimited 表示不限"
+         },
+         {
+          "key": "reset_day",
+          "label": "每月重置日",
+          "kind": "number",
+          "flag": "--reset-day",
+          "placeholder": "1-28"
+         },
+         {
+          "key": "rate",
+          "label": "限速",
+          "kind": "text",
+          "flag": "--rate",
+          "placeholder": "如 50M，unlimited 表示不限"
+         },
+         {
+          "key": "quota_mode",
+          "label": "计量方式",
+          "kind": "select",
+          "flag": "--quota-mode",
+          "options": [
+           {
+            "value": "total",
+            "label": "上行 + 下行"
+           },
+           {
+            "value": "download",
+            "label": "仅下行"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "label": "清零",
+        "args": [
+         "traffic",
+         "reset",
+         "{row.id}",
+         "--yes"
+        ],
+        "confirm": "把这个节点本周期的已用流量清零。"
+       },
+       {
+        "label": "关闭",
+        "args": [
+         "traffic",
+         "disable",
+         "{row.id}"
+        ],
+        "when": {
+         "path": "traffic_enabled",
+         "eq": true
+        },
+        "confirm": "停止统计和限制这个节点的流量。"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "routing",
+   "label": "出站与分流",
+   "sections": [
+    {
+     "title": "出站",
+     "note": "节点流量默认直接从本机出去；添加出站后可以让部分流量走 WARP 或其他落地。",
+     "table": {
+      "cmd": [
+       "routing",
+       "--json"
+      ],
+      "path": "outbounds",
+      "empty": "只有直连。",
+      "columns": [
+       {
+        "label": "名称",
+        "path": "tag",
+        "kind": "mono"
+       },
+       {
+        "label": "类型",
+        "path": [
+         "type",
+         "protocol"
+        ]
+       },
+       {
+        "label": "经由",
+        "path": "via",
+        "empty": "-"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "测试",
+        "args": [
+         "outbound",
+         "test",
+         "{row.tag}"
+        ],
+        "show": true
+       },
+       {
+        "label": "删除",
+        "args": [
+         "outbound",
+         "remove",
+         "{row.tag}"
+        ],
+        "danger": true,
+        "confirm": "删除这个出站。仍被规则引用时会被拒绝。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "接入 Cloudflare WARP",
+       "args": [
+        "warp",
+        "--register"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "tag",
+         "label": "出站名称",
+         "kind": "text",
+         "flag": "--tag",
+         "placeholder": "默认 warp"
+        }
+       ],
+       "confirm": "会向 Cloudflare 注册一个免费的 WARP 账号并添加为出站。"
+      },
+      {
+       "label": "导入出站订阅",
+       "args": [
+        "outbound",
+        "sub",
+        "add",
+        "{name}",
+        "{url}"
+       ],
+       "fields": [
+        {
+         "key": "name",
+         "label": "名称",
+         "kind": "text",
+         "required": true
+        },
+        {
+         "key": "url",
+         "label": "订阅地址",
+         "kind": "text",
+         "required": true,
+         "placeholder": "https://…"
+        },
+        {
+         "key": "prefix",
+         "label": "节点名前缀",
+         "kind": "text",
+         "flag": "--prefix"
+        },
+        {
+         "key": "type",
+         "label": "分组方式",
+         "kind": "select",
+         "flag": "--type",
+         "options": [
+          {
+           "value": "urltest",
+           "label": "自动选最快"
+          },
+          {
+           "value": "selector",
+           "label": "手动选择"
+          },
+          {
+           "value": "none",
+           "label": "不建分组"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "label": "刷新出站订阅",
+       "args": [
+        "outbound",
+        "sub",
+        "refresh"
+       ]
+      },
+      {
+       "label": "测试全部出站",
+       "args": [
+        "outbound",
+        "test"
+       ],
+       "show": true
+      }
+     ]
+    },
+    {
+     "title": "出站分组",
+     "note": "把多个出站合成一组，自动选最快的或手动切换。",
+     "table": {
+      "cmd": [
+       "routing",
+       "--json"
+      ],
+      "path": "groups",
+      "empty": "还没有分组。",
+      "columns": [
+       {
+        "label": "名称",
+        "path": "tag",
+        "kind": "mono"
+       },
+       {
+        "label": "类型",
+        "path": "type"
+       },
+       {
+        "label": "成员",
+        "path": "outbounds",
+        "kind": "list"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "删除",
+        "args": [
+         "balancer",
+         "remove",
+         "{row.tag}"
+        ],
+        "danger": true,
+        "confirm": "删除这个分组。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "新建分组",
+       "args": [
+        "balancer",
+        "set",
+        "{tag}",
+        "--outbounds",
+        "{outbounds}"
+       ],
+       "fields": [
+        {
+         "key": "tag",
+         "label": "名称",
+         "kind": "text",
+         "required": true
+        },
+        {
+         "key": "outbounds",
+         "label": "成员出站",
+         "kind": "text",
+         "required": true,
+         "placeholder": "a,b"
+        },
+        {
+         "key": "type",
+         "label": "类型",
+         "kind": "select",
+         "flag": "--type",
+         "options": [
+          {
+           "value": "urltest",
+           "label": "自动选最快"
+          },
+          {
+           "value": "selector",
+           "label": "手动选择"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "分流规则",
+     "note": "从上到下匹配，第一条命中的规则决定出口；都不匹配时走默认出口。",
+     "status": {
+      "cmd": [
+       "routing",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "默认出口",
+        "path": [
+         "default.outbound",
+         "default.balancer"
+        ],
+        "empty": "直连"
+       }
+      ]
+     },
+     "table": {
+      "cmd": [
+       "routing",
+       "--json"
+      ],
+      "path": "rules",
+      "empty": "还没有规则，全部流量走默认出口。",
+      "columns": [
+       {
+        "label": "#",
+        "path": "#"
+       },
+       {
+        "label": "节点",
+        "path": "node",
+        "empty": "全部"
+       },
+       {
+        "label": "域名",
+        "path": "domain",
+        "kind": "mono"
+       },
+       {
+        "label": "IP",
+        "path": "ip",
+        "kind": "mono"
+       },
+       {
+        "label": "网络",
+        "path": "network"
+       },
+       {
+        "label": "端口",
+        "path": "port"
+       },
+       {
+        "label": "出口",
+        "path": [
+         "outbound",
+         "balancer"
+        ],
+        "kind": "mono"
+       }
+      ],
+      "row_actions": [
+       {
+        "label": "删除",
+        "args": [
+         "route",
+         "remove",
+         "{row.#}"
+        ],
+        "danger": true,
+        "confirm": "删除这条规则。"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "添加规则",
+       "args": [
+        "route",
+        "add"
+       ],
+       "primary": true,
+       "fields": [
+        {
+         "key": "node",
+         "label": "只对这个节点生效",
+         "kind": "select",
+         "flag": "--node",
+         "source": {
+          "key": "node",
+          "label": "节点",
+          "cmd": [
+           "node",
+           "list",
+           "--json"
+          ],
+          "value": "id",
+          "text": "name"
+         },
+         "empty_label": "全部节点"
+        },
+        {
+         "key": "domain",
+         "label": "域名",
+         "kind": "text",
+         "flag": "--domain",
+         "placeholder": "domain:example.com,geosite:cn"
+        },
+        {
+         "key": "ip",
+         "label": "IP",
+         "kind": "text",
+         "flag": "--ip",
+         "placeholder": "1.2.3.0/24,geoip:cn"
+        },
+        {
+         "key": "network",
+         "label": "网络",
+         "kind": "select",
+         "flag": "--network",
+         "options": [
+          "tcp",
+          "udp"
+         ]
+        },
+        {
+         "key": "port",
+         "label": "端口",
+         "kind": "text",
+         "flag": "--port",
+         "placeholder": "443 或 1000-2000"
+        },
+        {
+         "key": "to",
+         "label": "走哪个出口",
+         "kind": "text",
+         "flag": "--to",
+         "required": true,
+         "placeholder": "direct",
+         "note": "出站或分组的名称；block 表示拦截"
+        }
+       ]
+      },
+      {
+       "label": "默认出口",
+       "args": [
+        "route",
+        "default",
+        "{target}"
+       ],
+       "fields": [
+        {
+         "key": "target",
+         "label": "默认出口",
+         "kind": "text",
+         "required": true,
+         "placeholder": "direct",
+         "note": "出站或分组的名称；block 表示拦截"
+        }
+       ]
+      },
+      {
+       "label": "测试域名走向",
+       "args": [
+        "route",
+        "test",
+        "{dest}"
+       ],
+       "show": true,
+       "fields": [
+        {
+         "key": "dest",
+         "label": "域名或 IP",
+         "kind": "text",
+         "required": true,
+         "placeholder": "example.com"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "DNS",
+     "note": "节点解析域名时使用的 DNS，默认使用系统 DNS。",
+     "actions": [
+      {
+       "label": "查看",
+       "args": [
+        "dns",
+        "show"
+       ],
+       "show": true
+      },
+      {
+       "label": "设置 DNS",
+       "args": [
+        "dns",
+        "set",
+        "{servers}"
+       ],
+       "fields": [
+        {
+         "key": "servers",
+         "label": "DNS 服务器",
+         "kind": "text",
+         "required": true,
+         "placeholder": "1.1.1.1,https://dns.google/dns-query"
+        }
+       ]
+      },
+      {
+       "label": "恢复系统 DNS",
+       "args": [
+        "dns",
+        "clear"
+       ],
+       "confirm": "恢复为系统 DNS。"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "system",
+   "label": "系统",
+   "sections": [
+    {
+     "title": "sing-box 核心",
+     "status": {
+      "cmd": [
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "版本",
+        "path": "components.sing_box.version",
+        "kind": "mono"
+       },
+       {
+        "label": "状态",
+        "path": "components.sing_box.state"
+       },
+       {
+        "label": "待切换版本",
+        "path": "components.sing_box.pending_version",
+        "kind": "mono",
+        "hide_empty": true
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "检查更新",
+       "args": [
+        "core",
+        "check"
+       ],
+       "show": true
+      },
+      {
+       "label": "更新核心",
+       "args": [
+        "core",
+        "update"
+       ],
+       "yes": true,
+       "confirm": "下载并切换到新的 sing-box 核心，节点会短暂重启。"
+      },
+      {
+       "label": "更新策略",
+       "args": [
+        "core",
+        "policy",
+        "{policy}"
+       ],
+       "fields": [
+        {
+         "key": "policy",
+         "label": "策略",
+         "kind": "select",
+         "required": true,
+         "options": [
+          {
+           "value": "manual",
+           "label": "手动：只在我点更新时更新"
+          },
+          {
+           "value": "notify",
+           "label": "通知：有新版本时提醒"
+          },
+          {
+           "value": "patch",
+           "label": "补丁：自动更新小版本"
+          },
+          {
+           "value": "stable",
+           "label": "稳定：自动跟随最新稳定版"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "label": "发布通道",
+       "args": [
+        "core",
+        "channel",
+        "{channel}"
+       ],
+       "fields": [
+        {
+         "key": "channel",
+         "label": "通道",
+         "kind": "select",
+         "required": true,
+         "options": [
+          {
+           "value": "stable",
+           "label": "稳定版"
+          },
+          {
+           "value": "preview",
+           "label": "预览版"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "管理脚本",
+     "status": {
+      "cmd": [
+       "update",
+       "auto",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "自动更新",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "每天",
+        "path": "local_time"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "立即更新",
+       "args": [
+        "update"
+       ],
+       "yes": true
+      },
+      {
+       "label": "开启自动更新",
+       "args": [
+        "update",
+        "auto",
+        "enable"
+       ]
+      },
+      {
+       "label": "关闭自动更新",
+       "args": [
+        "update",
+        "auto",
+        "disable"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "入口地址",
+     "note": "分享链接里使用的服务器地址。换了公网 IP 后点「刷新公网 IP」，分享链接和解析记录会一起更新。",
+     "actions": [
+      {
+       "label": "查看",
+       "args": [
+        "settings",
+        "show"
+       ],
+       "show": true
+      },
+      {
+       "label": "刷新公网 IP",
+       "args": [
+        "settings",
+        "refresh-ip"
+       ]
+      },
+      {
+       "label": "设置入口地址",
+       "args": [
+        "settings",
+        "address",
+        "{address}"
+       ],
+       "fields": [
+        {
+         "key": "address",
+         "label": "地址",
+         "kind": "text",
+         "required": true,
+         "placeholder": "auto 表示自动使用公网 IP"
+        }
+       ]
+      },
+      {
+       "label": "出站 IP 偏好",
+       "args": [
+        "settings",
+        "outbound-ip",
+        "{mode}"
+       ],
+       "fields": [
+        {
+         "key": "mode",
+         "label": "偏好",
+         "kind": "select",
+         "required": true,
+         "options": [
+          {
+           "value": "prefer_ipv4",
+           "label": "优先 IPv4"
+          },
+          {
+           "value": "prefer_ipv6",
+           "label": "优先 IPv6"
+          },
+          {
+           "value": "ipv4_only",
+           "label": "仅 IPv4"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "BBR",
+     "note": "TCP 拥塞控制算法，通常开启后速度更稳定。",
+     "status": {
+      "cmd": [
+       "bbr",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "BBR",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "当前算法",
+        "path": "congestion_control",
+        "kind": "mono"
+       },
+       {
+        "label": "队列",
+        "path": "qdisc",
+        "kind": "mono"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "开启",
+       "args": [
+        "bbr",
+        "enable"
+       ]
+      },
+      {
+       "label": "关闭",
+       "args": [
+        "bbr",
+        "disable"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "TCP 缓冲区",
+     "note": "按带宽和延迟调整 TCP 缓冲区，适合高带宽或高延迟线路。",
+     "status": {
+      "cmd": [
+       "tcp",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "优化",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "开启",
+       "args": [
+        "tcp",
+        "enable"
+       ],
+       "fields": [
+        {
+         "key": "bandwidth",
+         "label": "带宽（Mbps）",
+         "kind": "number",
+         "flag": "--bandwidth",
+         "required": true
+        },
+        {
+         "key": "rtt",
+         "label": "到用户的延迟（毫秒）",
+         "kind": "number",
+         "flag": "--rtt",
+         "required": true
+        }
+       ]
+      },
+      {
+       "label": "关闭",
+       "args": [
+        "tcp",
+        "disable"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Hysteria2 UDP 缓冲区",
+     "note": "Hysteria2 等 QUIC 协议需要更大的 UDP 缓冲区才能跑满带宽。",
+     "status": {
+      "cmd": [
+       "hy2",
+       "buffer",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "优化",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "接收上限",
+        "path": "rmem_max",
+        "kind": "mono"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "开启",
+       "args": [
+        "hy2",
+        "buffer",
+        "enable"
+       ]
+      },
+      {
+       "label": "关闭",
+       "args": [
+        "hy2",
+        "buffer",
+        "disable"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "健康检查",
+     "note": "定期检查证书到期、磁盘、内存和服务状态，有问题时通过通知渠道提醒。",
+     "status": {
+      "cmd": [
+       "health",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "定期检查",
+        "path": "enabled",
+        "kind": "bool",
+        "labels": [
+         "开启",
+         "关闭"
+        ]
+       },
+       {
+        "label": "证书提前提醒（天）",
+        "path": "certificate_warn_days"
+       },
+       {
+        "label": "磁盘已用",
+        "path": "resources_current.disk_used_percent",
+        "suffix": "%"
+       },
+       {
+        "label": "内存已用",
+        "path": "resources_current.memory_used_percent",
+        "suffix": "%"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "立即检查",
+       "args": [
+        "health",
+        "check"
+       ],
+       "show": true
+      },
+      {
+       "label": "开启",
+       "args": [
+        "health",
+        "enable"
+       ]
+      },
+      {
+       "label": "关闭",
+       "args": [
+        "health",
+        "disable"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "防火墙",
+     "note": "面板不会自动修改防火墙。节点端口没有放行时客户端连不上。",
+     "status": {
+      "cmd": [
+       "firewall",
+       "status",
+       "--json"
+      ],
+      "items": [
+       {
+        "label": "UFW",
+        "path": "ufw.active",
+        "kind": "bool",
+        "labels": [
+         "运行中",
+         "未运行"
+        ]
+       },
+       {
+        "label": "Fail2ban",
+        "path": "fail2ban.active",
+        "kind": "bool",
+        "labels": [
+         "运行中",
+         "未运行"
+        ]
+       }
+      ]
+     },
+     "table": {
+      "cmd": [
+       "firewall",
+       "ports",
+       "--json"
+      ],
+      "empty": "没有节点端口。",
+      "columns": [
+       {
+        "label": "节点端口",
+        "path": "port",
+        "kind": "mono"
+       },
+       {
+        "label": "协议",
+        "path": "transport"
+       }
+      ]
+     },
+     "actions": [
+      {
+       "label": "在 UFW 放行节点端口",
+       "args": [
+        "firewall",
+        "ufw-allow",
+        "--yes"
+       ],
+       "confirm": "把上面列出的节点端口加入 UFW 允许规则，不改动其他规则。"
+      }
+     ]
+    },
+    {
+     "title": "服务",
+     "actions": [
+      {
+       "label": "查看状态",
+       "args": [
+        "status"
+       ],
+       "show": true
+      },
+      {
+       "label": "校验配置",
+       "args": [
+        "config",
+        "validate"
+       ],
+       "show": true
+      },
+      {
+       "label": "查看日志",
+       "args": [
+        "logs",
+        "all",
+        "200"
+       ],
+       "show": true
+      },
+      {
+       "label": "重启服务",
+       "args": [
+        "restart"
+       ],
+       "confirm": "重启 sing-box，现有连接会断开。"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
