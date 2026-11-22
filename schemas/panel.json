@@ -1436,6 +1436,30 @@
        "confirm": "重启 sing-box，现有连接会断开。"
       }
      ]
+    },
+    {
+     "title": "卸载",
+     "note": "从这台机器上移除 sb-manager 和它管理的 sing-box。面板里的这台机器和 Agent 不受影响，之后可以重新安装。",
+     "actions": [
+      {
+       "label": "卸载",
+       "args": [
+        "uninstall"
+       ],
+       "danger": true,
+       "yes": true,
+       "fields": [
+        {
+         "key": "purge",
+         "label": "同时删除全部数据",
+         "kind": "switch",
+         "flag": "--purge",
+         "note": "节点、用户、证书和配置都会删除，无法恢复；不勾选则保留数据，重装后可继续使用"
+        }
+       ],
+       "confirm": "卸载后这台机器上由它管理的节点会全部停止。"
+      }
+     ]
     }
    ]
   }

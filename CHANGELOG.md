@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.124
+
+- `sb panel schema` 的「系统」页新增「卸载」：在网页面板里卸载本脚本及其管理的核心，可选择同时删除全部数据。
+
 ## 0.1.0-alpha.123
 
 - 新增 `sb panel schema`（来源 `schemas/panel.json`）：描述网页面板的功能页——用户、流量、出站与分流、系统，
