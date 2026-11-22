@@ -205,6 +205,7 @@ sb_help_full() {
 
 节点添加常用参数：
   --id ID --name NAME --port PORT --domain DOMAIN --address HOST
+  --uuid UUID --password PASSWORD --short-id HEX   指定首个用户的凭据 / Reality Short ID（默认自动生成）
   TLS:   没有可用证书时自动创建 Cloudflare DNS only 记录并签发证书。
          CLI 请先执行 sb cert setup-cloudflare；已有冲突 DNS 会被拒绝，--disabled 不申请证书。
   VMess: --path PATH

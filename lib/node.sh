@@ -161,12 +161,14 @@ node_validate_json_object() {
 
 _node_add() {
   local type=$1; shift
+  local cred_uuid='' cred_password='' cred_short_id=''
   local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}'
   local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_listen='::'
   while (($#)); do
     case "$1" in
       --listen) proxy_listen=${2:?}; proxy_listen_supplied=1; shift 2;;
       --id) id=${2:?}; shift 2;; --name) name=${2:?}; shift 2;; --port) port=${2:?}; shift 2;;
+      --uuid) cred_uuid=${2:?}; shift 2;; --password) cred_password=${2:?}; shift 2;; --short-id) cred_short_id=${2:?}; shift 2;;
       --domain) domain=${2:?}; shift 2;; --address) address=${2:?}; address_supplied=1; address_source=manual; shift 2;; --path) path=${2:?}; shift 2;;
       --method) method=${2:?}; shift 2;; --network) network=${2:?}; shift 2;; --no-mux) mux=false; shift;;
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
@@ -397,6 +399,24 @@ _node_add() {
       anytls|hysteria2|trojan|tuic|naive) _cert_prepare_node_domain "$domain" || return 1;;
       vless) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
     esac
+  fi
+  # Credentials chosen by the operator (kept from another panel, or picked in
+  # the web form) replace the generated ones.
+  if [[ -n "$cred_uuid" ]]; then
+    [[ "$cred_uuid" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || die '无效 UUID。'
+    jq -e 'has("uuid")' <<<"$secret" >/dev/null || die "$(node_protocol_label "$protocol") 不使用 UUID。"
+    secret=$(jq --arg v "${cred_uuid,,}" '.uuid=$v' <<<"$secret") || return 1
+  fi
+  if [[ -n "$cred_password" ]]; then
+    case "$protocol" in shadowsocks|shadowtls|snell) die '这个协议的密钥有固定格式，由脚本生成，不能指定 --password。';; esac
+    [[ "$cred_password" =~ ^[^[:space:]]{6,128}$ ]] || die '密码须为 6-128 位且不含空白字符。'
+    jq -e 'has("password")' <<<"$secret" >/dev/null || die "$(node_protocol_label "$protocol") 不使用密码。"
+    secret=$(jq --arg v "$cred_password" '.password=$v' <<<"$secret") || return 1
+  fi
+  if [[ -n "$cred_short_id" ]]; then
+    [[ "$cred_short_id" =~ ^([0-9a-fA-F]{2}){1,8}$ ]] || die 'Reality Short ID 须为 2-16 位十六进制且位数为偶数。'
+    jq -e 'has("reality_short_id")' <<<"${node_secret:-{\}}" >/dev/null 2>&1 || die '--short-id 只用于 Reality 节点。'
+    node_secret=$(jq --arg v "${cred_short_id,,}" '.reality_short_id=$v' <<<"$node_secret") || return 1
   fi
   user_secret_path=$(state_user_secret_path "$id" default)
   state_write_user_secret "$id" default "$secret" || return 1

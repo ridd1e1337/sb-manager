@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.126
+
+- `sb node add` 新增 `--uuid`、`--password`、`--short-id`：指定首个用户的 UUID / 密码和 Reality Short ID（默认仍自动生成），
+  便于沿用其他面板的凭据，也供网页面板在表单里显示和重新生成。Shadowsocks 2022、ShadowTLS、Snell 的密钥有固定格式，不能指定。
+
 ## 0.1.0-alpha.125
 
 - `sb panel schema` 的「系统」页去掉「卸载」：卸载改由网页面板内置提供（在脚本页顶部和机器设置里），对任何版本的脚本都可用。
