@@ -97,6 +97,13 @@ node_list_json() {
     | select($region=="" or .metadata.region==$region)]' "$SBM_STATE"
 }
 
+# Machine-readable description of `node add`: protocols, their flags and
+# input kinds. A web panel renders its forms from this, so a new flag only
+# needs an entry in schemas/node-form.json next to the code that parses it.
+node_schema() {
+  jq --arg version "$SBM_VERSION" '. + {manager_version:$version}' "$SBM_LIB/schemas/node-form.json"
+}
+
 node_list() {
   local json=${1:-0} tag=${2:-} region=${3:-} id p enabled port endpoint metadata name
   if [[ "$json" == "1" ]]; then node_list_json "$tag" "$region"; return $?; fi
