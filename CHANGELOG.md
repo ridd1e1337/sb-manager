@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.122
+
+- 新增 `sb substore remote status --json`：输出是否已连接中心 Sub-Store、来源名、显示名、标签、上次推送时间和最近一次失败原因
+  （不包含后端地址），供网页面板显示同步状态。
+
 ## 0.1.0-alpha.121
 
 - 修复 `sb cert status` 在 jq 1.6 上报语法错误（`label` 是 jq 的保留字）。

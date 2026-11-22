@@ -118,6 +118,19 @@ substore_remote_brief() {
   else printf '中心 Sub-Store：未连接\n'; fi
 }
 
+# Machine-readable status for the web panel. The backend URL is never included.
+substore_remote_status_json() {
+  local last='' err=''
+  if ! substore_remote_configured; then jq -n --arg host "$(substore_remote_default_name)" '{connected:false,default_name:$host}'; return 0; fi
+  [[ ! -r "$SBM_SUBSTORE_REMOTE_HASH" ]] || last=$(date -u -r "$SBM_SUBSTORE_REMOTE_HASH" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || true)
+  if [[ -s "$SBM_LOG_DIR/substore-remote.log" ]] && grep -q 'FAIL' "$SBM_LOG_DIR/substore-remote.log"; then
+    err=$(grep -m1 'FAIL' "$SBM_LOG_DIR/substore-remote.log" | sed 's/^\[FAIL\] //')
+  fi
+  jq --arg last "$last" --arg err "$err" --arg host "$(jq -r '.url | capture("^https?://(?<h>[^/]+)").h // ""' "$SBM_SUBSTORE_REMOTE_SECRET" 2>/dev/null || true)" \
+    '{connected:true, name, display:(.display // .name), tags:(.tags // []), host:$host,
+      last_push:(if $last=="" then null else $last end), last_error:(if $err=="" then null else $err end)}' "$SBM_SUBSTORE_REMOTE_SECRET"
+}
+
 substore_remote_cli() {
   local action=${1:-status}; shift || true
   case "$action" in
@@ -140,6 +153,7 @@ substore_remote_cli() {
       require_root
       if [[ ${1:-} == --auto ]]; then with_lock substore_remote_push 0; else with_lock substore_remote_push 1; fi;;
     status)
+      if [[ ${1:-} == --json || ${SBM_OUTPUT_JSON:-0} == 1 ]]; then substore_remote_status_json; return $?; fi
       if substore_remote_configured; then
         jq -r '"中心 Sub-Store：已连接（地址含后端路径，已隐藏）","来源名：\(.name)（显示名 \(.display // .name)）","新建时的标签：\(if (.tags|length)>0 then (.tags|join(",")) else "无" end)"' "$SBM_SUBSTORE_REMOTE_SECRET"
         if [[ -r "$SBM_SUBSTORE_REMOTE_HASH" ]]; then printf '上次推送：%s\n' "$(date -r "$SBM_SUBSTORE_REMOTE_HASH" '+%F %T' 2>/dev/null)"; fi
