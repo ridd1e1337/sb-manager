@@ -29,4 +29,4 @@ Treat backups, exports, API tokens, node credentials, and private keys as secret
 
 ## Panel Form Schema
 
-`sb node schema` prints `schemas/node-form.json`; the web panel builds its "add node" form from it. Whenever a `node add` flag, protocol, or allowed value changes, update that file in the same commit.
+`sb node schema` prints `schemas/node-form.json` (version 2); the web panel builds its "add node" form from it. Whenever a `node add` flag, protocol, or allowed value changes, update that file in the same commit. Each field has a `group`, a `kind` (`text`, `number`, `select`, `switch`, `json`), and either a `flag` or a `set` list of `[target, path, fixed-value?]` entries that the panel writes into the inbound / outbound extension JSON. `when` shows a field only for the listed values of another field; `hidden_emit` is the flag value sent while the field is hidden. Keep raw-JSON fields in the `expert` group only.

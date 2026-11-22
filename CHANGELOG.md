@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.118
+
+- `sb node schema` 升级为第 2 版：字段带分组（基础 / Reality / 传输 / TLS / 性能与混淆 / 高级 / 备注与标签 / 专家）、
+  显示条件（例如选了 WebSocket 才出现路径和 Host）和更明确的选项文字，供面板生成类似 3x-ui 的分步表单。
+  sing-box 的传输（WebSocket / gRPC / HTTPUpgrade / HTTP）、ALPN、uTLS 指纹、Hysteria2 带宽、TUIC 参数等没有专用命令行参数的选项，
+  在描述里以“写入入站 / 客户端出站扩展的路径”给出，由面板自动拼成 `--sing-box-inbound-json` / `--sing-box-outbound-json`，不需要手写 JSON。
+
 ## 0.1.0-alpha.117
 
 - Debian/Ubuntu 安装依赖时只处理确实缺少的软件包：依赖已齐全时不再运行 `apt-get update`，
