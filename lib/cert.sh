@@ -184,13 +184,13 @@ cert_status_json() {
   provider=$(cert_current_provider)
   if [[ "$provider" == dns_cf ]]; then [[ ! -s "$SBM_CF_DNS_ENV" ]] || configured=true
   else [[ ! -s "$SBM_DNS_ENV" ]] || configured=true; fi
-  jq -n --arg provider "$provider" --arg label "$(cert_provider_label "$provider")" --argjson configured "$configured" \
+  jq -n --arg provider "$provider" --arg name "$(cert_provider_label "$provider")" --argjson configured "$configured" \
     --arg email "$(jq -r '.settings.acme_email // ""' "$SBM_STATE")" \
-    '{provider:$provider,label:$label,configured:$configured,email:$email,auto_dns:($provider=="dns_cf"),
-      providers:[{id:"cloudflare",label:"Cloudflare",vars:[{name:"CF_Token",label:"API Token"}]},
-                 {id:"aliyun",label:"阿里云",vars:[{name:"Ali_Key",label:"AccessKey ID"},{name:"Ali_Secret",label:"AccessKey Secret"}]},
-                 {id:"dnspod",label:"腾讯云 DNSPod",vars:[{name:"DP_Id",label:"Token ID"},{name:"DP_Key",label:"Token"}]},
-                 {id:"namesilo",label:"NameSilo",vars:[{name:"Namesilo_Key",label:"API Key"}]}]}'
+    '{provider:$provider,"label":$name,configured:$configured,email:$email,auto_dns:($provider=="dns_cf"),
+      providers:[{id:"cloudflare","label":"Cloudflare",vars:[{name:"CF_Token","label":"API Token"}]},
+                 {id:"aliyun","label":"阿里云",vars:[{name:"Ali_Key","label":"AccessKey ID"},{name:"Ali_Secret","label":"AccessKey Secret"}]},
+                 {id:"dnspod","label":"腾讯云 DNSPod",vars:[{name:"DP_Id","label":"Token ID"},{name:"DP_Key","label":"Token"}]},
+                 {id:"namesilo","label":"NameSilo",vars:[{name:"Namesilo_Key","label":"API Key"}]}]}'
 }
 
 _cert_setup_cloudflare() {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.121
+
+- 修复 `sb cert status` 在 jq 1.6 上报语法错误（`label` 是 jq 的保留字）。
+
 ## 0.1.0-alpha.120
 
 - 证书的 DNS-01 验证新增三家服务商：阿里云、腾讯云 DNSPod、NameSilo（原有 Cloudflare 不变）。
