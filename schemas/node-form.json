@@ -1,174 +1,317 @@
 {
- "version": 2,
+ "version": 3,
  "tool": "sb",
+ "id_flag": "--id",
  "groups": [
   {
    "id": "basic",
-   "label": "基础"
+   "label": ""
   },
   {
-   "id": "reality",
-   "label": "Reality"
+   "id": "client",
+   "label": "客户端"
+  },
+  {
+   "id": "proto",
+   "label": "协议设置"
   },
   {
    "id": "transport",
    "label": "传输"
   },
   {
-   "id": "tls",
-   "label": "TLS"
+   "id": "security",
+   "label": "安全"
   },
   {
-   "id": "tuning",
-   "label": "性能与混淆"
+   "id": "sniffing",
+   "label": "嗅探",
+   "collapsed": true
   },
   {
    "id": "advanced",
    "label": "高级",
    "collapsed": true
-  },
-  {
-   "id": "meta",
-   "label": "备注与标签",
-   "collapsed": true
   }
  ],
  "common": [
-  "name",
   "address",
-  "id",
-  "disabled",
+  "__id",
   "remark",
   "region",
-  "purpose",
-  "line",
   "tags"
  ],
  "fields": {
+  "enable": {
+   "label": "启用",
+   "kind": "switch",
+   "group": "basic",
+   "top": true,
+   "default": true,
+   "invert": true,
+   "flag": "--disabled"
+  },
   "name": {
-   "flag": "--name",
-   "label": "名称",
+   "label": "备注",
    "kind": "text",
    "group": "basic",
-   "placeholder": "留空使用协议默认名称"
+   "top": true,
+   "flag": "--name",
+   "placeholder": "显示在分享链接里的名称"
   },
   "port": {
-   "flag": "--port",
    "label": "端口",
    "kind": "number",
-   "group": "basic"
-  },
-  "domain": {
-   "flag": "--domain",
-   "label": "域名",
-   "kind": "text",
    "group": "basic",
-   "placeholder": "node.example.com"
+   "flag": "--port",
+   "random": [
+    10000,
+    60000
+   ],
+   "required": true
+  },
+  "total": {
+   "label": "总流量",
+   "kind": "number",
+   "group": "basic",
+   "suffix": "GB",
+   "placeholder": "0 或留空表示不限",
+   "post": {
+    "cmd": [
+     "traffic",
+     "set",
+     "{id}"
+    ],
+    "flag": "--quota",
+    "suffix": "G"
+   },
+   "pattern": "^[1-9]\\d*$",
+   "pattern_hint": "填大于 0 的整数，不限制请留空"
+  },
+  "reset_day": {
+   "label": "流量重置",
+   "kind": "select",
+   "group": "basic",
+   "empty_label": "不重置",
+   "options": [
+    {
+     "value": "1",
+     "label": "每月 1 日"
+    },
+    {
+     "value": "5",
+     "label": "每月 5 日"
+    },
+    {
+     "value": "10",
+     "label": "每月 10 日"
+    },
+    {
+     "value": "15",
+     "label": "每月 15 日"
+    },
+    {
+     "value": "20",
+     "label": "每月 20 日"
+    },
+    {
+     "value": "25",
+     "label": "每月 25 日"
+    },
+    {
+     "value": "28",
+     "label": "每月 28 日"
+    }
+   ],
+   "post": {
+    "cmd": [
+     "traffic",
+     "set",
+     "{id}"
+    ],
+    "flag": "--reset-day"
+   },
+   "when_filled": "total"
+  },
+  "expiry": {
+   "label": "到期时间",
+   "kind": "number",
+   "group": "basic",
+   "suffix": "天后",
+   "placeholder": "留空表示永不过期",
+   "post": {
+    "cmd": [
+     "node",
+     "expiry",
+     "{id}"
+    ],
+    "flag": "--days"
+   },
+   "pattern": "^[1-9]\\d*$",
+   "pattern_hint": "填大于 0 的天数"
+  },
+  "uuid": {
+   "label": "ID",
+   "kind": "text",
+   "group": "client",
+   "flag": "--uuid",
+   "generate": "uuid",
+   "auto": true,
+   "required": true
+  },
+  "password": {
+   "label": "密码",
+   "kind": "text",
+   "group": "client",
+   "flag": "--password",
+   "generate": "password:20",
+   "auto": true,
+   "required": true
+  },
+  "cred_auto": {
+   "label": "凭据",
+   "kind": "text",
+   "group": "client",
+   "value": "创建时自动生成，可在「分享」里查看",
+   "readonly": true
   },
   "address": {
-   "flag": "--address",
    "label": "客户端连接地址",
    "kind": "text",
    "group": "advanced",
-   "note": "留空自动使用域名或本机公网 IP"
+   "flag": "--address",
+   "placeholder": "留空自动使用域名或本机公网 IP"
   },
-  "id": {
-   "flag": "--id",
+  "__id": {
    "label": "节点 ID",
    "kind": "text",
    "group": "advanced",
-   "note": "小写字母、数字、. _ -；留空自动生成"
-  },
-  "disabled": {
-   "flag": "--disabled",
-   "label": "创建后先不启用",
-   "kind": "switch",
-   "group": "advanced",
-   "note": "不申请证书、不监听端口"
+   "placeholder": "留空自动生成",
+   "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+   "pattern_hint": "小写字母、数字、. _ -"
   },
   "remark": {
-   "flag": "--remark",
-   "label": "备注",
+   "label": "附注",
    "kind": "text",
-   "group": "meta"
+   "group": "advanced",
+   "flag": "--remark"
   },
   "region": {
-   "flag": "--region",
    "label": "地区",
    "kind": "text",
-   "group": "meta"
-  },
-  "purpose": {
-   "flag": "--purpose",
-   "label": "用途",
-   "kind": "text",
-   "group": "meta"
-  },
-  "line": {
-   "flag": "--line",
-   "label": "线路",
-   "kind": "text",
-   "group": "meta"
+   "group": "advanced",
+   "flag": "--region"
   },
   "tags": {
-   "flag": "--tags",
    "label": "标签",
    "kind": "text",
-   "group": "meta",
+   "group": "advanced",
+   "flag": "--tags",
    "placeholder": "a,b"
   },
-  "handshake_server": {
-   "flag": "--handshake-server",
-   "label": "握手目标（dest）",
+  "sni": {
+   "label": "SNI",
    "kind": "text",
-   "group": "reality",
-   "placeholder": "留空与伪装域名相同",
+   "group": "security",
+   "flag": "--domain",
+   "placeholder": "留空使用推荐站点",
+   "note": "伪装成访问这个网站"
+  },
+  "dest": {
+   "label": "目标网站（Target）",
+   "kind": "text",
+   "group": "security",
+   "flag": "--handshake-server",
+   "placeholder": "留空与 SNI 相同",
    "note": "需支持 TLS 1.3 的真实网站"
   },
-  "handshake_port": {
-   "flag": "--handshake-port",
-   "label": "握手端口",
+  "dest_port": {
+   "label": "目标端口",
    "kind": "number",
-   "group": "reality",
-   "default": 443
+   "group": "security",
+   "flag": "--handshake-port",
+   "value": 443
   },
-  "masquerade": {
-   "flag": "--masquerade",
-   "label": "伪装网址",
+  "short_id": {
+   "label": "Short ID",
    "kind": "text",
-   "group": "tuning",
-   "placeholder": "https://example.com",
-   "note": "非代理请求会被反代到这个网站"
+   "group": "security",
+   "flag": "--short-id",
+   "generate": "hex:8",
+   "auto": true,
+   "pattern": "^([0-9a-fA-F]{2}){1,8}$",
+   "pattern_hint": "2-16 位十六进制，位数为偶数"
   },
-  "security": {
-   "flag": "--security",
-   "label": "安全层",
+  "reality_keys": {
+   "label": "公钥 / 私钥",
+   "kind": "text",
+   "group": "security",
+   "value": "创建时自动生成",
+   "readonly": true
+  },
+  "domain": {
+   "label": "域名",
+   "kind": "text",
+   "group": "security",
+   "flag": "--domain",
+   "placeholder": "node.example.com",
+   "required": true,
+   "note": "需要域名证书；没有时自动签发（DNS 服务商在「设置」里填写）。"
+  },
+  "listen": {
+   "label": "监听",
+   "kind": "text",
+   "group": "basic",
+   "flag": "--listen",
+   "placeholder": "留空监听所有地址"
+  },
+  "proxy_listen": {
+   "label": "监听",
    "kind": "select",
    "group": "basic",
+   "flag": "--listen",
+   "required": true,
+   "options": [
+    {
+     "value": "127.0.0.1",
+     "label": "127.0.0.1（仅本机）"
+    },
+    {
+     "value": "0.0.0.0",
+     "label": "0.0.0.0（所有 IPv4）"
+    },
+    {
+     "value": "::",
+     "label": "::（所有地址）"
+    },
+    {
+     "value": "::1",
+     "label": "::1"
+    }
+   ]
+  },
+  "security": {
+   "label": "安全",
+   "kind": "radio",
+   "group": "security",
+   "flag": "--security",
    "required": true,
    "options": [
     {
      "value": "reality",
-     "label": "Reality（无需证书）"
+     "label": "Reality"
     },
     {
      "value": "tls",
-     "label": "TLS（需要域名证书）"
+     "label": "TLS"
     }
    ]
   },
-  "sni": {
-   "flag": "--domain",
-   "label": "伪装域名（SNI）",
-   "kind": "text",
-   "group": "reality",
-   "placeholder": "留空使用推荐站点"
-  },
   "flow": {
-   "flag": "--flow",
-   "label": "流控（Flow）",
+   "label": "Flow",
    "kind": "select",
-   "group": "basic",
+   "group": "client",
+   "flag": "--flow",
    "required": true,
    "emit_empty": true,
    "options": [
@@ -186,13 +329,13 @@
      ""
     ]
    },
-   "hidden_emit": "",
-   "note": "仅 TCP 可用；选择其他传输时自动关闭"
+   "hidden_emit": ""
   },
   "transport": {
-   "label": "传输方式",
-   "kind": "select",
+   "label": "传输",
+   "kind": "radio",
    "group": "transport",
+   "empty_label": "TCP (RAW)",
    "options": [
     {
      "value": "ws",
@@ -211,7 +354,6 @@
      "label": "HTTP/2"
     }
    ],
-   "empty_label": "TCP",
    "set": [
     [
      "inbound",
@@ -227,7 +369,7 @@
    "label": "路径",
    "kind": "text",
    "group": "transport",
-   "placeholder": "/path",
+   "value": "/",
    "set": [
     [
      "inbound",
@@ -247,7 +389,7 @@
    }
   },
   "t_ws_host": {
-   "label": "Host",
+   "label": "主机",
    "kind": "text",
    "group": "transport",
    "placeholder": "留空使用节点域名",
@@ -264,7 +406,7 @@
    }
   },
   "t_host": {
-   "label": "Host",
+   "label": "主机",
    "kind": "text",
    "group": "transport",
    "placeholder": "留空使用节点域名",
@@ -285,7 +427,7 @@
    }
   },
   "t_http_host": {
-   "label": "Host",
+   "label": "主机",
    "kind": "text",
    "group": "transport",
    "placeholder": "a.com,b.com",
@@ -307,7 +449,7 @@
    }
   },
   "t_service": {
-   "label": "服务名（serviceName）",
+   "label": "服务名称",
    "kind": "text",
    "group": "transport",
    "placeholder": "grpc",
@@ -328,7 +470,7 @@
    }
   },
   "t_early": {
-   "label": "Early Data 长度",
+   "label": "Early Data",
    "kind": "number",
    "group": "transport",
    "placeholder": "0 表示关闭",
@@ -359,11 +501,44 @@
     ]
    }
   },
+  "utls": {
+   "label": "uTLS",
+   "kind": "select",
+   "group": "security",
+   "options": [
+    "chrome",
+    "firefox",
+    "safari",
+    "ios",
+    "android",
+    "edge",
+    "360",
+    "qq",
+    "random",
+    "randomized"
+   ],
+   "empty_label": "chrome（默认）",
+   "set": [
+    [
+     "outbound",
+     "tls.utls.fingerprint"
+    ],
+    [
+     "outbound",
+     "tls.utls.enabled",
+     true
+    ]
+   ]
+  },
   "alpn": {
    "label": "ALPN",
-   "kind": "text",
-   "group": "tls",
-   "placeholder": "h2,http/1.1",
+   "kind": "tags",
+   "group": "security",
+   "options": [
+    "h3",
+    "h2",
+    "http/1.1"
+   ],
    "type": "list",
    "set": [
     [
@@ -384,7 +559,7 @@
   "min_tls": {
    "label": "最低 TLS 版本",
    "kind": "select",
-   "group": "tls",
+   "group": "security",
    "options": [
     "1.2",
     "1.3"
@@ -400,42 +575,6 @@
      "tls"
     ]
    }
-  },
-  "fingerprint": {
-   "label": "客户端指纹（uTLS）",
-   "kind": "select",
-   "group": "tls",
-   "options": [
-    "chrome",
-    "firefox",
-    "safari",
-    "ios",
-    "android",
-    "edge",
-    "360",
-    "qq",
-    "random",
-    "randomized"
-   ],
-   "set": [
-    [
-     "outbound",
-     "tls.utls.fingerprint"
-    ],
-    [
-     "outbound",
-     "tls.utls.enabled",
-     true
-    ]
-   ],
-   "note": "写入分享链接与客户端配置"
-  },
-  "listen": {
-   "flag": "--listen",
-   "label": "监听地址",
-   "kind": "text",
-   "group": "advanced",
-   "placeholder": "默认 ::"
   },
   "tfo": {
    "label": "TCP Fast Open",
@@ -462,7 +601,7 @@
    ]
   },
   "udp_fragment": {
-   "label": "允许 UDP 分片",
+   "label": "UDP 分片",
    "kind": "switch",
    "group": "advanced",
    "set": [
@@ -474,10 +613,10 @@
    ]
   },
   "method": {
-   "flag": "--method",
-   "label": "加密方法",
+   "label": "加密方式",
    "kind": "select",
-   "group": "basic",
+   "group": "proto",
+   "flag": "--method",
    "required": true,
    "options": [
     "2022-blake3-aes-256-gcm",
@@ -485,71 +624,34 @@
     "2022-blake3-chacha20-poly1305"
    ]
   },
-  "no_mux": {
-   "flag": "--no-mux",
-   "label": "关闭多路复用",
+  "mux": {
+   "label": "多路复用",
    "kind": "switch",
-   "group": "advanced"
-  },
-  "obfs": {
-   "flag": "--obfs",
-   "label": "混淆",
-   "kind": "select",
-   "group": "tuning"
-  },
-  "obfs_host": {
-   "flag": "--obfs-host",
-   "label": "混淆 Host",
-   "kind": "text",
-   "group": "tuning",
-   "placeholder": "bing.com",
-   "when": {
-    "obfs": [
-     "http"
-    ]
-   }
-  },
-  "obfs_min": {
-   "flag": "--obfs-min-packet-size",
-   "label": "Gecko 最小包长",
-   "kind": "number",
-   "group": "tuning",
-   "default": 512,
-   "when": {
-    "obfs": [
-     "gecko"
-    ]
-   }
-  },
-  "obfs_max": {
-   "flag": "--obfs-max-packet-size",
-   "label": "Gecko 最大包长",
-   "kind": "number",
-   "group": "tuning",
-   "default": 1200,
-   "when": {
-    "obfs": [
-     "gecko"
-    ]
-   }
+   "group": "proto",
+   "default": true,
+   "invert": true,
+   "flag": "--no-mux"
   },
   "up_mbps": {
-   "label": "上行带宽（Mbps）",
+   "label": "上行带宽",
    "kind": "number",
-   "group": "tuning",
+   "group": "proto",
+   "suffix": "Mbps",
+   "placeholder": "留空不限制",
    "type": "int",
    "set": [
     [
      "inbound",
      "up_mbps"
     ]
-   ],
-   "note": "服务器上行；留空不限制"
+   ]
   },
   "down_mbps": {
-   "label": "下行带宽（Mbps）",
+   "label": "下行带宽",
    "kind": "number",
-   "group": "tuning",
+   "group": "proto",
+   "suffix": "Mbps",
+   "placeholder": "留空不限制",
    "type": "int",
    "set": [
     [
@@ -559,9 +661,9 @@
    ]
   },
   "ignore_bw": {
-   "label": "忽略客户端声明的带宽",
+   "label": "忽略客户端带宽",
    "kind": "switch",
-   "group": "tuning",
+   "group": "proto",
    "set": [
     [
      "inbound",
@@ -570,61 +672,74 @@
     ]
    ]
   },
+  "obfs": {
+   "label": "混淆",
+   "kind": "radio",
+   "group": "proto",
+   "flag": "--obfs",
+   "empty_label": "无"
+  },
+  "obfs_min": {
+   "label": "最小包长",
+   "kind": "number",
+   "group": "proto",
+   "flag": "--obfs-min-packet-size",
+   "value": 512,
+   "when": {
+    "obfs": [
+     "gecko"
+    ]
+   }
+  },
+  "obfs_max": {
+   "label": "最大包长",
+   "kind": "number",
+   "group": "proto",
+   "flag": "--obfs-max-packet-size",
+   "value": 1200,
+   "when": {
+    "obfs": [
+     "gecko"
+    ]
+   }
+  },
+  "obfs_host": {
+   "label": "混淆主机",
+   "kind": "text",
+   "group": "proto",
+   "flag": "--obfs-host",
+   "value": "bing.com",
+   "when": {
+    "obfs": [
+     "http"
+    ]
+   }
+  },
+  "masquerade": {
+   "label": "伪装网址",
+   "kind": "text",
+   "group": "proto",
+   "flag": "--masquerade",
+   "placeholder": "https://example.com",
+   "note": "非代理访问会看到这个网站"
+  },
   "bbr_profile": {
-   "flag": "--bbr-profile",
    "label": "BBR 档位",
    "kind": "select",
-   "group": "tuning",
+   "group": "proto",
+   "flag": "--bbr-profile",
    "options": [
     "conservative",
     "standard",
     "aggressive"
-   ],
-   "note": "需要 sing-box 1.14+"
+   ]
   },
-  "disable_chrome_parrot": {
-   "flag": "--disable-chrome-parrot",
-   "label": "关闭 Chrome QUIC 指纹",
-   "kind": "switch",
-   "group": "advanced"
-  },
-  "brutal_debug": {
-   "flag": "--brutal-debug",
-   "label": "Brutal 调试日志",
-   "kind": "switch",
-   "group": "advanced"
-  },
-  "realm_id": {
-   "flag": "--realm-id",
-   "label": "Realm ID",
-   "kind": "text",
-   "group": "advanced",
-   "note": "需先启用全局 Hysteria Realm"
-  },
-  "realm_ip_version": {
-   "flag": "--realm-ip-version",
-   "label": "Realm IP 版本",
-   "kind": "select",
-   "group": "advanced",
-   "options": [
-    "0",
-    "4",
-    "6"
-   ],
-   "when_filled": "realm_id"
-  },
-  "realm_port_mapping": {
-   "flag": "--realm-port-mapping",
-   "label": "Realm 端口映射",
-   "kind": "switch",
-   "group": "advanced",
-   "when_filled": "realm_id"
-  },
-  "congestion_control": {
-   "flag": "--congestion-control",
+  "congestion": {
    "label": "拥塞控制",
-   "kind": "select",
-   "group": "tuning",
+   "kind": "radio",
+   "group": "proto",
+   "flag": "--congestion-control",
+   "required": true,
    "options": [
     "cubic",
     "new_reno",
@@ -634,7 +749,7 @@
   "zero_rtt": {
    "label": "0-RTT 握手",
    "kind": "switch",
-   "group": "tuning",
+   "group": "proto",
    "set": [
     [
      "inbound",
@@ -642,12 +757,12 @@
      true
     ]
    ],
-   "note": "有重放风险，官方不建议开启"
+   "note": "有重放风险，一般不开"
   },
   "heartbeat": {
    "label": "心跳间隔",
    "kind": "text",
-   "group": "tuning",
+   "group": "proto",
    "placeholder": "10s",
    "set": [
     [
@@ -656,61 +771,55 @@
     ]
    ]
   },
-  "auth_timeout": {
-   "label": "认证超时",
-   "kind": "text",
-   "group": "tuning",
-   "placeholder": "3s",
-   "set": [
-    [
-     "inbound",
-     "auth_timeout"
-    ]
-   ]
-  },
   "naive_network": {
-   "flag": "--network",
    "label": "网络",
-   "kind": "select",
-   "group": "basic",
+   "kind": "radio",
+   "group": "proto",
+   "flag": "--network",
+   "empty_label": "HTTP/2 (TCP)",
    "options": [
     {
      "value": "udp",
-     "label": "QUIC（UDP）"
+     "label": "QUIC (UDP)"
     }
-   ],
-   "empty_label": "HTTP/2（TCP）"
+   ]
   },
-  "st_handshake": {
-   "flag": "--handshake-server",
-   "label": "握手目标",
+  "st_dest": {
+   "label": "握手网站",
    "kind": "text",
-   "group": "basic",
+   "group": "security",
+   "flag": "--handshake-server",
    "placeholder": "留空使用推荐站点",
    "note": "借用它的 TLS 握手，需支持 TLS 1.3"
   },
-  "st_handshake_port": {
-   "flag": "--handshake-port",
+  "st_dest_port": {
    "label": "握手端口",
    "kind": "number",
-   "group": "basic",
-   "default": 443
+   "group": "security",
+   "flag": "--handshake-port",
+   "value": 443
   },
   "strict_mode": {
-   "flag": "--strict-mode",
    "label": "严格模式",
    "kind": "select",
    "group": "advanced",
+   "flag": "--strict-mode",
    "options": [
-    "true",
-    "false"
+    {
+     "value": "true",
+     "label": "开启"
+    },
+    {
+     "value": "false",
+     "label": "关闭"
+    }
    ]
   },
   "wildcard_sni": {
-   "flag": "--wildcard-sni",
    "label": "通配 SNI",
    "kind": "select",
    "group": "advanced",
+   "flag": "--wildcard-sni",
    "options": [
     "off",
     "authed",
@@ -718,21 +827,27 @@
    ]
   },
   "snell_version": {
+   "label": "版本",
+   "kind": "radio",
+   "group": "proto",
    "flag": "--snell-version",
-   "label": "Snell 版本",
-   "kind": "select",
-   "group": "basic",
    "required": true,
    "options": [
-    "5",
-    "6"
+    {
+     "value": "5",
+     "label": "v5"
+    },
+    {
+     "value": "6",
+     "label": "v6"
+    }
    ]
   },
   "snell_mode": {
-   "flag": "--snell-mode",
-   "label": "流量整形模式",
+   "label": "流量整形",
    "kind": "select",
-   "group": "tuning",
+   "group": "proto",
+   "flag": "--snell-mode",
    "options": [
     "default",
     "unshaped",
@@ -744,25 +859,19 @@
     ]
    }
   },
-  "path": {
-   "flag": "--path",
-   "label": "WebSocket 路径",
+  "ws_path": {
+   "label": "路径",
    "kind": "text",
-   "group": "basic",
+   "group": "transport",
+   "flag": "--path",
    "placeholder": "留空自动生成"
   },
-  "proxy_listen": {
-   "flag": "--listen",
-   "label": "监听地址",
-   "kind": "select",
-   "group": "basic",
-   "options": [
-    "127.0.0.1",
-    "::1",
-    "0.0.0.0",
-    "::"
-   ],
-   "empty_label": "127.0.0.1（仅本机）"
+  "cf_domain": {
+   "label": "域名",
+   "kind": "text",
+   "group": "security",
+   "flag": "--domain",
+   "placeholder": "经 Cloudflare 代理的域名"
   }
  },
  "json_flags": {
@@ -773,17 +882,38 @@
   {
    "type": "vless",
    "label": "VLESS",
-   "note": "推荐 Reality + Vision：不需要域名和证书。",
    "fields": [
+    "enable",
+    "name",
+    "listen",
+    {
+     "key": "port",
+     "value": 443
+    },
+    "total",
+    "reset_day",
+    "expiry",
+    "uuid",
+    "flow",
+    "transport",
+    "t_path",
+    "t_ws_host",
+    "t_host",
+    "t_http_host",
+    "t_service",
+    "t_early",
     "security",
     {
      "key": "domain",
-     "required": true,
      "when": {
       "security": [
        "tls"
       ]
      }
+    },
+    {
+     "key": "utls",
+     "when": {}
     },
     {
      "key": "sni",
@@ -794,7 +924,7 @@
      }
     },
     {
-     "key": "handshake_server",
+     "key": "dest",
      "when": {
       "security": [
        "reality"
@@ -802,7 +932,7 @@
      }
     },
     {
-     "key": "handshake_port",
+     "key": "dest_port",
      "when": {
       "security": [
        "reality"
@@ -810,21 +940,42 @@
      }
     },
     {
-     "key": "port",
-     "default": 443
+     "key": "short_id",
+     "when": {
+      "security": [
+       "reality"
+      ]
+     }
     },
-    "flow",
-    "transport",
-    "t_path",
-    "t_ws_host",
-    "t_host",
-    "t_http_host",
-    "t_service",
-    "t_early",
+    {
+     "key": "reality_keys",
+     "when": {
+      "security": [
+       "reality"
+      ]
+     }
+    },
     "alpn",
     "min_tls",
-    "fingerprint",
-    "listen",
+    "tfo",
+    "mptcp"
+   ]
+  },
+  {
+   "type": "trojan",
+   "label": "Trojan",
+   "fields": [
+    "enable",
+    "name",
+    {
+     "key": "port",
+     "value": 443
+    },
+    "total",
+    "reset_day",
+    "expiry",
+    "password",
+    "domain",
     "tfo",
     "mptcp"
    ]
@@ -832,89 +983,78 @@
   {
    "type": "hy2",
    "label": "Hysteria2",
-   "note": "需要域名证书：没有可用证书时会通过 Cloudflare DNS 自动签发（先在终端执行一次 cert setup-cloudflare）。",
    "fields": [
-    {
-     "key": "domain",
-     "required": true
-    },
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 443
+     "value": 443
     },
+    "total",
+    "reset_day",
+    "expiry",
+    "password",
     "up_mbps",
     "down_mbps",
     "ignore_bw",
     {
      "key": "obfs",
      "options": [
-      "salamander",
-      "gecko"
-     ],
-     "note": "gecko 需要 sing-box 1.14+"
+      {
+       "value": "salamander",
+       "label": "Salamander"
+      },
+      {
+       "value": "gecko",
+       "label": "Gecko"
+      }
+     ]
     },
     "obfs_min",
     "obfs_max",
     "masquerade",
     "bbr_profile",
-    "udp_fragment",
-    "disable_chrome_parrot",
-    "brutal_debug",
-    "realm_id",
-    "realm_ip_version",
-    "realm_port_mapping"
+    "domain",
+    "udp_fragment"
    ]
   },
   {
    "type": "tuic",
    "label": "TUIC",
-   "note": "需要域名证书：没有可用证书时会通过 Cloudflare DNS 自动签发（先在终端执行一次 cert setup-cloudflare）。",
    "fields": [
-    {
-     "key": "domain",
-     "required": true
-    },
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 443
+     "value": 443
     },
-    "congestion_control",
+    "total",
+    "reset_day",
+    "expiry",
+    "uuid",
+    "password",
+    "congestion",
     "zero_rtt",
     "heartbeat",
-    "auth_timeout",
+    "domain",
     "udp_fragment"
-   ]
-  },
-  {
-   "type": "trojan",
-   "label": "Trojan",
-   "note": "需要域名证书：没有可用证书时会通过 Cloudflare DNS 自动签发（先在终端执行一次 cert setup-cloudflare）。",
-   "fields": [
-    {
-     "key": "domain",
-     "required": true
-    },
-    {
-     "key": "port",
-     "default": 443
-    },
-    "tfo",
-    "mptcp"
    ]
   },
   {
    "type": "anytls",
    "label": "AnyTLS",
-   "note": "需要域名证书：没有可用证书时会通过 Cloudflare DNS 自动签发（先在终端执行一次 cert setup-cloudflare）。",
    "fields": [
-    {
-     "key": "domain",
-     "required": true
-    },
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 443
+     "value": 443
     },
+    "total",
+    "reset_day",
+    "expiry",
+    "password",
+    "domain",
     "tfo",
     "mptcp"
    ]
@@ -922,45 +1062,58 @@
   {
    "type": "naive",
    "label": "NaiveProxy",
-   "note": "需要域名证书：没有可用证书时会通过 Cloudflare DNS 自动签发（先在终端执行一次 cert setup-cloudflare）。",
    "fields": [
-    {
-     "key": "domain",
-     "required": true
-    },
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 443
+     "value": 443
     },
-    "naive_network"
+    "total",
+    "reset_day",
+    "expiry",
+    "password",
+    "naive_network",
+    "domain"
    ]
   },
   {
    "type": "ss",
-   "label": "Shadowsocks 2022",
-   "note": "密钥自动生成。",
+   "label": "Shadowsocks",
    "fields": [
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 8388
+     "auto": true
     },
+    "total",
+    "reset_day",
+    "expiry",
+    "cred_auto",
     "method",
-    "no_mux",
+    "mux",
     "tfo",
     "mptcp"
    ]
   },
   {
    "type": "shadowtls",
-   "label": "ShadowTLS v3",
-   "note": "ShadowTLS v3 + Shadowsocks 2022，借用握手目标站点的 TLS，不需要证书。",
+   "label": "ShadowTLS",
+   "note": "ShadowTLS v3 + Shadowsocks 2022，借用握手网站的 TLS，不需要证书。",
    "fields": [
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 443
+     "value": 443
     },
-    "st_handshake",
-    "st_handshake_port",
+    "total",
+    "reset_day",
+    "expiry",
+    "cred_auto",
+    "st_dest",
+    "st_dest_port",
     "strict_mode",
     "wildcard_sni"
    ]
@@ -968,17 +1121,25 @@
   {
    "type": "snell",
    "label": "Snell",
-   "note": "需要 sing-box 1.14+；v6 需要 1.14 rc.2+。",
    "fields": [
+    "enable",
+    "name",
     {
      "key": "port",
-     "default": 6160
+     "auto": true
     },
+    "total",
+    "reset_day",
+    "expiry",
+    "cred_auto",
     "snell_version",
     {
      "key": "obfs",
      "options": [
-      "http"
+      {
+       "value": "http",
+       "label": "HTTP"
+      }
      ],
      "when": {
       "snell_version": [
@@ -992,54 +1153,72 @@
   },
   {
    "type": "vmess",
-   "label": "VMess + WS（Cloudflare）",
+   "label": "VMess",
    "note": "VMess + WebSocket，配合 Cloudflare CDN 或 Tunnel 使用。",
    "fields": [
-    {
-     "key": "domain",
-     "note": "经 Cloudflare 代理的域名"
-    },
+    "enable",
+    "name",
     {
      "key": "port",
-     "placeholder": "留空自动选择"
+     "auto": true
     },
-    "path"
+    "total",
+    "reset_day",
+    "expiry",
+    "uuid",
+    "ws_path",
+    "cf_domain"
    ]
   },
   {
    "type": "socks",
-   "label": "SOCKS5",
-   "note": "用户名和密码自动生成。",
+   "label": "SOCKS",
    "fields": [
+    "enable",
+    "name",
+    "proxy_listen",
     {
      "key": "port",
-     "default": 1080
+     "auto": true
     },
-    "proxy_listen"
+    "total",
+    "reset_day",
+    "expiry",
+    "password"
    ]
   },
   {
    "type": "http",
    "label": "HTTP",
-   "note": "用户名和密码自动生成。",
    "fields": [
+    "enable",
+    "name",
+    "proxy_listen",
     {
      "key": "port",
-     "default": 1080
+     "auto": true
     },
-    "proxy_listen"
+    "total",
+    "reset_day",
+    "expiry",
+    "password"
    ]
   },
   {
    "type": "mixed",
-   "label": "Mixed（SOCKS5 + HTTP）",
-   "note": "用户名和密码自动生成。",
+   "label": "Mixed",
    "fields": [
+    "enable",
+    "name",
+    "proxy_listen",
     {
      "key": "port",
-     "default": 1080
+     "auto": true
     },
-    "proxy_listen"
+    "total",
+    "reset_day",
+    "expiry",
+    "password"
    ]
   }
  ]

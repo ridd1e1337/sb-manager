@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.127
+
+- `sb node schema` 升到 version 3：字段按 3x-ui「添加入站」的顺序和分节重排（启用、备注、协议、监听、端口、总流量、流量重置、到期时间，
+  然后是客户端、协议设置、传输、安全、嗅探、高级）。新增字段类型 `radio`（按钮组）、`tags`（多选），以及 `random`、`generate`、`auto`、
+  `value`、`suffix`、`invert`、`readonly`、`top` 和 `post`（节点创建后接着执行的命令，如流量额度、到期时间）。
+
 ## 0.1.0-alpha.126
 
 - `sb node add` 新增 `--uuid`、`--password`、`--short-id`：指定首个用户的 UUID / 密码和 Reality Short ID（默认仍自动生成），
