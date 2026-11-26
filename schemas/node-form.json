@@ -932,6 +932,339 @@
    "flag": "--domain",
    "placeholder": "经 Cloudflare 代理的域名",
    "from": "domain"
+  },
+  "t_idle": {
+   "label": "空闲超时",
+   "kind": "text",
+   "group": "transport",
+   "set": [
+    [
+     "inbound",
+     "transport.idle_timeout"
+    ],
+    [
+     "outbound",
+     "transport.idle_timeout"
+    ]
+   ],
+   "when": {
+    "transport": [
+     "grpc",
+     "http"
+    ]
+   },
+   "placeholder": "如 15s",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
+  },
+  "t_ping": {
+   "label": "Ping 超时",
+   "kind": "text",
+   "group": "transport",
+   "set": [
+    [
+     "inbound",
+     "transport.ping_timeout"
+    ],
+    [
+     "outbound",
+     "transport.ping_timeout"
+    ]
+   ],
+   "when": {
+    "transport": [
+     "grpc",
+     "http"
+    ]
+   },
+   "placeholder": "如 15s",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
+  },
+  "t_grpc_permit": {
+   "label": "无流时也发送 Ping",
+   "kind": "switch",
+   "group": "transport",
+   "set": [
+    [
+     "outbound",
+     "transport.permit_without_stream",
+     true
+    ]
+   ],
+   "when": {
+    "transport": [
+     "grpc"
+    ]
+   }
+  },
+  "t_http_method": {
+   "label": "请求方法",
+   "kind": "select",
+   "group": "transport",
+   "set": [
+    [
+     "inbound",
+     "transport.method"
+    ],
+    [
+     "outbound",
+     "transport.method"
+    ]
+   ],
+   "when": {
+    "transport": [
+     "http"
+    ]
+   },
+   "options": [
+    "PUT",
+    "GET",
+    "POST"
+   ],
+   "empty_label": "默认（PUT）"
+  },
+  "mux_allow": {
+   "label": "多路复用",
+   "kind": "switch",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "multiplex.enabled",
+     true
+    ]
+   ],
+   "note": "允许客户端使用多路复用；不使用的客户端照常连接。"
+  },
+  "mux_padding": {
+   "label": "复用填充",
+   "kind": "switch",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "multiplex.padding",
+     true
+    ]
+   ],
+   "when": {
+    "mux_allow": [
+     "1"
+    ]
+   },
+   "note": "开启后只接受启用了填充的多路复用连接。"
+  },
+  "mux_brutal": {
+   "label": "TCP Brutal",
+   "kind": "switch",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "multiplex.brutal.enabled",
+     true
+    ]
+   ],
+   "when": {
+    "mux_allow": [
+     "1"
+    ]
+   },
+   "note": "需要服务器内核已加载 tcp-brutal 模块。"
+  },
+  "mux_brutal_up": {
+   "label": "Brutal 上行",
+   "kind": "number",
+   "group": "proto",
+   "type": "int",
+   "suffix": "Mbps",
+   "set": [
+    [
+     "inbound",
+     "multiplex.brutal.up_mbps"
+    ]
+   ],
+   "when": {
+    "mux_allow": [
+     "1"
+    ],
+    "mux_brutal": [
+     "1"
+    ]
+   }
+  },
+  "mux_brutal_down": {
+   "label": "Brutal 下行",
+   "kind": "number",
+   "group": "proto",
+   "type": "int",
+   "suffix": "Mbps",
+   "set": [
+    [
+     "inbound",
+     "multiplex.brutal.down_mbps"
+    ]
+   ],
+   "when": {
+    "mux_allow": [
+     "1"
+    ],
+    "mux_brutal": [
+     "1"
+    ]
+   }
+  },
+  "tls_max": {
+   "label": "最高 TLS 版本",
+   "kind": "select",
+   "group": "security",
+   "set": [
+    [
+     "inbound",
+     "tls.max_version"
+    ]
+   ],
+   "options": [
+    "1.2",
+    "1.3"
+   ],
+   "empty_label": "默认（1.3）"
+  },
+  "tls_ciphers": {
+   "label": "加密套件",
+   "kind": "tags",
+   "group": "security",
+   "type": "list",
+   "set": [
+    [
+     "inbound",
+     "tls.cipher_suites"
+    ]
+   ],
+   "note": "不选表示自动；只对 TLS 1.2 生效。",
+   "options": [
+    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+    "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+    "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+   ]
+  },
+  "no_keepalive": {
+   "label": "关闭 TCP 保活",
+   "kind": "switch",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "disable_tcp_keep_alive",
+     true
+    ]
+   ]
+  },
+  "tcp_keepalive": {
+   "label": "TCP 保活空闲",
+   "kind": "text",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "tcp_keep_alive"
+    ]
+   ],
+   "placeholder": "默认 5m",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
+  },
+  "tcp_keepalive_interval": {
+   "label": "TCP 保活间隔",
+   "kind": "text",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "tcp_keep_alive_interval"
+    ]
+   ],
+   "placeholder": "默认 75s",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
+  },
+  "udp_timeout": {
+   "label": "UDP 会话超时",
+   "kind": "text",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "udp_timeout"
+    ]
+   ],
+   "placeholder": "默认 5m",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
+  },
+  "fb_server": {
+   "label": "回落地址",
+   "kind": "text",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "fallback.server"
+    ]
+   ],
+   "placeholder": "127.0.0.1",
+   "note": "非 Trojan 流量转发到这里（如本机网站）；地址和端口要一起填。"
+  },
+  "fb_port": {
+   "label": "回落端口",
+   "kind": "number",
+   "group": "advanced",
+   "type": "int",
+   "set": [
+    [
+     "inbound",
+     "fallback.server_port"
+    ]
+   ],
+   "when_filled": "fb_server"
+  },
+  "padding_scheme": {
+   "label": "填充方案",
+   "kind": "rows",
+   "group": "proto",
+   "flat": true,
+   "add_label": "添加一行",
+   "set": [
+    [
+     "inbound",
+     "padding_scheme"
+    ]
+   ],
+   "columns": [
+    {
+     "key": "v",
+     "label": "如 stop=8 或 1=100-400"
+    }
+   ],
+   "note": "留空使用 sing-box 默认方案；每行一条规则。"
+  },
+  "auth_timeout": {
+   "label": "认证超时",
+   "kind": "text",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "auth_timeout"
+    ]
+   ],
+   "placeholder": "默认 3s",
+   "pattern": "^\\d+(ms|s|m|h)$",
+   "pattern_hint": "时长，如 30s、5m"
   }
  },
  "json_flags": {
@@ -955,6 +1288,11 @@
     "expiry",
     "uuid",
     "flow",
+    "mux_allow",
+    "mux_padding",
+    "mux_brutal",
+    "mux_brutal_up",
+    "mux_brutal_down",
     "transport",
     "t_path",
     "t_ws_host",
@@ -962,6 +1300,10 @@
     "t_http_host",
     "t_service",
     "t_early",
+    "t_idle",
+    "t_ping",
+    "t_grpc_permit",
+    "t_http_method",
     "security",
     {
      "key": "domain",
@@ -1017,8 +1359,27 @@
     },
     "alpn",
     "min_tls",
+    {
+     "key": "tls_max",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "tls_ciphers",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
     "tfo",
-    "mptcp"
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval"
    ],
    "state": "vless"
   },
@@ -1036,9 +1397,41 @@
     "reset_day",
     "expiry",
     "password",
+    "mux_allow",
+    "mux_padding",
+    "mux_brutal",
+    "mux_brutal_up",
+    "mux_brutal_down",
+    "transport",
+    "t_path",
+    "t_ws_host",
+    "t_host",
+    "t_http_host",
+    "t_service",
+    "t_early",
+    "t_idle",
+    "t_ping",
+    "t_grpc_permit",
+    "t_http_method",
     "domain",
+    "utls",
+    {
+     "key": "alpn",
+     "when": {}
+    },
+    {
+     "key": "min_tls",
+     "when": {}
+    },
+    "tls_max",
+    "tls_ciphers",
     "tfo",
-    "mptcp"
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval",
+    "fb_server",
+    "fb_port"
    ],
    "state": "trojan"
   },
@@ -1077,7 +1470,8 @@
     "masquerade",
     "bbr_profile",
     "domain",
-    "udp_fragment"
+    "udp_fragment",
+    "udp_timeout"
    ],
    "state": "hysteria2"
   },
@@ -1099,8 +1493,10 @@
     "congestion",
     "zero_rtt",
     "heartbeat",
+    "auth_timeout",
     "domain",
-    "udp_fragment"
+    "udp_fragment",
+    "udp_timeout"
    ],
    "state": "tuic"
   },
@@ -1118,9 +1514,23 @@
     "reset_day",
     "expiry",
     "password",
+    "padding_scheme",
     "domain",
+    {
+     "key": "alpn",
+     "when": {}
+    },
+    {
+     "key": "min_tls",
+     "when": {}
+    },
+    "tls_max",
+    "tls_ciphers",
     "tfo",
-    "mptcp"
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval"
    ],
    "state": "anytls"
   },
@@ -1159,8 +1569,50 @@
     "cred_auto",
     "method",
     "mux",
+    {
+     "key": "mux_padding",
+     "when": {
+      "mux": [
+       "1"
+      ]
+     }
+    },
+    {
+     "key": "mux_brutal",
+     "when": {
+      "mux": [
+       "1"
+      ]
+     }
+    },
+    {
+     "key": "mux_brutal_up",
+     "when": {
+      "mux": [
+       "1"
+      ],
+      "mux_brutal": [
+       "1"
+      ]
+     }
+    },
+    {
+     "key": "mux_brutal_down",
+     "when": {
+      "mux": [
+       "1"
+      ],
+      "mux_brutal": [
+       "1"
+      ]
+     }
+    },
     "tfo",
-    "mptcp"
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval",
+    "udp_timeout"
    ],
    "state": "shadowsocks"
   },
@@ -1254,7 +1706,13 @@
     "total",
     "reset_day",
     "expiry",
-    "password"
+    "password",
+    "tfo",
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval",
+    "udp_timeout"
    ],
    "state": "socks"
   },
@@ -1272,7 +1730,12 @@
     "total",
     "reset_day",
     "expiry",
-    "password"
+    "password",
+    "tfo",
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval"
    ],
    "state": "http"
   },
@@ -1290,7 +1753,13 @@
     "total",
     "reset_day",
     "expiry",
-    "password"
+    "password",
+    "tfo",
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval",
+    "udp_timeout"
    ],
    "state": "mixed"
   }

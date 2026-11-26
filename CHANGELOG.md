@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.129
+
+- `sb node schema`：对照 s-ui 的入站表单补齐第一批选项，全部是结构化字段：
+  - Trojan：可选传输（WebSocket、gRPC、HTTPUpgrade、HTTP/2）、uTLS 指纹、ALPN、TLS 版本范围与加密套件、多路复用、回落地址。
+  - VLESS：多路复用、最高 TLS 版本与加密套件；gRPC / HTTP/2 传输的空闲超时、Ping 超时，gRPC 的无流 Ping，HTTP/2 的请求方法。
+  - 多路复用（VLESS、Trojan、Shadowsocks）：填充、TCP Brutal 及上下行带宽。
+  - AnyTLS：填充方案（每行一条）、ALPN、TLS 版本与加密套件。TUIC：认证超时。
+  - 监听选项：TCP 保活（关闭、空闲、间隔）、UDP 会话超时；SOCKS / HTTP / Mixed 增加 TCP Fast Open 与多路径 TCP。
+- Trojan 分享链接改为按实际客户端配置生成：传输、路径、Host、gRPC 服务名、ALPN、指纹都会写进链接（未设置时与原来一致）。
+- 以上选项已用 sing-box 1.14.4 验证（配置检查加真实流量）。
+
 ## 0.1.0-alpha.128
 
 - `sb node schema`：每个字段标明现有节点里对应的值在哪里（`from`）、创建后能否修改（`edit`、`create_only`），并给出修改命令（顶层 `edit`），
