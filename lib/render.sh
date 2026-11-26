@@ -7,7 +7,9 @@ node_transport_kinds() {
   case "$protocol" in
     vmess-ws-cf|anytls|trojan|shadowtls|snell|http|socks|mixed) printf 'tcp\n' ;;
     vless) printf 'tcp\n' ;;
-    hysteria2|tuic) printf 'udp\n' ;;
+    hysteria2|tuic|hysteria) printf 'udp\n' ;;
+    vmess) printf 'tcp\n' ;;
+    direct) case "$(jq -r '.network // ""' <<<"$node")" in tcp) printf 'tcp\n';; udp) printf 'udp\n';; *) printf 'tcp\nudp\n';; esac ;;
     naive) jq -r '.network // "tcp"' <<<"$node" ;;
     shadowsocks)
       network=$(jq -r '.network // "tcp"' <<<"$node")
@@ -63,7 +65,8 @@ singbox_apply_override() {
 # sockets (tcp/udp) a node listens on, mirroring node_transport_kinds.
 SBM_JQ_NODE_KINDS='
     def kinds:
-      if .protocol|IN("hysteria2","tuic") then ["udp"]
+      if .protocol|IN("hysteria2","tuic","hysteria") then ["udp"]
+      elif .protocol=="direct" then ((.network // "") | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
       elif .protocol=="naive" then [.network // "tcp"]
       elif .protocol=="shadowsocks" then ((.network // "tcp") | if .=="tcp" then ["tcp"] elif .=="udp" then ["udp"] else ["tcp","udp"] end)
       else ["tcp"] end;
@@ -126,7 +129,7 @@ validate_state_semantics() {
     ( .nodes[]? | . as $n |
       (if (.id|test("^[a-z0-9][a-z0-9._-]{0,47}$")|not) then ["E","节点 ID 不规范：\(.id)"]|tab else empty end),
       (if (.port|type)!="number" or .port<1 or .port>65535 then ["E","节点 \(.id) 的端口无效：\(.port)"]|tab else empty end),
-      (if (.protocol|IN("vmess-ws-cf","shadowsocks","anytls","hysteria2","trojan","tuic","vless","naive","shadowtls","snell","socks","http","mixed")|not)
+      (if (.protocol|IN("vmess-ws-cf","shadowsocks","anytls","hysteria2","trojan","tuic","vless","naive","shadowtls","snell","socks","http","mixed","vmess","hysteria","direct")|not)
         then ["E","节点 \(.id) 使用未知协议：\(.protocol)"]|tab else empty end),
       ([.users[]?.id] | if length != (unique|length) then ["E","节点 \($n.id) 存在重复用户 ID。"]|tab else empty end),
       ( select(.enabled==true) |
@@ -141,10 +144,10 @@ validate_state_semantics() {
          else empty end),
         (if ([.users[]? | select(.enabled==true)]|length)==0 and (all(.users[]?; .limits.suspended!=null or .enabled)|not)
           then ["E","启用节点 \(.id) 至少需要一个启用用户。"]|tab else empty end),
-        (if (.protocol|IN("anytls","hysteria2","trojan","tuic","naive")) or (.protocol=="vless" and .security=="tls")
+        (if (.protocol|IN("anytls","hysteria2","trojan","tuic","naive","hysteria")) or ((.protocol|IN("vless","vmess")) and .security=="tls")
           then ["C",.id,(.domain // "")]|tab else empty end),
         (.users[]? | select(.enabled==true) | ["U",$n.id,.id]|tab),
-        (if (.protocol|IN("hysteria2","snell","shadowtls")) or (.protocol=="vless" and .security=="reality") then ["S",.id]|tab else empty end),
+        (if (.protocol|IN("hysteria2","snell","shadowtls")) or (.protocol=="vless" and .security=="reality") or (.protocol=="hysteria" and (.obfs // "")!="") then ["S",.id]|tab else empty end),
         (if (.protocol|IN("snell","shadowtls")) and ((.credential_revision // 0)!=1)
           then ["E","节点 \(.id) 的安全凭据尚未迁移，请通过 sb 命令初始化状态。"]|tab else empty end) ) )
   ' "$state")
@@ -170,6 +173,9 @@ render_inbound_for_node() {
     anytls) rendered=$(protocol_anytls_render "$node" "$credentials" "$node_secret") ;;
     hysteria2) rendered=$(protocol_hy2_render "$node" "$credentials" "$node_secret") ;;
     trojan) rendered=$(protocol_trojan_render "$node" "$credentials") ;;
+    vmess) rendered=$(protocol_vmess_std_render "$node" "$credentials") ;;
+    hysteria) rendered=$(protocol_hysteria_render "$node" "$credentials" "$node_secret") ;;
+    direct) rendered=$(protocol_direct_render "$node") ;;
     tuic) rendered=$(protocol_tuic_render "$node" "$credentials") ;;
     vless) rendered=$(protocol_vless_render "$node" "$credentials" "$node_secret") ;;
     socks|http|mixed) rendered=$(protocol_proxy_render "$node" "$credentials") ;;

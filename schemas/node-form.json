@@ -1265,6 +1265,329 @@
    "placeholder": "默认 3s",
    "pattern": "^\\d+(ms|s|m|h)$",
    "pattern_hint": "时长，如 30s、5m"
+  },
+  "hy_up": {
+   "label": "上行带宽",
+   "kind": "number",
+   "group": "proto",
+   "flag": "--up-mbps",
+   "suffix": "Mbps",
+   "value": 100,
+   "required": true,
+   "edit": "no",
+   "from": "up_mbps"
+  },
+  "hy_down": {
+   "label": "下行带宽",
+   "kind": "number",
+   "group": "proto",
+   "flag": "--down-mbps",
+   "suffix": "Mbps",
+   "value": 100,
+   "required": true,
+   "edit": "no",
+   "from": "down_mbps"
+  },
+  "hy1_obfs": {
+   "label": "混淆",
+   "kind": "radio",
+   "group": "proto",
+   "flag": "--obfs",
+   "empty_label": "无",
+   "options": [
+    {
+     "value": "xplus",
+     "label": "XPlus"
+    }
+   ],
+   "edit": "no",
+   "from": "obfs"
+  },
+  "q_recv_conn": {
+   "label": "连接接收窗口",
+   "kind": "number",
+   "group": "advanced",
+   "type": "int",
+   "suffix": "字节",
+   "set": [
+    [
+     "inbound",
+     "recv_window_conn"
+    ]
+   ]
+  },
+  "q_recv_client": {
+   "label": "单客户端接收窗口",
+   "kind": "number",
+   "group": "advanced",
+   "type": "int",
+   "suffix": "字节",
+   "set": [
+    [
+     "inbound",
+     "recv_window_client"
+    ]
+   ]
+  },
+  "q_max_conn": {
+   "label": "单客户端最大连接数",
+   "kind": "number",
+   "group": "advanced",
+   "type": "int",
+   "set": [
+    [
+     "inbound",
+     "max_conn_client"
+    ]
+   ]
+  },
+  "q_no_pmtud": {
+   "label": "禁用路径 MTU 探测",
+   "kind": "switch",
+   "group": "advanced",
+   "set": [
+    [
+     "inbound",
+     "disable_mtu_discovery",
+     true
+    ]
+   ]
+  },
+  "d_mode": {
+   "label": "类型",
+   "kind": "radio",
+   "group": "basic",
+   "flag": "--mode",
+   "empty_label": "端口转发",
+   "options": [
+    {
+     "value": "redirect",
+     "label": "Redirect"
+    },
+    {
+     "value": "tproxy",
+     "label": "TProxy"
+    }
+   ],
+   "edit": "no",
+   "note": "Redirect / TProxy 是透明代理入口，只负责监听；把流量导向它的防火墙规则需要自行配置。",
+   "from": "mode",
+   "from_map": {
+    "direct": ""
+   }
+  },
+  "d_target": {
+   "label": "转发目标",
+   "kind": "text",
+   "group": "basic",
+   "flag": "--target",
+   "required": true,
+   "placeholder": "主机:端口",
+   "when": {
+    "d_mode": [
+     ""
+    ]
+   },
+   "create_only": true,
+   "pattern": "^.+:\\d{1,5}$",
+   "pattern_hint": "主机:端口"
+  },
+  "d_network": {
+   "label": "网络",
+   "kind": "radio",
+   "group": "basic",
+   "flag": "--network",
+   "empty_label": "TCP + UDP",
+   "options": [
+    {
+     "value": "tcp",
+     "label": "仅 TCP"
+    },
+    {
+     "value": "udp",
+     "label": "仅 UDP"
+    }
+   ],
+   "when": {
+    "d_mode": [
+     "",
+     "tproxy"
+    ]
+   },
+   "edit": "no",
+   "from": "network"
+  },
+  "ech": {
+   "label": "ECH",
+   "kind": "text",
+   "group": "security",
+   "flag": "--ech",
+   "placeholder": "对外公开的域名，留空不启用",
+   "note": "填写后自动生成 ECH 密钥。分享链接和 mihomo 订阅不带 ECH，这类客户端仍按普通 TLS 连接。",
+   "from": "ech_name",
+   "edit_empty": "none"
+  },
+  "masq_type": {
+   "label": "伪装方式",
+   "kind": "select",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.type"
+    ]
+   ],
+   "empty_label": "网址（反向代理）",
+   "options": [
+    {
+     "value": "proxy",
+     "label": "反向代理（可改写 Host）"
+    },
+    {
+     "value": "file",
+     "label": "本地目录"
+    },
+    {
+     "value": "string",
+     "label": "固定内容"
+    }
+   ]
+  },
+  "masq_url": {
+   "label": "代理网址",
+   "kind": "text",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.url"
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "proxy"
+    ]
+   },
+   "placeholder": "https://example.com",
+   "required": true
+  },
+  "masq_rewrite": {
+   "label": "改写 Host",
+   "kind": "switch",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.rewrite_host",
+     true
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "proxy"
+    ]
+   }
+  },
+  "masq_dir": {
+   "label": "目录",
+   "kind": "text",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.directory"
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "file"
+    ]
+   },
+   "placeholder": "/var/www/html",
+   "required": true
+  },
+  "masq_status": {
+   "label": "状态码",
+   "kind": "number",
+   "group": "proto",
+   "type": "int",
+   "set": [
+    [
+     "inbound",
+     "masquerade.status_code"
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "string"
+    ]
+   },
+   "placeholder": "默认 200"
+  },
+  "masq_content": {
+   "label": "内容",
+   "kind": "text",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.content"
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "string"
+    ]
+   }
+  },
+  "masq_headers": {
+   "label": "响应头",
+   "kind": "pairs",
+   "group": "proto",
+   "set": [
+    [
+     "inbound",
+     "masquerade.headers"
+    ]
+   ],
+   "when": {
+    "masq_type": [
+     "string"
+    ]
+   }
+  },
+  "st_handshakes": {
+   "label": "按 SNI 的握手目标",
+   "kind": "rows",
+   "group": "proto",
+   "key_by": "name",
+   "add_label": "添加一条",
+   "set": [
+    [
+     "inbound",
+     "handshake_for_server_name"
+    ]
+   ],
+   "note": "客户端用这些 SNI 连接时改用对应的握手目标；其余使用上面的默认目标。",
+   "columns": [
+    {
+     "key": "name",
+     "label": "SNI",
+     "required": true
+    },
+    {
+     "key": "server",
+     "label": "握手服务器",
+     "required": true
+    },
+    {
+     "key": "server_port",
+     "label": "端口",
+     "type": "int",
+     "value": 443,
+     "required": true
+    }
+   ]
   }
  },
  "json_flags": {
@@ -1375,6 +1698,14 @@
       ]
      }
     },
+    {
+     "key": "ech",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
     "tfo",
     "mptcp",
     "no_keepalive",
@@ -1425,6 +1756,7 @@
     },
     "tls_max",
     "tls_ciphers",
+    "ech",
     "tfo",
     "mptcp",
     "no_keepalive",
@@ -1467,13 +1799,57 @@
     },
     "obfs_min",
     "obfs_max",
-    "masquerade",
+    "masq_type",
+    {
+     "key": "masquerade",
+     "when": {
+      "masq_type": [
+       ""
+      ]
+     }
+    },
+    "masq_url",
+    "masq_rewrite",
+    "masq_dir",
+    "masq_status",
+    "masq_content",
+    "masq_headers",
     "bbr_profile",
     "domain",
+    "ech",
     "udp_fragment",
     "udp_timeout"
    ],
    "state": "hysteria2"
+  },
+  {
+   "type": "hysteria",
+   "label": "Hysteria（v1）",
+   "state": "hysteria",
+   "id_prefix": "hy1",
+   "fields": [
+    "enable",
+    "name",
+    {
+     "key": "port",
+     "value": 443
+    },
+    "total",
+    "reset_day",
+    "expiry",
+    "password",
+    "hy_up",
+    "hy_down",
+    "hy1_obfs",
+    "domain",
+    "ech",
+    "udp_fragment",
+    "udp_timeout",
+    "q_recv_conn",
+    "q_recv_client",
+    "q_max_conn",
+    "q_no_pmtud"
+   ]
   },
   {
    "type": "tuic",
@@ -1495,6 +1871,7 @@
     "heartbeat",
     "auth_timeout",
     "domain",
+    "ech",
     "udp_fragment",
     "udp_timeout"
    ],
@@ -1526,6 +1903,7 @@
     },
     "tls_max",
     "tls_ciphers",
+    "ech",
     "tfo",
     "mptcp",
     "no_keepalive",
@@ -1633,6 +2011,7 @@
     "cred_auto",
     "st_dest",
     "st_dest_port",
+    "st_handshakes",
     "strict_mode",
     "wildcard_sni"
    ],
@@ -1673,8 +2052,116 @@
    "state": "snell"
   },
   {
-   "type": "vmess",
+   "type": "vmess-std",
    "label": "VMess",
+   "state": "vmess",
+   "id_prefix": "vmess",
+   "fields": [
+    "enable",
+    "name",
+    {
+     "key": "port",
+     "auto": true
+    },
+    "total",
+    "reset_day",
+    "expiry",
+    "uuid",
+    "mux_allow",
+    "mux_padding",
+    "mux_brutal",
+    "mux_brutal_up",
+    "mux_brutal_down",
+    "transport",
+    "t_path",
+    "t_ws_host",
+    "t_host",
+    "t_http_host",
+    "t_service",
+    "t_early",
+    "t_idle",
+    "t_ping",
+    "t_grpc_permit",
+    "t_http_method",
+    {
+     "key": "security",
+     "options": [
+      {
+       "value": "none",
+       "label": "无"
+      },
+      {
+       "value": "tls",
+       "label": "TLS"
+      }
+     ]
+    },
+    {
+     "key": "domain",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "utls",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "alpn",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "min_tls",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "tls_max",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "tls_ciphers",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    {
+     "key": "ech",
+     "when": {
+      "security": [
+       "tls"
+      ]
+     }
+    },
+    "tfo",
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval"
+   ]
+  },
+  {
+   "type": "vmess",
+   "label": "VMess + WS（Cloudflare）",
    "note": "VMess + WebSocket，配合 Cloudflare CDN 或 Tunnel 使用。",
    "fields": [
     "enable",
@@ -1762,6 +2249,27 @@
     "udp_timeout"
    ],
    "state": "mixed"
+  },
+  {
+   "type": "direct",
+   "label": "端口转发 / 透明代理入口",
+   "state": "direct",
+   "note": "没有用户和客户端配置：把本机一个端口转发到固定目标，或作为 Redirect / TProxy 入口。",
+   "fields": [
+    "enable",
+    "name",
+    "d_mode",
+    "listen",
+    "port",
+    "d_target",
+    "d_network",
+    "tfo",
+    "mptcp",
+    "no_keepalive",
+    "tcp_keepalive",
+    "tcp_keepalive_interval",
+    "udp_timeout"
+   ]
   }
  ],
  "edit": {

@@ -82,6 +82,9 @@ _node_share_uri() {
     anytls) protocol_anytls_share "$node" "$secret" "$node_secret" ;;
     hysteria2) protocol_hy2_share "$node" "$secret" "$node_secret" ;;
     trojan) protocol_trojan_share "$node" "$secret" ;;
+    vmess) protocol_vmess_std_share "$node" "$secret" ;;
+    hysteria) protocol_hysteria_share "$node" "$secret" "$node_secret" ;;
+    direct) return 1 ;;
     tuic) protocol_tuic_share "$node" "$secret" ;;
     vless) protocol_vless_share "$node" "$secret" "$node_secret" ;;
     socks|http|mixed) protocol_proxy_share "$node" "$secret" ;;
@@ -107,6 +110,9 @@ node_client_outbound() {
     anytls) outbound=$(protocol_anytls_client_outbound "$node" "$secret" "$node_secret") ;;
     hysteria2) outbound=$(protocol_hy2_client_outbound "$node" "$secret" "$node_secret") ;;
     trojan) outbound=$(protocol_trojan_client_outbound "$node" "$secret") ;;
+    vmess) outbound=$(protocol_vmess_std_client_outbound "$node" "$secret") ;;
+    hysteria) outbound=$(protocol_hysteria_client_outbound "$node" "$secret" "$node_secret") ;;
+    direct) log_warn "端口转发节点 $id 没有客户端配置。"; return 1 ;;
     tuic) outbound=$(protocol_tuic_client_outbound "$node" "$secret") ;;
     vless) outbound=$(protocol_vless_client_outbound "$node" "$secret" "$node_secret") || return 1 ;;
     socks|http|mixed) outbound=$(protocol_proxy_client_outbound "$node" "$secret") ;;

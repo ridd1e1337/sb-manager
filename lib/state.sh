@@ -390,7 +390,7 @@ state_validate_schema() {
       type == "object"
       and (.id | string and test("^[a-z0-9][a-z0-9._-]{0,47}$"))
       and (.name | nonempty and (explode | all(.[]; . >= 32 and . != 127)))
-      and (.protocol | IN("vmess-ws-cf", "shadowsocks", "anytls", "hysteria2", "trojan", "tuic", "vless", "naive", "shadowtls", "snell", "socks", "http", "mixed"))
+      and (.protocol | IN("vmess-ws-cf", "shadowsocks", "anytls", "hysteria2", "trojan", "tuic", "vless", "naive", "shadowtls", "snell", "socks", "http", "mixed", "vmess", "hysteria", "direct"))
       and (.enabled | type == "boolean")
       and (.listen | nonempty)
       and (.port | port)
@@ -437,6 +437,17 @@ state_validate_schema() {
         and (.masquerade | string)
       elif .protocol == "trojan" then
         (.domain | nonempty) and (.server_address | string)
+      elif .protocol == "vmess" then
+        (.server_address | string) and (.security | IN("none", "tls"))
+        and (if .security=="tls" then (.domain|nonempty) else true end)
+      elif .protocol == "hysteria" then
+        (.domain | nonempty) and (.server_address | string)
+        and (.up_mbps | type == "number" and . >= 1) and (.down_mbps | type == "number" and . >= 1)
+        and ((.obfs // "") | IN("", "xplus"))
+      elif .protocol == "direct" then
+        ((.mode // "direct") | IN("direct", "redirect", "tproxy"))
+        and ((.network // "") | IN("", "tcp", "udp"))
+        and (if (.mode // "direct")=="direct" then (.target_address | nonempty) and (.target_port | port) else true end)
       elif .protocol == "tuic" then
         (.domain | nonempty) and (.server_address | string)
         and (.congestion_control | IN("cubic", "new_reno", "bbr"))

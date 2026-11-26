@@ -25,6 +25,9 @@ source "$SBM_LIB/protocols/shadowsocks.sh"
 source "$SBM_LIB/protocols/anytls.sh"
 source "$SBM_LIB/protocols/hysteria2.sh"
 source "$SBM_LIB/protocols/trojan.sh"
+source "$SBM_LIB/protocols/vmess.sh"
+source "$SBM_LIB/protocols/hysteria.sh"
+source "$SBM_LIB/protocols/direct.sh"
 source "$SBM_LIB/protocols/tuic.sh"
 source "$SBM_LIB/protocols/vless.sh"
 source "$SBM_LIB/protocols/naive.sh"
@@ -83,7 +86,9 @@ sb_help_full() {
   sb vps systems                 查看各功能支持的 Linux 系统与当前环境
   sb node list [--json] [--tag TAG] [--region REGION] 列出节点
   sb quick                       添加节点向导
-  sb node add <vmess|ss|anytls|hy2|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed> [参数]
+  sb node add <vmess|vmess-std|ss|anytls|hy2|hysteria|trojan|tuic|vless|naive|shadowtls|snell|socks|http|mixed|direct|redirect|tproxy> [参数]
+                 vmess-std：通用 VMess [--security none|tls --domain D]；hysteria：v1 [--up-mbps N --down-mbps N --obfs xplus]
+                 direct --port N --target HOST:PORT [--network tcp|udp]（端口转发）；redirect / tproxy --port N（透明代理入口，防火墙规则自行配置）
   sb node expiry ID [--days N|--at UTC_TIMESTAMP|--clear]
   sb node show <ID>
   sb node schema                 输出节点表单描述 JSON（协议与参数；供网页面板生成表单）

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.130
+
+- 新协议：
+  - `sb node add vmess-std`：通用 VMess（状态里的协议名为 `vmess`），可选 TLS（`--security none|tls --domain`）、传输与多路复用；分享链接为 v2rayN 格式。
+    原来的 `sb node add vmess` 仍是 VMess + WS（Cloudflare）模板。
+  - `sb node add hysteria`：Hysteria v1，`--up-mbps`、`--down-mbps`（服务端视角，客户端自动对调）、`--obfs xplus`；可导出分享链接、sing-box 与 mihomo。
+  - `sb node add direct --port N --target HOST:PORT [--network tcp|udp]`：端口转发；`sb node add redirect|tproxy --port N`：透明代理入口。
+    这类节点没有用户和客户端配置，只负责监听，不会改动主机防火墙。
+- `--ech 域名|none`（添加与修改节点）：自动生成 ECH 密钥，服务端密钥写入入站扩展、客户端配置写入出站扩展；用于使用域名证书的节点。
+- `sb node schema`：新增上述三种协议；Hysteria2 伪装可选反向代理（改写 Host）、本地目录、固定内容；ShadowTLS 可按 SNI 指定握手目标；
+  TLS 节点可填 ECH；Hysteria v1 的 QUIC 窗口等选项。字段新增 `key_by`（多行表格写成以某一列为键的对象）。
+- 以上均用 sing-box 1.14.4 验证：在隔离目录里执行添加节点、生成配置、`sing-box check` 并跑真实流量。
+
 ## 0.1.0-alpha.129
 
 - `sb node schema`：对照 s-ui 的入站表单补齐第一批选项，全部是结构化字段：

@@ -41,6 +41,9 @@ elif .type=="shadowsocks" then
 elif .type=="hysteria2" then
   base + {type:"hysteria2",password:.password,up:(.up_mbps // null),down:(.down_mbps // null),
     obfs:(.obfs.type // null),"obfs-password":(.obfs.password // null)} + tls_opts
+elif .type=="hysteria" then
+  base + {type:"hysteria","auth-str":.auth_str,up:(.up_mbps|tostring),down:(.down_mbps|tostring),protocol:"udp",
+    obfs:(.obfs // null)} + tls_opts
 elif .type=="tuic" then
   base + {type:"tuic",uuid:.uuid,password:.password,"congestion-controller":(.congestion_control // null),
     "udp-relay-mode":(.udp_relay_mode // null)} + tls_opts

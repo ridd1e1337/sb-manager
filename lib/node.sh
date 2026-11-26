@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
+# ECH key pair for a node: the server keeps the keys, the client gets the
+# config list. Returns {inbound:{tls:{ech}},outbound:{tls:{ech}}}.
+node_ech_extension() {
+  local name=$1 binary output
+  validate_domain "$name" || { log_error '--ech 需要一个域名（ECH 对外公开的名称）。'; return 1; }
+  binary=${SBM_SING_BOX_BIN:-sing-box}
+  [[ -x "$binary" ]] || command_exists "$binary" || { log_error '生成 ECH 密钥需要已安装的 sing-box 核心：sb core update。'; return 1; }
+  output=$("$binary" generate ech-keypair "$name" 2>/dev/null) || { log_error '当前 sing-box 无法生成 ECH 密钥。'; return 1; }
+  jq -Rsc 'split("\n") | map(select(length>0)) as $l
+    | ($l | index("-----BEGIN ECH KEYS-----")) as $k
+    | if $k==null or ($l[0]!="-----BEGIN ECH CONFIGS-----") then error("unexpected ech-keypair output") else
+        {inbound:{tls:{ech:{enabled:true,key:$l[$k:]}}},outbound:{tls:{ech:{enabled:true,config:$l[:$k]}}}} end' <<<"$output" \
+    || { log_error '无法解析 sing-box 的 ECH 密钥输出。'; return 1; }
+}
+
 node_protocol_label() {
   case "$1" in
     vmess-ws-cf) printf 'VMess-WS-CF' ;;
@@ -8,6 +23,9 @@ node_protocol_label() {
     anytls) printf 'AnyTLS' ;;
     hysteria2) printf 'Hysteria2' ;;
     trojan) printf 'Trojan TLS' ;;
+    vmess) printf 'VMess' ;;
+    hysteria) printf 'Hysteria' ;;
+    direct) printf '端口转发' ;;
     tuic) printf 'TUIC' ;;
     vless) printf 'VLESS' ;;
     socks) printf 'SOCKS5' ;;
@@ -164,15 +182,19 @@ _node_add() {
   local cred_uuid='' cred_password='' cred_short_id=''
   local id='' name='' port='' domain='' address='' address_supplied=0 address_source=auto path='' method='2022-blake3-aes-256-gcm' network='tcp' mux=true enabled=true obfs='' obfs_host='' obfs_min_packet_size=512 obfs_max_packet_size=1200 disable_chrome_parrot=false bbr_profile='' brutal_debug=false masquerade='' security='tls' flow='auto' handshake_server='' handshake_port=443 congestion_control='cubic' strict_mode=true wildcard_sni='off' snell_version=5 snell_mode=default realm_id='' realm_ip_version=0 realm_port_mapping=false inbound_json='{}' outbound_json='{}'
   local remark='' region='' purpose='' line='' tags='' proxy_listen='127.0.0.1' proxy_listen_supplied=0 vless_listen='::'
+  local security_supplied=0 up_mbps=100 down_mbps=100 direct_target='' direct_mode=direct network_supplied=0 ech_name=''
   while (($#)); do
     case "$1" in
       --listen) proxy_listen=${2:?}; proxy_listen_supplied=1; shift 2;;
       --id) id=${2:?}; shift 2;; --name) name=${2:?}; shift 2;; --port) port=${2:?}; shift 2;;
       --uuid) cred_uuid=${2:?}; shift 2;; --password) cred_password=${2:?}; shift 2;; --short-id) cred_short_id=${2:?}; shift 2;;
       --domain) domain=${2:?}; shift 2;; --address) address=${2:?}; address_supplied=1; address_source=manual; shift 2;; --path) path=${2:?}; shift 2;;
-      --method) method=${2:?}; shift 2;; --network) network=${2:?}; shift 2;; --no-mux) mux=false; shift;;
+      --method) method=${2:?}; shift 2;; --network) network=${2:?}; network_supplied=1; shift 2;; --no-mux) mux=false; shift;;
       --obfs) obfs=${2:?}; shift 2;; --obfs-host) obfs_host=${2:?}; shift 2;; --obfs-min-packet-size) obfs_min_packet_size=${2:?}; shift 2;; --obfs-max-packet-size) obfs_max_packet_size=${2:?}; shift 2;; --disable-chrome-parrot) disable_chrome_parrot=true; shift;; --bbr-profile) bbr_profile=${2:?}; shift 2;; --brutal-debug) brutal_debug=true; shift;; --masquerade) masquerade=${2:?}; shift 2;; --disabled) enabled=false; shift;;
-      --security) security=${2:?}; shift 2;;
+      --security) security=${2:?}; security_supplied=1; shift 2;;
+      --up-mbps) up_mbps=${2:?}; shift 2;; --down-mbps) down_mbps=${2:?}; shift 2;;
+      --target) direct_target=${2:?}; shift 2;; --mode) direct_mode=${2:?}; shift 2;;
+      --ech) ech_name=${2:?}; shift 2;;
       --flow) (($# >= 2)) || usage_die '缺少 flow 值；可显式传空字符串。'; flow=$2; shift 2;;
       --transport|--host|--service-name|--xhttp-mode|--tls-server-name|--fingerprint|--alpn|--allow-insecure|--pinned-cert-sha256|--verify-name|--packet-encoding|--vless-encryption|--vless-decryption|--transport-json|--tls-json|--sockopt-json|--fallbacks|--fallback-dest|--sniffing|--sniff-dest|--tcp-fast-open|--accept-proxy-protocol)
         usage_die "$1 不是 sing-box 节点参数；VLESS 传输与 TLS 细节请用 --sing-box-inbound-json/--sing-box-outbound-json。";;
@@ -192,7 +214,7 @@ _node_add() {
     dependency_require_feature probe || die '节点端口探测需要 iproute2/ss；请运行 sb deps install probe。'
   fi
   if [[ "$proxy_listen_supplied" == 1 ]]; then
-    case "$type" in socks|socks5|http|mixed|vless) ;; *) usage_die '--listen 目前仅用于 VLESS 与 socks/http/mixed 代理入口。';; esac
+    case "$type" in socks|socks5|http|mixed|vless|direct|redirect|tproxy) ;; *) usage_die '--listen 目前仅用于 VLESS、端口转发与 socks/http/mixed 代理入口。';; esac
   fi
   local protocol base transport secret node_secret='' node candidate user_secret_path default_address created_at reality_secret='' snell_obfs_mode snell_obfs_host
   if [[ "$type" == vless && "$proxy_listen_supplied" == 1 ]]; then
@@ -259,6 +281,36 @@ _node_add() {
       ;;
     trojan)
       protocol=trojan; base=trojan; transport=tcp; port=${port:-443}; domain=${domain:?Trojan 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-Trojan}; address=${address:-${default_address:-$domain}}; secret=$(jq -n --arg password "$(random_password 24)" '{password:$password}')
+      ;;
+    vmess-std|vmess-tcp)
+      # Plain VMess; `vmess` stays the Cloudflare WebSocket template.
+      protocol=vmess; base=vmess; transport=tcp; (( security_supplied )) || security=none
+      case "$security" in none) domain='';; tls) validate_domain "$domain" || die 'VMess TLS 需要有效的 --domain。';; *) die 'VMess security 必须是 none 或 tls。';; esac
+      [[ -n "$port" ]] || port=$(node_choose_port tcp) || return 1
+      name=${name:-VMess}; address=${address:-${default_address:-$domain}}; secret=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}')
+      ;;
+    hysteria|hy1)
+      protocol=hysteria; base=hy1; transport=udp; port=${port:-443}; domain=${domain:?Hysteria 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"
+      [[ "$up_mbps" =~ ^[1-9][0-9]{0,5}$ && "$down_mbps" =~ ^[1-9][0-9]{0,5}$ ]] || die '--up-mbps / --down-mbps 须为 1-999999 的整数。'
+      case "$obfs" in ''|xplus) ;; *) die 'Hysteria 的 --obfs 只能是 xplus。';; esac
+      name=${name:-Hysteria}; address=${address:-${default_address:-$domain}}; secret=$(jq -n --arg password "$(random_password 24)" '{password:$password}')
+      [[ -z "$obfs" ]] || node_secret=$(jq -n --arg p "$(random_password 18)" '{obfs_password:$p}')
+      ;;
+    direct|redirect|tproxy)
+      # Listeners without users: a port forward or a transparent-proxy entry.
+      protocol=direct; base=$type; [[ "$type" == direct ]] || direct_mode=$type
+      case "$direct_mode" in direct|redirect|tproxy) ;; *) die '--mode 只能是 direct、redirect 或 tproxy。';; esac
+      port=${port:?必须指定 --port。}; name=${name:-$direct_mode}
+      (( network_supplied )) || network=''
+      case "$network" in ''|tcp|udp) ;; *) die '--network 只能是 tcp 或 udp（不指定为两者）。';; esac
+      [[ "$direct_mode" != redirect ]] || network=tcp
+      if [[ "$direct_mode" == direct ]]; then
+        [[ "$direct_target" =~ ^(.+):([0-9]{1,5})$ ]] || die '请用 --target HOST:PORT 指定转发目标。'
+        validate_address "${BASH_REMATCH[1]}" || die "无效转发目标：$direct_target"
+        validate_port "${BASH_REMATCH[2]}" || die "无效转发端口：$direct_target"
+      else [[ -z "$direct_target" ]] || die "--target 只用于端口转发（direct）。"; fi
+      case "$network" in tcp) transport=tcp;; udp) transport=udp;; *) transport=tcp;; esac
+      address=${address:-${default_address:-}}; secret='{}'
       ;;
     tuic)
       protocol=tuic; base=tuic; transport=udp; port=${port:-443}; domain=${domain:?TUIC 必须指定 --domain。}; validate_domain "$domain" || die "无效域名：$domain"; name=${name:-TUIC}; address=${address:-${default_address:-$domain}}; case "$congestion_control" in cubic|new_reno|bbr) ;; *) die 'TUIC 拥塞控制必须是 cubic、new_reno 或 bbr。';; esac; secret=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}')
@@ -361,6 +413,21 @@ _node_add() {
       node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg obfs "$obfs" --argjson obfs_min "$obfs_min_packet_size" --argjson obfs_max "$obfs_max_packet_size" --argjson disable_chrome "$disable_chrome_parrot" --arg bbr "$bbr_profile" --argjson brutal "$brutal_debug" --argjson realm_enabled "$([[ -n "$realm_id" ]] && echo true || echo false)" --arg realm_id "$realm_id" --argjson realm_ip "$realm_ip_version" --argjson realm_map "$realm_port_mapping" --arg masquerade "$masquerade" --arg now "$created_at" --argjson enabled "$enabled" \
         '{id:$id,name:$name,protocol:"hysteria2",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,obfs:(if $obfs=="" then {} elif $obfs=="gecko" then {type:$obfs,min_packet_size:$obfs_min,max_packet_size:$obfs_max} else {type:$obfs} end),disable_chrome_parrot:$disable_chrome,bbr_profile:$bbr,brutal_debug:$brutal,realm_enabled:$realm_enabled,realm_id:$realm_id,realm_ip_version:$realm_ip,realm_port_mapping:$realm_map,masquerade:$masquerade,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
       ;;
+    vmess)
+      node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg security "$security" --arg now "$created_at" --argjson enabled "$enabled" \
+        '{id:$id,name:$name,protocol:"vmess",enabled:$enabled,listen:"::",port:$port,security:$security,domain:$domain,server_address:$address,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
+      ;;
+    hysteria)
+      node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --argjson up "$up_mbps" --argjson down "$down_mbps" --arg obfs "$obfs" --arg now "$created_at" --argjson enabled "$enabled" \
+        '{id:$id,name:$name,protocol:"hysteria",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,up_mbps:$up,down_mbps:$down,obfs:$obfs,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
+      ;;
+    direct)
+      node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg address "$address" --arg mode "$direct_mode" --arg network "$network" --arg target "$direct_target" \
+        --arg listen "$([[ $proxy_listen_supplied == 1 ]] && printf '%s' "$proxy_listen" || printf '::')" --arg now "$created_at" --argjson enabled "$enabled" \
+        '($target|capture("^(?<h>.+):(?<p>[0-9]+)$")? // null) as $t |
+         {id:$id,name:$name,protocol:"direct",enabled:$enabled,listen:$listen,port:$port,server_address:$address,mode:$mode,network:$network,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}
+         + (if $t then {target_address:$t.h,target_port:($t.p|tonumber)} else {} end)')
+      ;;
     trojan)
       node=$(jq -n --arg id "$id" --arg name "$name" --argjson port "$port" --arg domain "$domain" --arg address "$address" --arg now "$created_at" --argjson enabled "$enabled" '{id:$id,name:$name,protocol:"trojan",enabled:$enabled,listen:"::",port:$port,domain:$domain,server_address:$address,created_at:$now,users:[{id:"default",name:$name,enabled:true,created_at:$now}]}')
       ;;
@@ -387,6 +454,12 @@ _node_add() {
     .traffic={configured:false,enabled:false,quota_bytes:null,quota_mode:"total",reset_day:1,upload_rate_bps:null,download_rate_bps:null}
     | .metadata={remark:$remark,region:$region,purpose:$purpose,line:$line,tags:($tags | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)}
   ' <<<"$node")
+  if [[ -n "$ech_name" && "$ech_name" != none ]]; then
+    case "$protocol:$security" in trojan:*|anytls:*|hysteria2:*|hysteria:*|tuic:*|vless:tls|vmess:tls) ;; *) die '--ech 只用于使用域名证书（TLS）的节点。';; esac
+    local ech_ext; ech_ext=$(node_ech_extension "$ech_name") || return 1
+    inbound_json=$(jq -c --argjson e "$ech_ext" '. * $e.inbound' <<<"$inbound_json"); outbound_json=$(jq -c --argjson e "$ech_ext" '. * $e.outbound' <<<"$outbound_json")
+    node=$(jq --arg e "$ech_name" '.ech_name=$e' <<<"$node")
+  fi
   node=$(jq --argjson inbound "$inbound_json" --argjson outbound "$outbound_json" ".singbox={inbound:\$inbound,outbound:\$outbound}" <<<"$node")
   if [[ "$protocol" == snell || "$protocol" == shadowtls ]]; then
     node=$(jq '.credential_revision=1 | if .protocol=="snell" then .credential_mode="single" else . end' <<<"$node")
@@ -396,7 +469,8 @@ _node_add() {
   fi
   if [[ "$enabled" == true ]]; then
     case "$protocol" in
-      anytls|hysteria2|trojan|tuic|naive) _cert_prepare_node_domain "$domain" || return 1;;
+      anytls|hysteria2|trojan|tuic|naive|hysteria) _cert_prepare_node_domain "$domain" || return 1;;
+      vmess) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
       vless) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
     esac
   fi
@@ -475,7 +549,9 @@ _node_rotate() {
     anytls) new=$(jq -n --arg password "$(random_password 24)" '{password:$password}') ;;
     hysteria2)
       new=$(jq -n --arg password "$(random_password 24)" '{password:$password}') ;;
-    trojan) new=$(jq -n --arg password "$(random_password 24)" '{password:$password}') ;;
+    trojan|hysteria) new=$(jq -n --arg password "$(random_password 24)" '{password:$password}') ;;
+    vmess) new=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') ;;
+    direct) rm -f "$backup"; die '端口转发节点没有凭据。' ;;
     tuic) new=$(jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}') ;;
     vless) new=$(jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}') ;;
     socks|http|mixed|naive) new=$(jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}') ;;
@@ -499,7 +575,7 @@ node_rotate() { with_state_transaction node-rotate _node_rotate "$@"; }
 
 _node_set() {
   local id=$1; shift
-  local candidate tmp key value node protocol
+  local candidate tmp key value node protocol ech_value='' ech_set=0
   node=$(state_get_node "$id"); [[ -n "$node" ]] || die "节点不存在：$id"
   candidate=$(state_candidate); cp "$SBM_STATE" "$candidate"
   while (($#)); do
@@ -557,9 +633,24 @@ _node_set() {
       --tags)
         tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.metadata.tags)=($v | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)' "$candidate" >"$tmp"; mv "$tmp" "$candidate"
         ;;
+      --ech) ech_value=$value; ech_set=1;;
       *) rm -f "$candidate"; die "不支持的修改参数：$key";;
     esac
   done
+  # ECH is applied last so an extension passed in the same command cannot undo it.
+  if (( ech_set )); then
+    if [[ -z "$ech_value" || "$ech_value" == none ]]; then
+      tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" '(.nodes[]|select(.id==$id)) |= (del(.ech_name, .singbox.inbound.tls.ech, .singbox.outbound.tls.ech)
+        | if .singbox.inbound.tls=={} then del(.singbox.inbound.tls) else . end | if .singbox.outbound.tls=={} then del(.singbox.outbound.tls) else . end)' "$candidate" >"$tmp"; mv "$tmp" "$candidate"
+    elif [[ $(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.ech_name // ""' "$candidate") != "$ech_value" ]] \
+      || ! jq -e --arg id "$id" '.nodes[]|select(.id==$id)|.singbox.inbound.tls.ech.enabled==true' "$candidate" >/dev/null; then
+      jq -e --arg id "$id" '.nodes[]|select(.id==$id)|(.protocol|IN("trojan","anytls","hysteria2","hysteria","tuic")) or ((.protocol|IN("vless","vmess")) and .security=="tls")' "$candidate" >/dev/null \
+        || { rm -f "$candidate"; die '--ech 只用于使用域名证书（TLS）的节点。'; }
+      local ech_ext; ech_ext=$(node_ech_extension "$ech_value") || { rm -f "$candidate"; return 1; }
+      tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg e "$ech_value" --argjson x "$ech_ext" '(.nodes[]|select(.id==$id)) |= (.ech_name=$e
+        | .singbox.inbound=((.singbox.inbound // {}) * $x.inbound) | .singbox.outbound=((.singbox.outbound // {}) * $x.outbound))' "$candidate" >"$tmp"; mv "$tmp" "$candidate"
+    fi
+  fi
   protocol=$(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.protocol' "$candidate")
   [[ "$protocol" == vmess-ws-cf || -n $(jq -r --arg id "$id" '.nodes[]|select(.id==$id)|.server_address // ""' "$candidate") ]] || log_warn "节点尚未设置客户端服务器地址。"
   if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then
@@ -589,7 +680,9 @@ node_user_generate_secret() {
   case "$protocol" in
     vmess-ws-cf) jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}' ;;
     shadowsocks) jq -n --arg password "$(ss2022_key "$(jq -r '.method' <<<"$node")")" '{password:$password}' ;;
-    anytls|hysteria2|trojan) jq -n --arg password "$(random_password 24)" '{password:$password}' ;;
+    anytls|hysteria2|trojan|hysteria) jq -n --arg password "$(random_password 24)" '{password:$password}' ;;
+    vmess) jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}' ;;
+    direct) die '端口转发节点没有用户。' ;;
     tuic) jq -n --arg uuid "$(random_uuid)" --arg password "$(random_password 24)" '{uuid:$uuid,password:$password}' ;;
     vless) jq -n --arg uuid "$(random_uuid)" '{uuid:$uuid}' ;;
     socks|http|mixed|naive) jq -n --arg username "$(random_hex 12)" --arg password "$(random_password 24)" '{username:$username,password:$password}' ;;
