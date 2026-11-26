@@ -16,6 +16,11 @@ node_ech_extension() {
     || { log_error '无法解析 sing-box 的 ECH 密钥输出。'; return 1; }
 }
 
+# Listings mask private keys; refuse an extension that carries a mask back in.
+node_reject_redacted() {
+  if grep -qE '<redacted>|\*{20,}' <<<"$1"; then die '这段设置里有被遮蔽的密钥（来自节点列表），不能写回；请只提交要修改的项。'; fi
+}
+
 node_protocol_label() {
   case "$1" in
     vmess-ws-cf) printf 'VMess-WS-CF' ;;
@@ -109,10 +114,19 @@ node_runtime_port_in_use() {
 }
 
 node_list_json() {
-  local tag=${1:-} region=${2:-}
-  jq --arg tag "$tag" --arg region "$region" '[.nodes[]
+  local tag=${1:-} region=${2:-} excluded=''
+  [[ ! -r "$SBM_EXPORTS/substore.excluded" ]] || excluded=$(<"$SBM_EXPORTS/substore.excluded")
+  jq --arg tag "$tag" --arg region "$region" --arg excluded "$excluded" '
+    ($excluded | split("\n") | map(select(length>0) | split("\t") | {key:.[0], value:(.[2] // "")}) | from_entries) as $ex |
+    [.nodes[]
     | select($tag=="" or (.metadata.tags | index($tag)) != null)
-    | select($region=="" or .metadata.region==$region)]' "$SBM_STATE"
+    | select($region=="" or .metadata.region==$region)
+    | if .enabled and ($ex[.id] // null)!=null then .substore_excluded=$ex[.id] else . end]
+    | map(
+        # Private keys stay on the machine: a listing shows that they exist, not what they are.
+        (if (.singbox.inbound.tls.ech.key // null)!=null then .singbox.inbound.tls.ech.key=["<redacted>"] else . end)
+        | (if (.singbox.inbound.tls.reality.private_key // "")!="" then .singbox.inbound.tls.reality.private_key="<redacted>" else . end)
+        | (if (.singbox.inbound.tls.key // null)!=null then .singbox.inbound.tls.key=["<redacted>"] else . end))' "$SBM_STATE"
 }
 
 # Machine-readable description of `node add`: protocols, their flags and
@@ -203,7 +217,7 @@ _node_add() {
       --strict-mode) strict_mode=${2:?}; shift 2;; --wildcard-sni) wildcard_sni=${2:?}; shift 2;; --quic) network=udp; shift;;
       --snell-version) snell_version=${2:?}; shift 2;; --snell-mode) snell_mode=${2:?}; shift 2;;
       --realm-id) realm_id=${2:?}; shift 2;; --realm-ip-version) realm_ip_version=${2:?}; shift 2;; --realm-port-mapping) realm_port_mapping=true; shift;;
-      --sing-box-inbound-json|--inbound-json) inbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$inbound_json"; shift 2;;
+      --sing-box-inbound-json|--inbound-json) inbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$inbound_json"; node_reject_redacted "$inbound_json"; shift 2;;
       --sing-box-outbound-json|--outbound-json) outbound_json=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$outbound_json"; shift 2;;
       --remark) [[ $# -ge 2 ]] || die '缺少备注'; remark=$2; shift 2;; --region) [[ $# -ge 2 ]] || die '缺少地区'; region=$2; shift 2;; --purpose) [[ $# -ge 2 ]] || die '缺少用途'; purpose=$2; shift 2;; --line) [[ $# -ge 2 ]] || die '缺少线路'; line=$2; shift 2;; --tags) [[ $# -ge 2 ]] || die '缺少标签'; tags=$2; shift 2;;
       *) die "未知参数：$1";;
@@ -593,7 +607,7 @@ _node_set() {
       --disable-chrome-parrot|--brutal-debug|--realm-port-mapping) value=true; shift;;
       --enable-chrome-parrot|--no-brutal-debug|--no-realm-port-mapping) value=false; shift;;
       --clear-realm) value=''; shift;;
-      --sing-box-inbound-json|--inbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$value"; shift 2;;
+      --sing-box-inbound-json|--inbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box inbound JSON' "$value"; node_reject_redacted "$value"; shift 2;;
       --sing-box-outbound-json|--outbound-json) value=$(node_json_argument "${2:?}"); node_validate_json_object 'sing-box outbound JSON' "$value"; shift 2;;
       *) value=${2-}; shift 2;;
     esac
@@ -644,7 +658,7 @@ _node_set() {
         ;;
       --sing-box-inbound-patch|--sing-box-outbound-patch)
         # Change a few extension settings in place: {"set":{"a.b":value},"unset":["c.d"]}.
-        value=$(node_json_argument "$value"); node_validate_json_object 'sing-box extension patch' "$value"
+        value=$(node_json_argument "$value"); node_validate_json_object 'sing-box extension patch' "$value"; node_reject_redacted "$value"
         tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg d "$([[ $key == *inbound* ]] && echo inbound || echo outbound)" --argjson p "$value" '
       def ext_patch($p):
         reduce (($p.unset // [])[]) as $u (.; ($u|split(".")) as $k | delpaths([$k])

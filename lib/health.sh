@@ -141,6 +141,13 @@ health_collect_json() {
         health_issue error traffic_rules_missing traffic '流量控制规则不完整，请运行 sb traffic reconcile。'
       fi
     fi
+    # Nodes the last Sub-Store export had to leave out.
+    if [[ -s "$SBM_EXPORTS/substore.excluded" ]]; then
+      while IFS=$'\t' read -r id _ path; do
+        [[ -n "$id" ]] && jq -e --arg id "$id" 'any(.nodes[]?; .id==$id and .enabled==true)' "$SBM_STATE" >/dev/null || continue
+        health_issue warning substore_excluded substore "节点 $id 没有进入 Sub-Store 订阅：$path"
+      done < <(sort -u -t $'\t' -k1,1 "$SBM_EXPORTS/substore.excluded")
+    fi
     health_resource_issues "$SBM_STATE"
   } | jq -s 'sort_by(.severity,.code)'
 }

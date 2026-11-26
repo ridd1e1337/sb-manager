@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.132
+
+- `sb node list --json` 遮蔽节点扩展里的私钥（ECH 密钥、Reality 私钥、内联证书私钥）：只显示它们存在，不输出内容；`sb node show` 不受影响。
+  带有遮蔽值的扩展不能写回（会被拒绝），修改请用扩展补丁参数。
+- 记录最近一次 Sub-Store 导出时被跳过的节点及原因（`exports/substore.excluded`）：`sb status` 的异常列表里出现 `substore_excluded` 警告，
+  `sb node list --json` 给这些节点加上 `substore_excluded`。端口转发节点本来就没有客户端，不计入。
+
 ## 0.1.0-alpha.131
 
 - `sb node set` 新增 `--sing-box-inbound-patch` / `--sing-box-outbound-patch`：只改扩展里的几项（`{"set":{"a.b":值},"unset":["c.d"]}`），不必回传整段扩展；

@@ -168,6 +168,7 @@ export_substore_links() {
   local output=${1:-$SBM_EXPORTS/substore.txt} node id user_id line tmp cache context key file
   mkdir -p "$(dirname "$output")"
   tmp=$(mktemp "$(dirname "$output")/.substore.XXXXXX")
+  local excluded reason; excluded=$(mktemp "$(dirname "$output")/.excluded.XXXXXX")
   cache=$(share_cache_dir 2>/dev/null) || cache=''
   context=$(share_cache_context) || { rm -f "$tmp"; return 1; }
   local -x SBM_SHARE_CONTEXT=$context
@@ -190,10 +191,16 @@ export_substore_links() {
       fi
     fi
     if [[ -n "$line" ]]; then printf '%s\n' "$line" >>"$tmp" || return 1
-    else log_warn "Sub-Store 链接已排除无法用分享链接表达的节点：$id/$user_id；请使用 sing-box 客户端配置。"; fi
+    else log_warn "Sub-Store 链接已排除无法用分享链接表达的节点：$id/$user_id；请使用 sing-box 客户端配置。"
+      # Remember why, so status and the node list can say which nodes are missing from the subscription.
+      reason=$( { node_substore_line "$id" "$user_id" >/dev/null; } 2>&1 | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/^\[[A-Z ]*\] *//' | awk 'NF' | tail -n 1) || true
+      # port forwards have no client at all: nothing is missing from the subscription
+      [[ $(jq -r '.protocol' <<<"$node") =~ ^(direct|tunnel)$ ]] || printf '%s\t%s\t%s\n' "$id" "$user_id" "${reason:-分享链接无法表达这个节点}" >>"$excluded"
+    fi
   done < <(jq -r '.nodes[]? | select(.enabled==true) | . as $n | .users[] | select(.enabled==true) | [$n.id, .id, ($n|tojson)] | join("\u001f")' "$SBM_STATE")
-  chmod 0600 "$tmp"
+  chmod 0600 "$tmp" "$excluded"
   mv "$tmp" "$output"
+  mv "$excluded" "$(dirname "$output")/substore.excluded"
 }
 
 node_share() {
