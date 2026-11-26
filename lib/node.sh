@@ -469,9 +469,9 @@ _node_add() {
   fi
   if [[ "$enabled" == true ]]; then
     case "$protocol" in
-      anytls|hysteria2|trojan|tuic|naive|hysteria) _cert_prepare_node_domain "$domain" || return 1;;
-      vmess) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
-      vless) [[ "$security" != tls ]] || _cert_prepare_node_domain "$domain" || return 1;;
+      anytls|hysteria2|trojan|tuic|naive|hysteria) node_add_cert "$domain" || return 1;;
+      vmess) [[ "$security" != tls ]] || node_add_cert "$domain" || return 1;;
+      vless) [[ "$security" != tls ]] || node_add_cert "$domain" || return 1;;
     esac
   fi
   # Credentials chosen by the operator (kept from another panel, or picked in
@@ -497,13 +497,22 @@ _node_add() {
   [[ -z "$node_secret" ]] || state_write_secret "$id" "$node_secret" || return 1
   candidate=$(state_candidate)
   jq --argjson node "$node" '.nodes += [$node]' "$SBM_STATE" >"$candidate"
+  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then
+    # Preview: check and report, then remove every trace of the candidate.
+    local preview_rc=0
+    node_add_preview "$candidate" "$id" || preview_rc=$?
+    rm -f "$candidate" "$user_secret_path"; [[ -z "$node_secret" ]] || rm -f "$(state_secret_path "$id")"
+    rmdir "$(dirname "$user_secret_path")" 2>/dev/null || true
+    return "$preview_rc"
+  fi
   if ! apply_candidate_state "$candidate" "add-$id"; then rm -f "$candidate" "$user_secret_path"; return 1; fi
   rm -f "$candidate"
   log_ok "已添加节点：$id ($(node_protocol_label "$protocol"))"
   [[ "$enabled" == true ]] || log_warn "节点当前为停用状态。"
 }
 node_add() {
-  [[ ${SBM_DRY_RUN:-0} != 1 ]] || usage_die '添加节点不支持 --dry-run；请退出预览模式后再操作。'
+  # --dry-run validates the node and reports client compatibility without saving anything.
+  if [[ ${SBM_DRY_RUN:-0} == 1 ]]; then NODE_ADD_CERT_MISSING=''; with_lock _node_add "$@"; return $?; fi
   with_state_transaction node-add _node_add "$@"
 }
 
@@ -633,6 +642,15 @@ _node_set() {
       --tags)
         tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg v "$value" '(.nodes[]|select(.id==$id)|.metadata.tags)=($v | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique)' "$candidate" >"$tmp"; mv "$tmp" "$candidate"
         ;;
+      --sing-box-inbound-patch|--sing-box-outbound-patch)
+        # Change a few extension settings in place: {"set":{"a.b":value},"unset":["c.d"]}.
+        value=$(node_json_argument "$value"); node_validate_json_object 'sing-box extension patch' "$value"
+        tmp=$(mktemp "$SBM_RUN/edit.XXXXXX"); jq --arg id "$id" --arg d "$([[ $key == *inbound* ]] && echo inbound || echo outbound)" --argjson p "$value" '
+      def ext_patch($p):
+        reduce (($p.unset // [])[]) as $u (.; ($u|split(".")) as $k | delpaths([$k])
+          | reduce range(($k|length)-1; 0; -1) as $n (.; if getpath($k[:$n])=={} then delpaths([$k[:$n]]) else . end))
+        | reduce (($p.set // {})|to_entries[]) as $e (.; setpath($e.key|split("."); $e.value));
+      (.nodes[]|select(.id==$id)) |= (.singbox[$d]=((.singbox[$d] // {}) | ext_patch($p)))' "$candidate" >"$tmp" && mv "$tmp" "$candidate" || { rm -f "$tmp" "$candidate"; die '扩展补丁无效。'; };;
       --ech) ech_value=$value; ech_set=1;;
       *) rm -f "$candidate"; die "不支持的修改参数：$key";;
     esac

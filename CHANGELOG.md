@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.131
+
+- `sb node set` 新增 `--sing-box-inbound-patch` / `--sing-box-outbound-patch`：只改扩展里的几项（`{"set":{"a.b":值},"unset":["c.d"]}`），不必回传整段扩展；
+  网页面板编辑节点时改用它，命令和执行记录里不再出现扩展中的私钥。
+- `sb --dry-run node add …`：预检。校验参数、生成配置并交给内核检查，然后列出哪些客户端能用这个节点，不保存任何改动；域名还没有证书时跳过内核检查并说明。
+- `sb node compat ID [--json]`：逐个尝试导出，列出分享链接 / Sub-Store、sing-box、mihomo 能否使用这个节点及原因；功能页的节点菜单里新增「客户端兼容性」。
+- `sb node schema`：新增 `patch_flags`、`check`、协议的 `presets`（常用组合）与字段的 `when_any`（多组显示条件之一）。
+- 表单里 Cloudflare WebSocket 模板的类型名改为 `vmess-ws-cf`（命令行的 `vmess` 仍然可用），与通用 VMess（`vmess-std`）区分开。
+
 ## 0.1.0-alpha.130
 
 - 新协议：

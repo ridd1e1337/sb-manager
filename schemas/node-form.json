@@ -1712,7 +1712,36 @@
     "tcp_keepalive",
     "tcp_keepalive_interval"
    ],
-   "state": "vless"
+   "state": "vless",
+   "presets": [
+    {
+     "label": "Reality + Vision",
+     "note": "直连最常用：无需域名和证书",
+     "values": {
+      "security": "reality",
+      "transport": "",
+      "flow": "xtls-rprx-vision"
+     }
+    },
+    {
+     "label": "WebSocket + TLS",
+     "note": "可套 CDN",
+     "values": {
+      "security": "tls",
+      "transport": "ws",
+      "flow": "",
+      "alpn": "http/1.1"
+     }
+    },
+    {
+     "label": "gRPC + TLS",
+     "values": {
+      "security": "tls",
+      "transport": "grpc",
+      "flow": ""
+     }
+    }
+   ]
   },
   {
    "type": "trojan",
@@ -1765,7 +1794,23 @@
     "fb_server",
     "fb_port"
    ],
-   "state": "trojan"
+   "state": "trojan",
+   "presets": [
+    {
+     "label": "TLS 直连",
+     "values": {
+      "transport": ""
+     }
+    },
+    {
+     "label": "WebSocket + TLS",
+     "note": "可套 CDN",
+     "values": {
+      "transport": "ws",
+      "alpn": "http/1.1"
+     }
+    }
+   ]
   },
   {
    "type": "hy2",
@@ -2160,7 +2205,7 @@
    ]
   },
   {
-   "type": "vmess",
+   "type": "vmess-ws-cf",
    "label": "VMess + WS（Cloudflare）",
    "note": "VMess + WebSocket，配合 Cloudflare CDN 或 Tunnel 使用。",
    "fields": [
@@ -2177,7 +2222,8 @@
     "ws_path",
     "cf_domain"
    ],
-   "state": "vmess-ws-cf"
+   "state": "vmess-ws-cf",
+   "id_prefix": "vmess"
   },
   {
    "type": "socks",
@@ -2282,5 +2328,14 @@
  "ext_from": {
   "inbound": "singbox.inbound",
   "outbound": "singbox.outbound"
+ },
+ "patch_flags": {
+  "inbound": "--sing-box-inbound-patch",
+  "outbound": "--sing-box-outbound-patch"
+ },
+ "check": {
+  "prefix": [
+   "--dry-run"
+  ]
  }
 }
