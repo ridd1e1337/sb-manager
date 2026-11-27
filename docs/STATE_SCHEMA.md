@@ -5,7 +5,7 @@ Simplified example:
 ```json
 {
   "schema_version": 2,
-  "manager_version": "0.1.0-alpha.132",
+  "manager_version": "0.1.0-alpha.133",
   "settings": {
     "log_level": "info",
     "default_server_address": "edge.example.com",
@@ -230,6 +230,8 @@ manual backups, website recovery journals or the current/previous Caddy binary.
 The optional top-level `realm` object configures sing-box's `hysteria-realm` service. Its bearer token is stored only in `secrets/realm.json`; `realm.public_url` is used by Hysteria2 inbound/outbound `realm` blocks. A Hysteria2 node opts in with `realm_enabled`/`realm_id`, and may restrict Realm traffic to IPv4/IPv6 or request UPnP/NAT-PMP port mapping. Realm cannot be disabled while an enabled Hysteria2 node still references it.
 
 Existing v1 installations migrate once, before rendering, with a pre-migration snapshot. Future changes must use explicit, one-way migration steps. Generated config files must never be parsed back into state.
+
+`nodes[].public_port` is optional: the port share links, subscriptions and client exports advertise when a redirect on the host (for example nftables `443 → port`) forwards it to the node's own `port`. sing-box still listens on `port`; absent or equal to `port` means no override, and a TCP/SNI mux route takes precedence.
 
 `nodes[].metadata` contains operator-only `remark`, `region`, `purpose`, `line`, and unique `tags`. These values are for filtering and dashboards and are deliberately excluded from protocol renderers and client exports.
 

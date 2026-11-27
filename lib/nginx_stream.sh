@@ -62,7 +62,8 @@ nginx_stream_public_node() {
       return 0
     fi
   fi
-  printf '%s\n' "$node"
+  # public_port: clients reach the node through a port redirect on this host.
+  jq 'if (.public_port // null) != null then .port=.public_port else . end' <<<"$node"
 }
 
 nginx_stream_validate_state() {

@@ -36,6 +36,7 @@
  ],
  "common": [
   "address",
+  "public_port",
   "__id",
   "remark",
   "region",
@@ -191,6 +192,16 @@
    "flag": "--address",
    "placeholder": "留空自动使用域名或本机公网 IP",
    "from": "server_address"
+  },
+  "public_port": {
+   "label": "对外端口",
+   "kind": "number",
+   "group": "advanced",
+   "flag": "--public-port",
+   "placeholder": "留空与端口相同",
+   "note": "分享链接和订阅里写的端口。本机用端口转发 / 重定向把它转到节点端口时填写，例如防火墙把 443 重定向到这里。",
+   "from": "public_port",
+   "edit_empty": "none"
   },
   "__id": {
    "label": "节点 ID",

@@ -394,6 +394,7 @@ state_validate_schema() {
       and (.enabled | type == "boolean")
       and (.listen | nonempty)
       and (.port | port)
+      and ((.public_port // null) | . == null or port)
       and (.created_at | timestamp)
       and ((.singbox // {}) | type == "object")
       and (((.singbox // {}).inbound // {}) | node_extension)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.133
+
+- 节点新增「对外端口」：`sb node add … --public-port N`、`sb node set ID --public-port N|none`，表单「高级」里同名一项。
+  分享链接、订阅、Sub-Store 和各客户端配置写这个端口，sing-box 仍监听节点自己的端口。用于本机防火墙把公网端口重定向到节点端口的场景，
+  例如网站只放行 Cloudflare、其余来源的 443 由 nftables 重定向给 Reality 节点。与节点端口相同或填 `none` 即清除；TCP/SNI 复用的路由仍以复用入口端口为准。
+
 ## 0.1.0-alpha.132
 
 - `sb node list --json` 遮蔽节点扩展里的私钥（ECH 密钥、Reality 私钥、内联证书私钥）：只显示它们存在，不输出内容；`sb node show` 不受影响。

@@ -268,6 +268,19 @@ sing-box 配置释放 443，再恢复网站监听。
 用户停用或到期时各格式返回 422 及原因。包内记录输入指纹，无关的状态变更不会重建；
 状态事务和周期任务都会刷新用户订阅。
 
+## 对外端口与端口重定向（alpha.133）
+
+```bash
+sb node add vless --port 39443 --public-port 443 --security reality --domain site.example.com \
+  --handshake-server 127.0.0.1 --handshake-port 8444
+sb node set ID --public-port none
+```
+
+443 已被网站占用、而且网站防火墙只放行 CDN 来源时，可以让主机把**其余来源**的 443 重定向到节点端口
+（例如 nftables `ip saddr != @cdn tcp dport 443 redirect to :39443`），节点设置 `--public-port 443`。
+sing-box 只监听节点端口；分享链接、订阅、Sub-Store 与客户端配置都写对外端口。管理器不创建重定向规则，也不改防火墙，
+规则由运维自行维护；直接访问节点端口是否放行同样由主机防火墙决定。
+
 ## OpenList 与 Reality 共用 443（alpha.72）
 
 ```bash
